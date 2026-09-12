@@ -12,12 +12,19 @@
 import { createServer } from 'node:http';
 import { Writable } from 'node:stream';
 
-/** 一个处理函数的最小形状：按「路径」索引，OPTIONS 预检也走同一个处理函数 */
+/**
+ * 处理函数分发表：按「路径」索引（OPTIONS 预检也走同一个处理函数）。
+ *
+ * ⚠️ 路径必须和 src/dao/syncServer.ts 的 API_ROUTES 完全一致。
+ * Vercel 把 api/ 下的**文件名**映射成路由，所以是 `/api/sync-pull`（连字符），
+ * **不是** `/api/sync-pull`——写成后者本地也一样会 404，
+ * 但那样至少能在本地测出来（线上炸过一次就是因为两边不一致）。
+ */
 export const ROUTES = {
   '/api/health': () => import('../health.ts'),
-  '/api/sync/pull': () => import('../sync-pull.ts'),
-  '/api/sync/push': () => import('../sync-push.ts'),
-  '/api/sync/purge': () => import('../sync-purge.ts'),
+  '/api/sync-pull': () => import('../sync-pull.ts'),
+  '/api/sync-push': () => import('../sync-push.ts'),
+  '/api/sync-purge': () => import('../sync-purge.ts'),
   '/api/ai-proxy': () => import('../ai-proxy.ts'),
 };
 
@@ -55,7 +62,7 @@ function loaderFor(path) {
  * 给测试脚本用：直接调一个处理函数，不经过 HTTP。
  * @param {object} params
  * @param {'GET'|'POST'|'OPTIONS'} [params.method]
- * @param {string} [params.path] 例如 '/api/sync/pull'
+ * @param {string} [params.path] 例如 '/api/sync-pull'
  * @param {Record<string,string>} [params.headers]
  * @param {string} [params.query] 例如 'since=0'
  * @param {unknown} [params.body]

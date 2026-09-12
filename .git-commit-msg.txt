@@ -1,25 +1,35 @@
-修复线上 500：api 的相对导入改用 .js 后缀（Vercel 类型擦除不改 import 路径）
+修复「同步不了」：前端请求的接口路径与 Vercel 实际路由不一致（404）
 
-线上日志确凿证据：
-  Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/var/task/api/_lib/db.ts'
-    imported from /var/task/api/health.js
+线上探测结果：
+  /api/health      200 ✅
+  /api/ai-proxy    403 ✅（来源白名单生效）
+  /api/sync/pull   404 ❌  ← 前端一直在请求这个
+  /api/sync-pull   401 ✅  ← 真实路由是这个
 
-根因：Vercel 用 Node 的类型擦除把 .ts 变成 .js，但**不重写 import 路径**。
-源码写 from './_lib/db.ts' → 产物里还是找 db.ts，磁盘上却只有 db.js → 函数加载失败 → 500。
-之前我判断「Vercel 的 esbuild 能处理 .ts 后缀」是错的：本地工具链能跑通，
-线上运行时不会，而且构建阶段也不报错，所以一直没暴露。
+根因：Vercel 把 api/ 下的**文件名**直接映射成路由，api/sync-pull.ts 对应
+`/api/sync-pull`（连字符），不是 `/api/sync/pull`（斜杠）。
+前端、本地测试壳、文档里全都写成了带斜杠的版本，所以线上永远 404——
+后端本身一直是好的，只是没人叫对门牌号。
+
+顺带修掉的第二个线上问题（上一条提交）：api 的相对导入用 .ts 后缀，
+Vercel 剥类型后仍按 .ts 去找文件 → ERR_MODULE_NOT_FOUND → 500。
 
 修复：
-- api/*.ts 与 api/_lib/*.ts 的 39 处相对导入统一改为 .js 后缀（11 个文件）
-  （TypeScript ESM 的标准写法；不用「去掉后缀」是因为 Node ESM 不允许）
-- api/_dev/loader-hooks.mjs 增加 .js → 同名 .ts 的映射，
-  本地 node 直接跑 TS 源码因此照样能解析（构建产物的真 .js 优先命中）
-- 新增 scripts/emit-api.mjs：用 Node 的 stripTypeScriptTypes 模拟 Vercel 那一步，
-  在本地复现 /var/task 的产物（已确认能 1:1 复现线上那个 ERR_MODULE_NOT_FOUND）
-- 新增 scripts/verify-api-emit.mjs + npm run verify:api：
-  检查产物里每个 import 能否解析，并真的把产物加载一次；已接进 npm test
-- test:build 第 6/7 组护栏改正（之前那条「必须带 .ts 后缀」的规则本身就是错的）：
-  被部署的 api 源码必须写 .js；产物里不允许出现 .ts 说明符且必须可加载
-- README 排查表改正，并写明为什么不能靠 allowImportingTsExtensions 绕过
+- src/dao/syncServer.ts 新增 API_ROUTES 路由表，路径只在这里定义一处
+  （syncPull/syncPush/syncPurge 全部改成连字符形式）
+- src/services/ai.ts 的代理路径改为引用同一张路由表，消除第二份硬编码
+- api/_dev/harness.mjs（本地后端壳）的路由键同步改成连字符，
+  这样「前端路径 ≠ 本地路径」在本地就会暴露，不会再拖到线上
+- 所有测试脚本与文档里的路径统一更正
 
-自检：342 项全过（34+58+43+53+48+49+57），npx tsc --noEmit 与 npm run build 均零报错
+新增两道防线（这次的教训：本地 353 项测试全都直接调用处理函数，
+完全不经过 URL 匹配，所以路径不一致一个都测不出来）：
+- test:build 第 8 组：校验「前端 API_ROUTES ⇄ api/ 真实文件」一一对应，
+  并禁止 src/ 里再出现 /api/sync/ 老写法
+- npm run test:live：**按真实 URL** 打线上后端（读路由表，不手写路径），
+  覆盖健康检查/401/隔离/推送拉回/批量上限/来源白名单，跑完自动清理测试数据。
+  附带 scripts/run-live.mjs 自动识别系统代理——Node 的 fetch 默认不用系统代理，
+  这台机器开着 127.0.0.1:7897，表现为「PowerShell 能通、Node 超时」，
+  用 --use-env-proxy 解决。
+
+验证：npm test 353 项全过；npm run test:live 线上 20 项全过

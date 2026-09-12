@@ -71,14 +71,18 @@
 - [ ] 用非白名单 Origin 请求 `/api/ai-proxy` → 403
 - [ ] 数据表主键是 `(space_key, id)`（不是单独的 `id`，否则跨空间会互相覆盖）
 
-## 七、同步接口自检（curl 或浏览器）
+## 七、同步接口自检
+
+> 最快的方式：跑 `npm run test:live`（自动读前端的路由表，按真实 URL 打一遍线上后端，
+> 覆盖下面全部条目，跑完自动清理测试数据）。手测也可以，按下面的路径来。
 
 - [ ] `GET /api/health` → `{"ok":true,"db":"connected"}`
-- [ ] `GET /api/sync/pull` 不带 `X-Space-Key` → 401
+- [ ] `GET /api/sync-pull` 不带 `X-Space-Key` → 401
 - [ ] 带非法 spaceKey（如 `abc`）→ 401
 - [ ] 用两个不同 spaceKey 拉取 → 数据互不可见
 - [ ] 一次推 600 条 → 400，提示「单批不得超过 500 条」
 - [ ] 推一条 `deleted=1` 的记录 → pull 仍然能拉到它（客户端靠它同步删除）
+- [ ] 前后端路径一致：`/api/sync-pull`、`/api/sync-push`、`/api/sync-purge`（**连字符，不是斜杠**）
 
 ## 八、备份自检（**最重要**）
 

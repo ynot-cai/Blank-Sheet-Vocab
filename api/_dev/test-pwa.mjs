@@ -246,7 +246,7 @@ console.log('\n[5] 静态资源：Cache First（带 hash，不会过期）');
 console.log('\n[6] /api 与跨域请求：一律不缓存、不拦截');
 {
   const apiHandled = await emit('fetch', {
-    request: { method: 'GET', mode: 'cors', url: `${ORIGIN}/api/sync/pull?since=0`, headers: new Headers() },
+    request: { method: 'GET', mode: 'cors', url: `${ORIGIN}/api/sync-pull?since=0`, headers: new Headers() },
   });
   check('/api 请求不被 SW 接管（respondWith 为空）', apiHandled === undefined, String(apiHandled));
 
@@ -261,7 +261,7 @@ console.log('\n[6] /api 与跨域请求：一律不缓存、不拦截');
   check('跨域 GET 也不缓存（连碰都不碰）', aiGet === undefined);
 
   const post = await emit('fetch', {
-    request: { method: 'POST', mode: 'cors', url: `${ORIGIN}/api/sync/push`, headers: new Headers() },
+    request: { method: 'POST', mode: 'cors', url: `${ORIGIN}/api/sync-push`, headers: new Headers() },
   });
   check('同源 POST 不缓存', post === undefined);
 }

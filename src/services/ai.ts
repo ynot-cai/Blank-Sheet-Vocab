@@ -16,6 +16,7 @@
 import type { Settings } from '../core/types';
 import { normalizeApiBase } from '../core/syncHelper';
 import { splitPackedSenses } from '../core/model';
+import { API_ROUTES } from '../dao/syncServer';
 
 /** AI 接口配置（三项全部由用户填） */
 export interface AiConfig {
@@ -104,20 +105,18 @@ export function aiConfigFromSettings(settings: Settings): AiConfig {
   };
 }
 
-/** 代理路径的接口后缀 */
-const PROXY_PATH = '/api/ai-proxy';
-
 /** 这个配置能不能走代理（必须填了自己部署的后端地址） */
 function canUseProxy(cfg: AiConfig): boolean {
   return (cfg.cloudApiBase ?? '').trim() !== '';
 }
 
 /**
- * 拼接代理地址（自己的后端 + /api/ai-proxy）。
+ * 拼接代理地址（自己的后端 + API_ROUTES.aiProxy）。
+ * 路径统一从 dao/syncServer.ts 的路由表取，避免两处各写一份、改一处漏一处。
  * @param cfg 接口配置
  */
 function proxyUrlOf(cfg: AiConfig): string {
-  return `${normalizeApiBase(cfg.cloudApiBase ?? '')}${PROXY_PATH}`;
+  return `${normalizeApiBase(cfg.cloudApiBase ?? '')}${API_ROUTES.aiProxy}`;
 }
 
 /**

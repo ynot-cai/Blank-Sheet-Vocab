@@ -1,5 +1,8 @@
 /**
- * POST /api/sync/purge
+ * POST /api/sync-purge
+ *
+ * 注意路由名：Vercel 按文件名映射路由，实际路径是 `/api/sync-purge`（连字符），
+ * 不是 `/api/sync/purge`。
  *
  * body: `{ confirm: "DELETE" }`
  *

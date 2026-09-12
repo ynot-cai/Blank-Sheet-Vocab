@@ -307,5 +307,58 @@ console.log('\n[7] 模拟 Vercel 产物：每个 import 都要能解析到真实
   }
 }
 
+// ─────────────────────────────────────────── 8. 前端路由表与 api/ 文件必须一一对应
+console.log('\n[8] 前端 API 路由表与 api/ 真实文件对应（防止再次 404）');
+{
+  // 这条护栏来自线上事故：Vercel 把 api/ 下的文件名映射成路由，
+  // api/sync-pull.ts → /api/sync-pull。前端一度写成 /api/sync-pull，
+  // 线上一直 404（表现是「同步不了」），而所有本地测试都测不出来——
+  // 因为测试是直接调用处理函数、不走 URL 匹配。
+  const syncServer = readFileSync('src/dao/syncServer.ts', 'utf8');
+  const block = /export const API_ROUTES = \{([\s\S]*?)\} as const/.exec(syncServer);
+  check('能读到 API_ROUTES 路由表', block !== null);
+
+  if (block) {
+    const entries = [...block[1].matchAll(/(\w+):\s*'([^']+)'/g)].map((m) => ({ key: m[1], path: m[2] }));
+    check('路由表不为空', entries.length >= 4, `只有 ${entries.length} 条`);
+
+    const missing = [];
+    for (const { key, path } of entries) {
+      // '/api/sync-pull' → api/sync-pull.ts
+      check(`路由 ${key} 用 /api/ 前缀`, path.startsWith('/api/'), path);
+      const file = `api/${path.replace(/^\/api\//, '')}.ts`;
+      if (!existsSync(file)) missing.push(`${key} → ${path}（缺 ${file}）`);
+    }
+    check('每个路由都能对应到 api/ 下的真实文件', missing.length === 0, missing.join(' | '));
+
+    // 反向：api/ 下每个被部署的处理器都必须在路由表里（避免写了没人用 / 漏改）
+    const handlers = readdirSync('api')
+      .filter((f) => f.endsWith('.ts'))
+      .map((f) => `/api/${f.replace(/\.ts$/, '')}`);
+    const declared = new Set(entries.map((e) => e.path));
+    const undeclared = handlers.filter((h) => !declared.has(h));
+    check('api/ 下每个处理器都在路由表里登记', undeclared.length === 0, undeclared.join(', '));
+  }
+
+  // 路径里不允许再出现 /api/sync/ 这种带斜杠的老写法
+  // 注意：只看**字符串字面量**，注释里提到那个错误写法是说明用的，不算违规
+  const srcFiles = walk('src', /\.ts$/);
+  const stalePaths = [];
+  for (const file of srcFiles) {
+    const text = readFileSync(file, 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '') // 去掉块注释
+      .replace(/^\s*\/\/.*$/gm, ''); // 去掉行注释
+    if (/['"`]\/api\/sync\//.test(text)) stalePaths.push(file);
+  }
+  check(
+    'src/ 里没有 /api/sync/ 老路径（正确写法是 /api/sync-pull）',
+    stalePaths.length === 0,
+    stalePaths.join(', '),
+  );
+
+  const pkgScripts = JSON.parse(readFileSync('package.json', 'utf8')).scripts ?? {};
+  check('有 test:live 脚本（线上接口冒烟测试）', Boolean(pkgScripts['test:live']));
+}
+
 console.log(`\n=== 结果：通过 ${passed} 项，失败 ${failed} 项 ===\n`);
 process.exit(failed === 0 ? 0 : 1);

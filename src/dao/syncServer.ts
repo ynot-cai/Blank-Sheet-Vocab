@@ -131,11 +131,32 @@ async function requestWithRetry<T>(
 }
 
 /**
+ * 后端路由表（**全部集中在这里，不要在别处硬编码路径**）。
+ *
+ * ⚠️ 路径规则是踩过坑的：Vercel 把 `api/` 下的文件名直接映射成路由，
+ * `api/sync-pull.ts` 对应的是 **`/api/sync-pull`（连字符）**，
+ * **不是** `/api/sync/pull`。之前写成带斜杠的路径，线上一直 404，
+ * 表现就是「同步不了」——后端其实好好的。
+ *
+ * 改这里的路径时请连带更新：
+ * - `api/_dev/test-live.mjs`：线上路由冒烟测试，逐个请求这些路径
+ * - `api/_dev/test-build.mjs`：有护栏校验「前端路由表与 api/ 真实文件一一对应」
+ */
+export const API_ROUTES = {
+  health: '/api/health',
+  /** 拉取接口，使用时拼查询串：`${API_ROUTES.syncPull}?since=<ts>` */
+  syncPull: '/api/sync-pull',
+  syncPush: '/api/sync-push',
+  syncPurge: '/api/sync-purge',
+  aiProxy: '/api/ai-proxy',
+} as const;
+
+/**
  * 健康检查（「测试连接」按钮用；不需要同步码，也不带 spaceKey）。
  * @param apiBase 后端地址
  */
 export async function pingHealth(apiBase: string): Promise<{ ok: boolean; message: string; dbOk: boolean }> {
-  const url = apiUrl(apiBase, '/api/health');
+  const url = apiUrl(apiBase, API_ROUTES.health);
   const res = await requestJson<{ ok?: boolean; db?: string }>(url, { method: 'GET' }, SYNC.healthTimeoutMs, '');
   if (!res.ok) return { ok: false, dbOk: false, message: res.error ?? '连不上后端' };
   const dbOk = res.data?.db === 'connected';
@@ -153,7 +174,7 @@ export async function pingHealth(apiBase: string): Promise<{ ok: boolean; messag
  */
 export async function pullRemote(ep: SyncEndpoint, since: number): Promise<ApiResult<PullData>> {
   const spaceKey = await getSpaceKey(ep.syncCode);
-  const url = apiUrl(ep.apiBase, `/api/sync/pull?since=${Math.max(0, Math.floor(since))}`);
+  const url = apiUrl(ep.apiBase, `${API_ROUTES.syncPull}?since=${Math.max(0, Math.floor(since))}`);
   return requestWithRetry<PullData>(url, { method: 'GET' }, spaceKey);
 }
 
@@ -169,7 +190,7 @@ export async function pushRemote(
   sources: unknown[],
 ): Promise<ApiResult<PushData>> {
   const spaceKey = await getSpaceKey(ep.syncCode);
-  const url = apiUrl(ep.apiBase, '/api/sync/push');
+  const url = apiUrl(ep.apiBase, API_ROUTES.syncPush);
   const total: PushData = { applied: 0, conflicts: 0, skipped: 0, serverTime: 0 };
 
   // 先把两类合并成一批批「每批 ≤ pushBatchSize 条」，再逐批发
@@ -203,7 +224,7 @@ export async function pushRemote(
  */
 export async function purgeRemote(ep: SyncEndpoint): Promise<ApiResult<{ ok: boolean; removed: number }>> {
   const spaceKey = await getSpaceKey(ep.syncCode);
-  const url = apiUrl(ep.apiBase, '/api/sync/purge');
+  const url = apiUrl(ep.apiBase, API_ROUTES.syncPurge);
   return requestWithRetry<{ ok: boolean; removed: number }>(
     url,
     { method: 'POST', body: JSON.stringify({ confirm: 'DELETE' }) },

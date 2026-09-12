@@ -1,5 +1,9 @@
 /**
- * GET /api/sync/pull?since=<timestamp>
+ * GET /api/sync-pull?since=<timestamp>
+ *
+ * 注意路由名：Vercel 把 `api/` 下的**文件名**直接映射成路由，
+ * 所以这个文件对应的是 `/api/sync-pull`（连字符），不是 `/api/sync/pull`。
+ * 写成后者会 404，前端就表现成「同步不了」——这个坑已经踩过一次。
  *
  * 从请求头 `X-Space-Key` 取数据空间（SHA-256 哈希，服务器不知道明文同步码），
  * 增量拉取 words + sources。

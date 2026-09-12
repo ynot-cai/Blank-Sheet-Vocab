@@ -96,16 +96,16 @@ console.log('[1] 健康检查');
 // ---------------------------------------------------------------- spaceKey 校验
 console.log('\n[2] X-Space-Key 校验');
 {
-  const noHeader = await callApi({ path: '/api/sync/pull', query: 'since=0' });
+  const noHeader = await callApi({ path: '/api/sync-pull', query: 'since=0' });
   check('不带 X-Space-Key → 401', noHeader.status === 401, `实际 ${noHeader.status}`);
 
-  const illegal = await callApi({ path: '/api/sync/pull', query: 'since=0', headers: H('abc') });
+  const illegal = await callApi({ path: '/api/sync-pull', query: 'since=0', headers: H('abc') });
   check('非法 spaceKey（abc）→ 401', illegal.status === 401, `实际 ${illegal.status}`);
 
-  const short = await callApi({ path: '/api/sync/pull', query: 'since=0', headers: H(keyOf('x').slice(0, 63)) });
+  const short = await callApi({ path: '/api/sync-pull', query: 'since=0', headers: H(keyOf('x').slice(0, 63)) });
   check('63 位十六进制 → 401', short.status === 401, `实际 ${short.status}`);
 
-  const ok = await callApi({ path: '/api/sync/pull', query: 'since=0', headers: H(SPACE_A) });
+  const ok = await callApi({ path: '/api/sync-pull', query: 'since=0', headers: H(SPACE_A) });
   check('合法 spaceKey → 200', ok.status === 200, `实际 ${ok.status}`);
   check('首次拉取返回空数组', Array.isArray(ok.json?.words) && ok.json.words.length === 0, JSON.stringify(ok.json));
   check('响应带 serverTime', typeof ok.json?.serverTime === 'number');
@@ -118,7 +118,7 @@ console.log('\n[3] push 两条 → pull 取回');
   const w2 = makeWord({ en: 'give up', phonetic: '', example: '' });
   const pushed = await callApi({
     method: 'POST',
-    path: '/api/sync/push',
+    path: '/api/sync-push',
     headers: H(SPACE_A),
     body: {
       words: [w1, w2],
@@ -128,7 +128,7 @@ console.log('\n[3] push 两条 → pull 取回');
   check('push → 200', pushed.status === 200, `实际 ${pushed.status} ${pushed.text}`);
   check('applied = 3（2 词 + 1 来源）', pushed.json?.applied === 3, JSON.stringify(pushed.json));
 
-  const pulled = await callApi({ path: '/api/sync/pull', query: 'since=0', headers: H(SPACE_A) });
+  const pulled = await callApi({ path: '/api/sync-pull', query: 'since=0', headers: H(SPACE_A) });
   check('pull 取回 2 条词', pulled.json?.words?.length === 2, JSON.stringify(pulled.json?.words?.length));
   check('pull 取回 1 条来源', pulled.json?.sources?.length === 1);
   const back = pulled.json?.words?.find((w) => w.en === 'abandon');
@@ -141,11 +141,11 @@ console.log('\n[3] push 两条 → pull 取回');
 console.log('\n[4] 空间隔离（同一 id、同一内容也必须各自独立）');
 {
   const shared = makeWord({ en: 'shared-word' });
-  await callApi({ method: 'POST', path: '/api/sync/push', headers: H(SPACE_A), body: { words: [shared] } });
-  await callApi({ method: 'POST', path: '/api/sync/push', headers: H(SPACE_B), body: { words: [shared] } });
+  await callApi({ method: 'POST', path: '/api/sync-push', headers: H(SPACE_A), body: { words: [shared] } });
+  await callApi({ method: 'POST', path: '/api/sync-push', headers: H(SPACE_B), body: { words: [shared] } });
 
-  const a = await callApi({ path: '/api/sync/pull', query: 'since=0', headers: H(SPACE_A) });
-  const b = await callApi({ path: '/api/sync/pull', query: 'since=0', headers: H(SPACE_B) });
+  const a = await callApi({ path: '/api/sync-pull', query: 'since=0', headers: H(SPACE_A) });
+  const b = await callApi({ path: '/api/sync-pull', query: 'since=0', headers: H(SPACE_B) });
   check('A 空间 3 条（含同 id 的那条）', a.json?.words?.length === 3, `实际 ${a.json?.words?.length}`);
   check('B 空间 1 条', b.json?.words?.length === 1, `实际 ${b.json?.words?.length}`);
   const aCopy = a.json?.words?.find((w) => w.id === shared.id);
@@ -155,9 +155,9 @@ console.log('\n[4] 空间隔离（同一 id、同一内容也必须各自独立�
 
   // 改一个空间里那条词，另一个空间必须纹丝不动
   const changed = { ...shared, en: 'changed-in-A', updatedAt: shared.updatedAt + 1 };
-  await callApi({ method: 'POST', path: '/api/sync/push', headers: H(SPACE_A), body: { words: [changed] } });
-  const a2 = await callApi({ path: '/api/sync/pull', query: 'since=0', headers: H(SPACE_A) });
-  const b2 = await callApi({ path: '/api/sync/pull', query: 'since=0', headers: H(SPACE_B) });
+  await callApi({ method: 'POST', path: '/api/sync-push', headers: H(SPACE_A), body: { words: [changed] } });
+  const a2 = await callApi({ path: '/api/sync-pull', query: 'since=0', headers: H(SPACE_A) });
+  const b2 = await callApi({ path: '/api/sync-pull', query: 'since=0', headers: H(SPACE_B) });
   const aAfter = a2.json?.words?.find((w) => w.id === shared.id);
   const bAfter = b2.json?.words?.find((w) => w.id === shared.id);
   check('A 空间看到新内容', aAfter?.en === 'changed-in-A', String(aAfter?.en));
@@ -168,15 +168,15 @@ console.log('\n[4] 空间隔离（同一 id、同一内容也必须各自独立�
 console.log('\n[5] 批量上限 500 条');
 {
   const words = Array.from({ length: 600 }, () => makeWord());
-  const r = await callApi({ method: 'POST', path: '/api/sync/push', headers: H(SPACE_A), body: { words } });
+  const r = await callApi({ method: 'POST', path: '/api/sync-push', headers: H(SPACE_A), body: { words } });
   check('600 条 → 400', r.status === 400, `实际 ${r.status}`);
   check('提示含「单批不得超过 500 条」', String(r.json?.error ?? '').includes('单批不得超过 500 条'), r.text);
 
   const exactly = Array.from({ length: 500 }, () => makeWord());
-  const r500 = await callApi({ method: 'POST', path: '/api/sync/push', headers: H(SPACE_A), body: { words: exactly } });
+  const r500 = await callApi({ method: 'POST', path: '/api/sync-push', headers: H(SPACE_A), body: { words: exactly } });
   check('正好 500 条 → 200', r500.status === 200, `实际 ${r500.status}`);
 
-  const empty = await callApi({ method: 'POST', path: '/api/sync/push', headers: H(SPACE_A), body: { words: [] } });
+  const empty = await callApi({ method: 'POST', path: '/api/sync-push', headers: H(SPACE_A), body: { words: [] } });
   check('空数组 → 400', empty.status === 400, `实际 ${empty.status}`);
 }
 
@@ -184,16 +184,16 @@ console.log('\n[5] 批量上限 500 条');
 console.log('\n[6] 软删除（deleted=1 仍然能拉到）');
 {
   const w = makeWord({ en: 'toBeDeleted' });
-  await callApi({ method: 'POST', path: '/api/sync/push', headers: H(SPACE_B), body: { words: [w] } });
+  await callApi({ method: 'POST', path: '/api/sync-push', headers: H(SPACE_B), body: { words: [w] } });
   const later = Date.now() + 10;
   await callApi({
     method: 'POST',
-    path: '/api/sync/push',
+    path: '/api/sync-push',
     headers: H(SPACE_B),
     body: { words: [{ ...w, deleted: 1, updatedAt: later }] },
   });
 
-  const pulled = await callApi({ path: '/api/sync/pull', query: `since=${w.updatedAt}`, headers: H(SPACE_B) });
+  const pulled = await callApi({ path: '/api/sync-pull', query: `since=${w.updatedAt}`, headers: H(SPACE_B) });
   const hit = pulled.json.words.find((x) => x.id === w.id);
   check('删除记录仍在 pull 结果里', Boolean(hit), JSON.stringify(pulled.json.words.map((x) => x.deleted)));
   check('deleted = 1', hit?.deleted === 1, String(hit?.deleted));
@@ -206,13 +206,13 @@ console.log('\n[7] 分批推送 1200 条（前端每批 ≤ 500）');
   let applied = 0;
   for (let i = 0; i < all.length; i += 500) {
     const batch = all.slice(i, i + 500);
-    const r = await callApi({ method: 'POST', path: '/api/sync/push', headers: H(SPACE_B), body: { words: batch } });
+    const r = await callApi({ method: 'POST', path: '/api/sync-push', headers: H(SPACE_B), body: { words: batch } });
     if (r.status !== 200) throw new Error(`第 ${i / 500 + 1} 批失败：${r.status} ${r.text}`);
     applied += r.json.applied;
   }
   check('3 批全部成功，共写入 1200 条', applied === 1200, `实际 ${applied}`);
 
-  const pulled = await callApi({ path: '/api/sync/pull', query: 'since=0', headers: H(SPACE_B) });
+  const pulled = await callApi({ path: '/api/sync-pull', query: 'since=0', headers: H(SPACE_B) });
   // B 空间此时还有[6] 的软删除记录和[4] 的那条，所以是 1200 + 2
   check('pull 拉到 1200 + 已存在的 2 条', pulled.json.words.length === 1202, `实际 ${pulled.json.words.length}`);
   check('本次分批推送的 1200 条都在', pulled.json.words.filter((w) => all.some((x) => x.id === w.id)).length === 1200);
@@ -225,8 +225,8 @@ console.log('\n[8] since 增量');
   const mid = Date.now();
   await new Promise((r) => setTimeout(r, 5));
   const fresh = makeWord({ en: 'freshChange' });
-  await callApi({ method: 'POST', path: '/api/sync/push', headers: H(SPACE_B), body: { words: [fresh] } });
-  const pulled = await callApi({ path: '/api/sync/pull', query: `since=${mid}`, headers: H(SPACE_B) });
+  await callApi({ method: 'POST', path: '/api/sync-push', headers: H(SPACE_B), body: { words: [fresh] } });
+  const pulled = await callApi({ path: '/api/sync-pull', query: `since=${mid}`, headers: H(SPACE_B) });
   check('since 之后只回新变更', pulled.json.words.length === 1 && pulled.json.words[0].en === 'freshChange', `实际 ${pulled.json.words.length}`);
 }
 
@@ -234,11 +234,11 @@ console.log('\n[8] since 增量');
 console.log('\n[9] 后写覆盖 / 旧写算冲突');
 {
   const w = makeWord({ en: 'conflict-word' });
-  await callApi({ method: 'POST', path: '/api/sync/push', headers: H(SPACE_A), body: { words: [w] } });
+  await callApi({ method: 'POST', path: '/api/sync-push', headers: H(SPACE_A), body: { words: [w] } });
 
   const older = await callApi({
     method: 'POST',
-    path: '/api/sync/push',
+    path: '/api/sync-push',
     headers: H(SPACE_A),
     body: { words: [{ ...w, en: 'stale-version', updatedAt: w.updatedAt - 5000 }] },
   });
@@ -246,13 +246,13 @@ console.log('\n[9] 后写覆盖 / 旧写算冲突');
 
   const newer = await callApi({
     method: 'POST',
-    path: '/api/sync/push',
+    path: '/api/sync-push',
     headers: H(SPACE_A),
     body: { words: [{ ...w, en: 'newer-version', updatedAt: w.updatedAt + 5000 }] },
   });
   check('更新的版本覆盖成功', newer.json?.applied === 1, JSON.stringify(newer.json));
 
-  const pulled = await callApi({ path: '/api/sync/pull', query: 'since=0', headers: H(SPACE_A) });
+  const pulled = await callApi({ path: '/api/sync-pull', query: 'since=0', headers: H(SPACE_A) });
   const hit = pulled.json.words.find((x) => x.id === w.id);
   check('库里存的是新版', hit?.en === 'newer-version', String(hit?.en));
 }
@@ -263,7 +263,7 @@ console.log('\n[10] 脏数据被跳过而不是整批失败');
   const good = makeWord();
   const r = await callApi({
     method: 'POST',
-    path: '/api/sync/push',
+    path: '/api/sync-push',
     headers: H(SPACE_A),
     body: { words: [good, { en: '没有 id' }, null, 42] },
   });
@@ -274,13 +274,13 @@ console.log('\n[10] 脏数据被跳过而不是整批失败');
 // ---------------------------------------------------------------- CORS
 console.log('\n[11] CORS 与预检');
 {
-  const pre = await callApi({ method: 'OPTIONS', path: '/api/sync/pull', headers: { origin: 'http://localhost:5173' } });
+  const pre = await callApi({ method: 'OPTIONS', path: '/api/sync-pull', headers: { origin: 'http://localhost:5173' } });
   check('OPTIONS → 204', pre.status === 204, `实际 ${pre.status}`);
   check('Allow-Headers 含 X-Space-Key', String(pre.headers['access-control-allow-headers']).includes('X-Space-Key'));
   check('Allow-Methods 含 GET, POST, OPTIONS', pre.headers['access-control-allow-methods'] === 'GET, POST, OPTIONS');
   check('Allow-Origin 是具体来源而不是 *', pre.headers['access-control-allow-origin'] === 'http://localhost:5173');
 
-  const post = await callApi({ method: 'POST', path: '/api/sync/push', headers: { 'content-type': 'application/json' }, body: 1 });
+  const post = await callApi({ method: 'POST', path: '/api/sync-push', headers: { 'content-type': 'application/json' }, body: 1 });
   check('方法不对时也回 CORS 头（否则前端只看到跨域错误）', post.headers['access-control-allow-origin'] === undefined || true);
   check('body 不是对象 → 400', post.status === 400 || post.status === 401, `实际 ${post.status}`);
 }
@@ -297,10 +297,10 @@ console.log('\n[12] Node 服务壳（给 Vite 代理用）');
     check('HTTP 访问 /api/health → 200', health.status === 200, String(health.status));
     check('返回 db=connected', body.db === 'connected', JSON.stringify(body));
 
-    const noKey = await fetch(`http://127.0.0.1:${PORT}/api/sync/pull?since=0`);
+    const noKey = await fetch(`http://127.0.0.1:${PORT}/api/sync-pull?since=0`);
     check('HTTP 访问 pull 无头 → 401', noKey.status === 401, String(noKey.status));
 
-    const withKey = await fetch(`http://127.0.0.1:${PORT}/api/sync/pull?since=0`, { headers: { 'x-space-key': SPACE_A } });
+    const withKey = await fetch(`http://127.0.0.1:${PORT}/api/sync-pull?since=0`, { headers: { 'x-space-key': SPACE_A } });
     const pullBody = await withKey.json();
     check('HTTP 带 spaceKey → 200 且有数据', withKey.status === 200 && Array.isArray(pullBody.words) && pullBody.words.length > 0);
   } finally {
@@ -329,11 +329,11 @@ console.log('\n[13] 表结构：复合主键（space_key, id）+ 重复推送幂
   check('sources 主键是 (space_key, id)', pkS.join(',') === 'space_key,id', pkS.join(','));
 
   const w = makeWord({ en: 'repeated' });
-  const first = await callApi({ method: 'POST', path: '/api/sync/push', headers: H(SPACE_A), body: { words: [w] } });
-  const again = await callApi({ method: 'POST', path: '/api/sync/push', headers: H(SPACE_A), body: { words: [w] } });
+  const first = await callApi({ method: 'POST', path: '/api/sync-push', headers: H(SPACE_A), body: { words: [w] } });
+  const again = await callApi({ method: 'POST', path: '/api/sync-push', headers: H(SPACE_A), body: { words: [w] } });
   check('第一次推送 applied=1', first.json?.applied === 1, JSON.stringify(first.json));
   check('重复推送同版本不算冲突（conflicts=0）', again.json?.conflicts === 0, JSON.stringify(again.json));
-  const afterRepeat = await callApi({ path: '/api/sync/pull', query: 'since=0', headers: H(SPACE_A) });
+  const afterRepeat = await callApi({ path: '/api/sync-pull', query: 'since=0', headers: H(SPACE_A) });
   const repeated = afterRepeat.json.words.filter((x) => x.id === w.id);
   check('库里同 id 仍然只有一条（幂等，没写重）', repeated.length === 1, `实际 ${repeated.length}`);
   check('内容没被改坏', repeated[0]?.en === 'repeated' && repeated[0]?.updated_at === w.updatedAt);

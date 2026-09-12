@@ -1,5 +1,8 @@
 /**
- * POST /api/sync/push
+ * POST /api/sync-push
+ *
+ * 注意路由名：Vercel 按文件名映射路由，实际路径是 `/api/sync-push`（连字符），
+ * 不是 `/api/sync/push`。
  *
  * body: `{ words?: WordInput[], sources?: SourceInput[] }`
  *

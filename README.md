@@ -192,11 +192,17 @@ await __selftest.data()  // IndexedDB 读写
 api/                       后端（Vercel Serverless Functions，和前端共用 package.json）
 ├─ _lib/                   db（Turso 单例 + 建表）/ spaceAuth / cors / http / limits / validate
 ├─ health.ts               GET  /api/health
-├─ sync-pull.ts            GET  /api/sync/pull?since=<ts>
-├─ sync-push.ts            POST /api/sync/push（单批 ≤ 500 条）
-├─ sync-purge.ts           POST /api/sync/purge（清空当前数据空间）
+├─ sync-pull.ts            GET  /api/sync-pull?since=<ts>
+├─ sync-push.ts            POST /api/sync-push（单批 ≤ 500 条）
+├─ sync-purge.ts           POST /api/sync-purge（清空当前数据空间）
 ├─ ai-proxy.ts             POST /api/ai-proxy（无状态转发，不连数据库）
 └─ _dev/                   本地直调与自检脚本（不会被部署）
+
+⚠️ 路由名 = 文件名（连字符，**不是** /api/sync/pull）：
+   Vercel 把 api/ 下的文件名直接映射成路由，写错斜杠会 404。
+   路径只在 src/dao/syncServer.ts 的 API_ROUTES 里定义一处，
+   由 npm run test:build 的护栏校验「路由表 ⇄ api/ 真实文件」一一对应，
+   再用 npm run test:live 打线上真实 URL 验证。
 src/
 ├─ main.ts / App.ts        启动、顶栏路由、footer、错误边界装配
 ├─ core/                   types / config / db / model / parser / merge / priority / layout / pick
