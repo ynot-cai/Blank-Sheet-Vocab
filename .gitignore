@@ -12,3 +12,5 @@ dist
 .dev.vars
 tsconfig.tsbuildinfo
 *.tsbuildinfo
+.gh-login.log
+.gh-login.done
