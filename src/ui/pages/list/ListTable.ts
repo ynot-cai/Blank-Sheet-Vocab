@@ -37,9 +37,10 @@ const STATUS_LABEL: Record<WordStatus, string> = {
  * 渲染单词表格。
  * @param items 当前页的词
  * @param sources 来源列表（显示名字用）
- * @param selected 已选中的 id 集合
+ * @param selected 已选中的 id 集合（可能包含**不在当前页**的，因为支持跨页全选）
  * @param handlers 操作回调
  * @param failCap 未通过次数上限（达到上限用红字标出）
+ * @param selectState 选中统计，用来决定表头勾选框的勾选/半选状态
  */
 export function renderListTable(
   items: Word[],
@@ -47,6 +48,7 @@ export function renderListTable(
   selected: Set<string>,
   handlers: ListTableHandlers,
   failCap: number,
+  selectState: { selectedCount: number; matchedCount: number },
 ): HTMLElement {
   const sourceName = (id: string): { name: string; priority: number } => {
     const hit = sources.find((s) => s.id === id);
@@ -54,7 +56,11 @@ export function renderListTable(
   };
 
   const table = h('table', { class: 'table list-table' });
-  const headCheck = h('input', { type: 'checkbox', title: '全选/反选本页' });
+  const headCheck = h('input', { type: 'checkbox', title: '全选/取消整个筛选结果（跨页）' });
+  // 选中数 ≥ 筛选结果数 = 全选；选中数 > 0 但不满 = 半选（indeterminate）
+  const fullySelected = selectState.matchedCount > 0 && selectState.selectedCount >= selectState.matchedCount;
+  headCheck.checked = fullySelected;
+  headCheck.indeterminate = !fullySelected && selectState.selectedCount > 0;
   headCheck.addEventListener('change', () => handlers.onToggleSelectAll(headCheck.checked));
 
   table.appendChild(

@@ -34,6 +34,14 @@ export function renderListPage(): HTMLElement {
   let state: ListFilterState = defaultFilterState();
   let items: Word[] = [];
   let total = 0;
+  /**
+   * 当前筛选结果的**全部** id（跨页）。
+   *
+   * ★ 存在的理由：原来「全选」只选当前页那 ≤200 条，翻页还会把选中清空，
+   *   于是批量操作的上限就是 200 条。现在全选作用于整个筛选结果，
+   *   选中状态也不再随翻页丢失，批量编辑没有数量上限。
+   */
+  let matchedIds: string[] = [];
   let stats: WordStats = { total: 0, unlearned: 0, learning: 0, learned: 0, chopped: 0 };
   let sources: Source[] = [];
   const selected = new Set<string>();
@@ -76,6 +84,11 @@ export function renderListPage(): HTMLElement {
         () => void recompute(),
         { variant: 'primary' },
       ),
+      button(
+        '清空全部单词',
+        () => void clearAllWords(),
+        { variant: 'danger', title: '把词库里的单词全部删掉，重新开始' },
+      ),
       jsonPicker,
     ),
   );
@@ -92,29 +105,47 @@ export function renderListPage(): HTMLElement {
   page.appendChild(pagerBox);
   page.appendChild(batchBox);
 
+  /** 由当前筛选状态构造查询条件（翻页/改每页条数只动 page/pageSize） */
+  const buildQuery = (): WordQuery => ({
+    keyword: state.keyword || undefined,
+    status: effectiveStatuses(state),
+    sourceId: state.sourceId || undefined,
+    needSpell: state.needSpellOnly ? true : undefined,
+    minFailCount: state.minFailCount ?? undefined,
+    minPriority: state.minPriority ?? undefined,
+    sort: state.sort,
+    order: state.order,
+    page: state.page,
+    pageSize: state.pageSize,
+  });
+
   /** 加载数据并重画 */
   const load = async (): Promise<void> => {
     sources = await dao.sources.list();
-    const query: WordQuery = {
-      keyword: state.keyword || undefined,
-      status: effectiveStatuses(state),
-      sourceId: state.sourceId || undefined,
-      needSpell: state.needSpellOnly ? true : undefined,
-      minFailCount: state.minFailCount ?? undefined,
-      minPriority: state.minPriority ?? undefined,
-      sort: state.sort,
-      order: state.order,
-      page: state.page,
-      pageSize: state.pageSize,
-    };
-    const [res, st] = await Promise.all([dao.words.query(query), dao.words.stats()]);
+    const query = buildQuery();
+    const [res, st, matched, alive] = await Promise.all([
+      dao.words.query(query),
+      dao.words.stats(),
+      dao.words.queryIds(query),
+      // 不筛选、不分页的一遍，只为拿到「库里还有哪些词」
+      dao.words.queryIds({ page: 1, pageSize: 1 }),
+    ]);
     items = res.items;
     total = res.total;
+    matchedIds = matched.ids;
     stats = st;
     state.page = Math.min(state.page, Math.max(1, Math.ceil(total / state.pageSize)));
-    // 清掉不在当前页上的选中项，避免误操作
-    const pageIds = new Set(items.map((w) => w.id));
-    for (const id of Array.from(selected)) if (!pageIds.has(id)) selected.delete(id);
+
+    // ★ 这里刻意**不再**清理「不在当前页上的选中项」。
+    //   以前会清，是为了防止用户翻页后误操作看不见的词；
+    //   但那样一来跨页全选就没意义了（翻一页选中就没了）。
+    //   现在的取舍：保留跨页选中，由批量条的「已选 N 个」把数量说清楚。
+    //
+    // 注意只摘掉**库里已经不存在**的 id（词被删了），
+    // 不能用「当前筛选结果」去摘——那样换个筛选条件就会把之前选的悄悄清掉。
+    const aliveIds = new Set(alive.ids);
+    for (const id of Array.from(selected)) if (!aliveIds.has(id)) selected.delete(id);
+
     renderAll();
   };
 
@@ -170,8 +201,12 @@ export function renderListPage(): HTMLElement {
     );
 
     // 桌面渲染表格、手机渲染卡片流；用 CSS 媒体查询二选一显示（见 global.css）
+    // 第 5 个参数传「整个筛选结果」的全选态，让表头勾选框能显示部分选中（indeterminate）
     tableBox.replaceChildren(
-      renderListTable(items, sources, selected, handlers, failCap),
+      renderListTable(items, sources, selected, handlers, failCap, {
+        selectedCount: selected.size,
+        matchedCount: matchedIds.length,
+      }),
       renderListCards(items, sources, handlers),
     );
 
@@ -197,11 +232,13 @@ export function renderListPage(): HTMLElement {
       batchBox.appendChild(
         renderBatchBar({
           count: selected.size,
+          matchedCount: matchedIds.length,
           onChop: () => void batchStatus('chopped'),
           onRevive: () => void batchStatus(null),
           onSpell: (value) => void batchAttrs({ needSpell: value }),
           onUnlearned: () => void batchStatus('unlearned'),
           onDelete: () => void batchDelete(),
+          onSelectAllMatched: () => selectAllMatched(),
           onClear: () => {
             selected.clear();
             renderAll();
@@ -211,6 +248,16 @@ export function renderListPage(): HTMLElement {
     }
   };
 
+  /**
+   * 把当前筛选结果的**全部**词选上（跨页，不设数量上限）。
+   * 几千个词也会逐个加进 Set，但不会去建 DOM，所以不会卡。
+   */
+  const selectAllMatched = (): void => {
+    for (const id of matchedIds) selected.add(id);
+    renderAll();
+    toastOk(`已选中当前筛选结果的全部 ${matchedIds.length} 个词`);
+  };
+
   // —— 各项操作 ——
   const handlers = {
     onToggleSelect: (id: string, checked: boolean): void => {
@@ -218,9 +265,10 @@ export function renderListPage(): HTMLElement {
       else selected.delete(id);
       renderAll();
     },
+    // 表头勾选框 = 全选/取消**整个筛选结果**（跨页），不再只是当前页
     onToggleSelectAll: (checked: boolean): void => {
-      selected.clear();
-      if (checked) for (const w of items) selected.add(w.id);
+      if (checked) for (const id of matchedIds) selected.add(id);
+      else selected.clear();
       renderAll();
     },
     onOpenDetail: (word: Word): void => {
@@ -356,6 +404,38 @@ export function renderListPage(): HTMLElement {
     const entries = all.map((w) => ({ id: w.id, priority: computePriority(w, settings) }));
     await dao.words.applyPriorities(entries);
     toastOk(`已重算 ${entries.length} 个词的优先度`);
+    await load();
+  };
+
+  /**
+   * 清空全部单词（把词库恢复成空白，相当于「初始化」）。
+   *
+   * 两个刻意的设计：
+   *   1. 要求手动输入「删除」才真的执行——这是不可撤销的操作，
+   *      和设置页那个「清空所有数据」用同一套确认方式，保持一致；
+   *   2. **来源（词库）保留不动**。预设导入后来源带着优先级，
+   *      那是用户特意设的（预设确认框里能改），清词时一起清掉等于白设一遍。
+   *      来源不占多少地方，留着下次导入就直接复用。
+   */
+  const clearAllWords = async (): Promise<void> => {
+    const all = await dao.words.getAll();
+    if (all.length === 0) {
+      toastWarn('词库本来就是空的');
+      return;
+    }
+    const typed = await promptModal(
+      '清空全部单词',
+      `这会删掉词库里的全部 ${all.length} 个单词（含学习记录、义项编辑），不可撤销。` +
+        '来源（词库）会保留，方便你重新导入。建议先「导出备份」。\n\n请输入「删除」两个字以确认：',
+    );
+    if (typed === null) return;
+    if (typed.trim() !== '删除') {
+      toastWarn('输入不正确，已取消');
+      return;
+    }
+    await dao.words.clearAll();
+    selected.clear();
+    toastOk(`已清空 ${all.length} 个单词`);
     await load();
   };
 

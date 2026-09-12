@@ -214,33 +214,62 @@ export async function setStatusMany(ids: string[], status: WordStatus | null): P
 }
 
 /**
+ * 判断一个词是否符合查询条件（只看筛选，不看排序与分页）。
+ *
+ * ★ 抽出来是必须的：`query()` 和 `queryIds()` 都要用同一套筛选。
+ *   两处各写一遍的话，出现分歧时表现是
+ *   「页面显示 3000 条，一键全选却只选中 2800 条」——这种错很难发现，
+ *   而且用户做批量操作时根本不会去核对条数。
+ *
+ * @param w 词条
+ * @param q 查询条件
+ */
+function matchesQuery(w: Word, q: WordQuery): boolean {
+  if (q.status && q.status.length > 0 && !q.status.includes(w.status)) return false;
+  if (q.sourceId && w.sourceId !== q.sourceId) return false;
+  if (q.needSpell === true && !w.attrs.needSpell) return false;
+  if (q.needSpell === false && w.attrs.needSpell) return false;
+  if (typeof q.minFailCount === 'number' && w.attrs.failCount < q.minFailCount) return false;
+  if (typeof q.minPriority === 'number' && w.attrs.reviewPriority < q.minPriority) return false;
+  if (q.keyword) {
+    const keyword = normalizeForCompare(q.keyword);
+    const haystack = [w.en, ...w.senses.flatMap((s) => [s.text, ...s.aliases])]
+      .map(normalizeForCompare)
+      .join('\u0000');
+    if (!haystack.includes(keyword)) return false;
+  }
+  return true;
+}
+
+/**
+ * 只查「符合条件的词 id」，不分页。
+ *
+ * ★ 为什么需要它：列表页的「全选」原来只选当前页（≤200 条），
+ *   想做「把几千个词一次性批量改」根本做不到。
+ *   这个函数让页面能拿到**整个筛选结果**的 id 集合，从而支持跨页全选。
+ *
+ * 与 `query()` 共用同一套筛选逻辑（下面抽成了 `matchesQuery`），
+ * 避免两处判断不一致导致「看到的条数」和「选中的条数」对不上。
+ *
+ * @param q 查询条件（page / pageSize / sort / order 会被忽略）
+ */
+export async function queryIds(q: WordQuery): Promise<{ total: number; ids: string[] }> {
+  const all = await listAlive();
+  const ids = all.filter((w) => matchesQuery(w, q)).map((w) => w.id);
+  return { total: ids.length, ids };
+}
+
+/**
  * 查询：筛选 + 排序 + 分页（全部在内存里算）。
  * @param q 查询条件
  */
 export async function query(q: WordQuery): Promise<{ total: number; items: Word[] }> {
   const all = await listAlive();
-  const keyword = q.keyword ? normalizeForCompare(q.keyword) : '';
-  const statuses = q.status && q.status.length > 0 ? new Set<WordStatus>(q.status) : null;
-
-  let list = all.filter((w) => {
-    if (statuses && !statuses.has(w.status)) return false;
-    if (q.sourceId && w.sourceId !== q.sourceId) return false;
-    if (q.needSpell === true && !w.attrs.needSpell) return false;
-    if (q.needSpell === false && w.attrs.needSpell) return false;
-    if (typeof q.minFailCount === 'number' && w.attrs.failCount < q.minFailCount) return false;
-    if (typeof q.minPriority === 'number' && w.attrs.reviewPriority < q.minPriority) return false;
-    if (keyword) {
-      const haystack = [w.en, ...w.senses.flatMap((s) => [s.text, ...s.aliases])]
-        .map(normalizeForCompare)
-        .join('\u0000');
-      if (!haystack.includes(keyword)) return false;
-    }
-    return true;
-  });
+  const list = all.filter((w) => matchesQuery(w, q));
 
   const sort = q.sort ?? 'createdAt';
   const dir = q.order === 'asc' ? 1 : -1;
-  list = list.sort((a, b) => {
+  list.sort((a, b) => {
     if (sort === 'en') return a.en.toLowerCase().localeCompare(b.en.toLowerCase()) * dir;
     if (sort === 'learnOrder') {
       // learnOrder 为 null 的排最后（不论升降序）

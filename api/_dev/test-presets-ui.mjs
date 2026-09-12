@@ -156,7 +156,7 @@ try {
   // —— [3] 真点一下按钮，走完整条链路 ——
   // 这一步才是这个文件存在的理由：验证「点击 → 下载预设 → 建来源 → 进合并页」真的通。
   // 前面的 [1][2] 只证明「文件在」和「按钮画出来了」，证明不了接线是对的。
-  console.log('\n[3] 点击预设按钮，走完整条导入链路');
+  console.log('\n[3] 点「考研」→ 确认框 → 走完整条导入链路');
   const session = await openSession(CDP_PORT, `${ORIGIN}/#/import`);
   try {
     // 找一个预设按钮并点它。用 textContent 匹配，避免依赖 DOM 结构。
@@ -169,7 +169,48 @@ try {
     })()`);
     check('页面上找得到「考研」预设按钮并点到了', clicked.ok === true, JSON.stringify(clicked.buttons ?? clicked));
 
-    // 等它下载 + 建来源 + 跳转（考研最小，只有 295 词，够验证链路）
+    // —— [3a] 先弹确认框（不是直接导入），且里面有可改的优先度 ——
+    let modal = null;
+    for (let i = 0; i < 40; i += 1) {
+      await new Promise((r) => setTimeout(r, 200));
+      modal = await session.evaluate(`(() => {
+        const m = document.querySelector('.modal');
+        if (!m) return null;
+        return {
+          title: m.querySelector('.modal-title')?.textContent ?? '',
+          text: m.querySelector('.modal-body')?.textContent ?? '',
+          numbers: [...m.querySelectorAll('input[type=number]')].map((i) => ({ value: i.value, min: i.min, max: i.max })),
+          buttons: [...m.querySelectorAll('button')].map((b) => b.textContent.trim()),
+        };
+      })()`);
+      if (modal) break;
+    }
+    check('点预设后弹出了确认框', modal !== null);
+    check('确认框标题写着档位', (modal?.title ?? '').includes('考研'), modal?.title);
+    check('确认框里有可改的优先度输入框', (modal?.numbers ?? []).length === 1, JSON.stringify(modal?.numbers));
+    check('优先度默认是该档位默认值 4', modal?.numbers?.[0]?.value === '4', JSON.stringify(modal?.numbers?.[0]));
+    check('确认框写了词数', (modal?.text ?? '').includes('295 词'), (modal?.text ?? '').slice(0, 90));
+    check(
+      '确认框有「导入」和「取消」',
+      (modal?.buttons ?? []).includes('导入') && (modal?.buttons ?? []).includes('取消'),
+      JSON.stringify(modal?.buttons),
+    );
+    check('确认前没有跳走（被确认框拦住）', !(await session.evaluate('location.hash')).includes('/merge'));
+
+    // —— [3b] 把优先度改成 7，再点导入 ——
+    const submitted = await session.evaluate(`(() => {
+      const m = document.querySelector('.modal');
+      if (!m) return { ok: false, why: '没有弹窗' };
+      const input = m.querySelector('input[type=number]');
+      input.value = '7';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      const btn = [...m.querySelectorAll('button')].find((b) => b.textContent.trim() === '导入');
+      if (!btn) return { ok: false, why: '没有导入按钮' };
+      btn.click();
+      return { ok: true };
+    })()`);
+    check('能把优先度改成 7 并点「导入」', submitted.ok === true, JSON.stringify(submitted));
+
     let reachedMerge = false;
     for (let i = 0; i < 40; i += 1) {
       await new Promise((r) => setTimeout(r, 250));
@@ -179,7 +220,7 @@ try {
         break;
       }
     }
-    check('点完按钮自动跳到了合并确认页', reachedMerge);
+    check('确认后跳到了合并确认页', reachedMerge);
 
     if (reachedMerge) {
       // 合并页必须真的把 295 个词渲染成卡片，并显示正确的统计
@@ -241,9 +282,136 @@ try {
       }
 
       check('IndexedDB 里真的写进了 295 个词', stored?.words === 295, JSON.stringify(stored));
-      check('建出了「考研词汇」来源（优先级 4）', (stored?.sources ?? []).includes('考研词汇/4'), JSON.stringify(stored?.sources));
+      // ★ 关键：确认框里改的优先度必须真的落库。
+      //   只验「框里能输入」是不够的——输入框的值没被读走、或者被默认值覆盖，
+      //   界面看起来都完全正常。这里按实际存进去的优先级断言。
+      check(
+        '确认框里填的优先级 7 真的落到了来源上',
+        (stored?.sources ?? []).includes('考研词汇/7'),
+        `实际来源：${JSON.stringify(stored?.sources)}`,
+      );
       check('词条带着义项一起入库', (stored?.sample ?? []).every((s) => s.includes('|') && s.split('|')[1].length > 0), JSON.stringify(stored?.sample));
       check('入库后跳到了列表页', (stored?.hash ?? '').includes('/list'), stored?.hash);
+
+      // —— [5] 列表页：批量编辑不设数量上限 + 清空全部单词按钮 ——
+      console.log('\n[5] 列表页：跨页全选与清空按钮');
+      const listState = await session.evaluate(`(() => {
+        const btns = [...document.querySelectorAll('button')].map((b) => b.textContent.trim());
+        return {
+          title: document.querySelector('.page-title')?.textContent ?? '',
+          hasClearAll: btns.some((t) => t === '清空全部单词'),
+          hasSelectAllHead: !!document.querySelector('.list-table thead input[type=checkbox]'),
+          stats: document.querySelector('.stats-bar')?.textContent ?? '',
+        };
+      })()`);
+      check('在列表页', listState.title.includes('单词列表'), listState.title);
+      check('有「清空全部单词」按钮', listState.hasClearAll, JSON.stringify(listState));
+      check('表头有全选框', listState.hasSelectAllHead);
+      check('统计条显示总词数 295', listState.stats.includes('295'), listState.stats);
+
+      // 点表头全选框 → 应该选中**全部 295 个**（而不是当前页）
+      await session.evaluate(`(() => {
+        const box = document.querySelector('.list-table thead input[type=checkbox]');
+        if (box) { box.checked = true; box.dispatchEvent(new Event('change', { bubbles: true })); }
+      })()`);
+      await new Promise((r) => setTimeout(r, 800));
+      const batchState = await session.evaluate(`(() => {
+        const bar = document.querySelector('.batch-bar');
+        return {
+          count: bar?.querySelector('.batch-count')?.textContent ?? '',
+          buttons: [...(bar?.querySelectorAll('button') ?? [])].map((b) => b.textContent.trim()),
+        };
+      })()`);
+      check('表头全选选中了全部 295 个（跨页，不是只选当前页）', batchState.count.includes('295'), batchState.count);
+      check('批量条出现了「批量设为未背」', batchState.buttons.includes('批量设为未背'), JSON.stringify(batchState.buttons));
+
+      // 真正跑一次批量操作，确认 295 个都被处理
+      await session.evaluate(`(() => {
+        const b = [...document.querySelectorAll('.batch-bar button')].find((x) => x.textContent.trim() === '批量设为未背');
+        if (b) b.click();
+      })()`);
+      await new Promise((r) => setTimeout(r, 1500));
+      const afterBatch = await session.evaluate(`(async () => {
+        const req = indexedDB.open('blank-sheet-vocab');
+        const db = await new Promise((res, rej) => { req.onsuccess = () => res(req.result); req.onerror = () => rej(req.error); });
+        const words = await new Promise((res, rej) => {
+          const r = db.transaction('words', 'readonly').objectStore('words').getAll();
+          r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+        });
+        return { total: words.length, unlearned: words.filter((w) => w.status === 'unlearned').length };
+      })()`);
+      check('批量操作作用到了全部 295 个词', afterBatch.unlearned === 295, JSON.stringify(afterBatch));
+
+      // —— [6] 清空全部单词（破坏性操作，要验「防误触」和「真的清干净」） ——
+      console.log('\n[6] 清空全部单词');
+      await session.evaluate(`(() => {
+        const b = [...document.querySelectorAll('button')].find((x) => x.textContent.trim() === '清空全部单词');
+        if (b) b.click();
+      })()`);
+      await new Promise((r) => setTimeout(r, 500));
+
+      // 6a. 必须先弹确认框，且要求输入「删除」
+      const clearModal = await session.evaluate(`(() => {
+        const m = document.querySelector('.modal');
+        return m ? { title: m.querySelector('.modal-title')?.textContent ?? '', text: m.querySelector('.modal-body')?.textContent ?? '' } : null;
+      })()`);
+      check('点「清空全部单词」先弹确认框', clearModal !== null);
+      check('确认框要求输入「删除」', (clearModal?.text ?? '').includes('删除'), (clearModal?.text ?? '').slice(0, 80));
+
+      // 6b. 先输错一次，必须**不能**清掉任何东西（这是防误触的关键）
+      await session.evaluate(`(() => {
+        const m = document.querySelector('.modal');
+        const input = m.querySelector('input[type=text]');
+        input.value = '删';
+        const ok = [...m.querySelectorAll('button')].find((b) => b.textContent.trim() === '确定');
+        if (ok) ok.click();
+      })()`);
+      await new Promise((r) => setTimeout(r, 800));
+      const afterWrong = await session.evaluate(`(async () => {
+        const req = indexedDB.open('blank-sheet-vocab');
+        const db = await new Promise((res, rej) => { req.onsuccess = () => res(req.result); req.onerror = () => rej(req.error); });
+        return await new Promise((res, rej) => {
+          const r = db.transaction('words', 'readonly').objectStore('words').count();
+          r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+        });
+      })()`);
+      check('输入不正确时一个词都没删（防误触生效）', afterWrong === 295, `words=${afterWrong}`);
+
+      // 6c. 输对「删除」，这次应该真的清空
+      await session.evaluate(`(() => {
+        const b = [...document.querySelectorAll('button')].find((x) => x.textContent.trim() === '清空全部单词');
+        if (b) b.click();
+      })()`);
+      await new Promise((r) => setTimeout(r, 400));
+      await session.evaluate(`(() => {
+        const m = document.querySelector('.modal');
+        const input = m.querySelector('input[type=text]');
+        input.value = '删除';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        const ok = [...m.querySelectorAll('button')].find((b) => b.textContent.trim() === '确定');
+        if (ok) ok.click();
+      })()`);
+      await new Promise((r) => setTimeout(r, 1500));
+
+      const afterClear = await session.evaluate(`(async () => {
+        const req = indexedDB.open('blank-sheet-vocab');
+        const db = await new Promise((res, rej) => { req.onsuccess = () => res(req.result); req.onerror = () => rej(req.error); });
+        const readAll = (st) => new Promise((res, rej) => {
+          const r = db.transaction(st, 'readonly').objectStore(st).getAll();
+          r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+        });
+        const words = await readAll('words');
+        const sources = await readAll('sources');
+        return {
+          words: words.length,
+          sources: sources.map((s) => s.name + '/' + s.priority),
+          statText: document.querySelector('.stats-bar')?.textContent ?? '',
+        };
+      })()`);
+      check('单词真的全清掉了', afterClear.words === 0, `words=${afterClear.words}`);
+      // 来源要保留：优先级是用户特意设的，清词时一起清掉等于白设
+      check('来源保留下来了（含刚设的优先级 7）', afterClear.sources.includes('考研词汇/7'), JSON.stringify(afterClear.sources));
+      check('界面统计跟着归零', afterClear.statText.includes('0'), afterClear.statText.slice(0, 60));
     }
   } finally {
     await session.close();

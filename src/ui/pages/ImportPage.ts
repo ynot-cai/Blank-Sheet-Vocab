@@ -13,6 +13,7 @@ import { toastError, toastOk, toastWarn } from '../components/Toast';
 import { navigate } from '../router';
 import { renderInputPanel } from './import/InputPanel';
 import { renderJobPanel } from './import/JobPanel';
+import { confirmPresetImport } from './import/PresetConfirm';
 
 /**
  * 录入页：预设词库 + 来源设置 + 输入方式 + 解析设置 + 分批解析（含断点续传）。
@@ -64,6 +65,9 @@ export function renderImportPage(): HTMLElement {
    * 直接把词条填进 ImportJob.results，复用 jobPanel（看进度）和合并确认页（逐词确认）。
    * 走的是和「粘贴文本→解析」完全相同的下游路径，只是跳过了「解析」这一步。
    *
+   * 导入前先弹确认框（可改优先度）：优先级决定已有词的义项会不会被覆盖，
+   * 而事后改来源优先级**不会**补做合并，所以必须给用户一个导入前改的机会。
+   *
    * @param tier 选中的档位
    */
   const importPreset = async (tier: PresetTier): Promise<void> => {
@@ -76,7 +80,19 @@ export function renderImportPage(): HTMLElement {
         return;
       }
 
-      const source = await dao.sources.ensureByName(tier.sourceName, tier.priority);
+      // 已存在的来源要先查出来：确认框里要显示「当前优先级」并作为输入框默认值
+      const existingList = await dao.sources.list();
+      const existing =
+        existingList.find((s) => s.name.trim().toLowerCase() === tier.sourceName.trim().toLowerCase()) ?? null;
+
+      const answer = await confirmPresetImport(tier, {
+        words: loaded.words.length,
+        senseCount: loaded.senseCount,
+        existing: existing ? { priority: existing.priority } : null,
+      });
+      if (!answer.confirmed) return;
+
+      const source = await dao.sources.ensureByName(tier.sourceName, answer.priority);
 
       // chunks 在预设预览流程里**不会被读取**——合并页只用 results。
       // 但 ImportJob 的类型要求它是数组，而且任务面板/续传横幅会显示「已完成 x/y 批」，
