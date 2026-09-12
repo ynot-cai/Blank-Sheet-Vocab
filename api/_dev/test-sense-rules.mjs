@@ -205,6 +205,98 @@ console.log('\n[8] 各写入路径都接到了拆包');
   check('model.ts 从 senseRules 取 normalizeAliases', read('src/core/model.ts').includes("from './senseRules'"));
 }
 
+// ─────────────────────────────────────────── [9] AI 重新分析：把结果盖回草稿
+console.log('\n[9] AI 重新分析（合并页的那个按钮）');
+{
+  const { applyReanalysis, draftsToSourceLines, REANALYZE_BATCH_SIZE } = await import('../../src/ui/pages/merge/reanalyze.ts');
+
+  /** 造一条草稿 */
+  const mkDraft = (en, senses) => ({
+    key: en,
+    en,
+    phonetic: '',
+    example: '',
+    senses: senses.map((t) => createSense(t)),
+    dropped: false,
+    hints: [],
+  });
+
+  // 9a. 预设形态：一条义项塞着整串原文 → AI 重排后变成规范的多义项
+  const presetLike = [mkDraft('access', ['v. 获取 n. 接近，入口'])];
+  const aiResult = [
+    {
+      en: 'access',
+      phonetic: '/ˈækses/',
+      example: '',
+      senses: [
+        { text: 'v. 获取', aliases: [] },
+        { text: 'n. 接近', aliases: ['入口'] },
+      ],
+    },
+  ];
+  const applied = applyReanalysis(presetLike, aiResult);
+  check('原来 1 个义项', presetLike[0].senses.length === 1);
+  check('AI 重排后变成 2 个义项', applied.drafts[0].senses.length === 2, String(applied.drafts[0].senses.length));
+  check('义项①是「v. 获取」', applied.drafts[0].senses[0].text === 'v. 获取');
+  check('义项②代表词「n. 接近」', applied.drafts[0].senses[1].text === 'n. 接近');
+  check('「入口」进了近义词而不是独立义项', applied.drafts[0].senses[1].aliases.includes('入口'), JSON.stringify(applied.drafts[0].senses[1].aliases));
+  check('统计 updated=1', applied.stat.updated === 1, JSON.stringify(applied.stat));
+  check('顺带补上了音标', applied.drafts[0].phonetic === '/ˈækses/', applied.drafts[0].phonetic);
+  check('不修改原数组（纯函数）', presetLike[0].senses.length === 1);
+
+  // 9b. AI 打包了近义词 → 也要被拆开（经 createSense）
+  const packed = applyReanalysis([mkDraft('grab', ['v. 抢先'])], [
+    { en: 'grab', phonetic: '', example: '', senses: [{ text: 'v. 抢先', aliases: ['抢占，抢夺'] }] },
+  ]);
+  check(
+    'AI 打包的近义词在重新分析路径里也被拆开',
+    JSON.stringify(packed.drafts[0].senses[0].aliases) === JSON.stringify(['抢占', '抢夺']),
+    JSON.stringify(packed.drafts[0].senses[0].aliases),
+  );
+  check('拆开后答「抢夺」判对', senseMatch('抢夺', packed.drafts[0].senses[0]) === true);
+
+  // 9c. AI 没返回的词必须**原样保留**，绝不能新建或清空
+  const partial = applyReanalysis([mkDraft('apple', ['n. 苹果']), mkDraft('banana', ['n. 香蕉'])], [
+    { en: 'apple', phonetic: '', example: '', senses: [{ text: 'n. 苹果', aliases: ['苹果树果实'] }] },
+  ]);
+  check('词数不变（不会因为 AI 漏返回就少词）', partial.drafts.length === 2, String(partial.drafts.length));
+  check('AI 没返回的 banana 保持原样', partial.drafts[1].senses[0].text === 'n. 香蕉', partial.drafts[1].senses[0].text);
+  check('统计 skipped=1', partial.stat.skipped === 1, JSON.stringify(partial.stat));
+
+  // 9d. en 归一化配对：AI 改大小写/去尾点也要能配上
+  const fuzzy = applyReanalysis([mkDraft('ETC.', ['abbr. 等等'])], [
+    { en: 'etc', phonetic: '', example: '', senses: [{ text: 'abbr. 等等', aliases: ['及其它'] }] },
+  ]);
+  check('「ETC.」能配上 AI 返回的「etc」', fuzzy.stat.updated === 1, JSON.stringify(fuzzy.stat));
+  check('配对成功后近义词写进去了', fuzzy.drafts[0].senses[0].aliases.includes('及其它'));
+
+  // 9e. AI 返回空义项 → 保持原样，不能把词变成空的
+  const emptyAi = applyReanalysis([mkDraft('x', ['n. 原样'])], [{ en: 'x', phonetic: '', example: '', senses: [] }]);
+  check('AI 返回空义项时保持原样', emptyAi.drafts[0].senses[0].text === 'n. 原样', JSON.stringify(emptyAi.drafts[0].senses));
+  check('空义项计入 empty', emptyAi.stat.empty === 1, JSON.stringify(emptyAi.stat));
+
+  // 9f. 旧合并建议要清掉（重排后已经指向不存在的义项）
+  const withHint = mkDraft('y', ['n. 甲']);
+  withHint.hints = [{ en: 'y', keep: 'n. 甲', absorb: ['n. 乙'] }];
+  const cleared = applyReanalysis([withHint], [
+    { en: 'y', phonetic: '', example: '', senses: [{ text: 'n. 甲', aliases: ['乙'] }] },
+  ]);
+  check('重排后清掉过期的合并建议', cleared.drafts[0].hints.length === 0, JSON.stringify(cleared.drafts[0].hints));
+
+  // 9g. 送给 AI 的原文格式
+  const lines = draftsToSourceLines([mkDraft('run', ['v. 跑', 'n. 一段']), mkDraft('bear', [])]);
+  check('原文行是「英文+Tab+义项拼接」', lines.split('\n')[0] === 'run\tv. 跑 n. 一段', JSON.stringify(lines.split('\n')[0]));
+  check('没有义项的词也给一行（否则 AI 不会返回它）', lines.split('\n')[1].startsWith('bear\t'), JSON.stringify(lines.split('\n')[1]));
+  check('批次大小是个合理的正数', Number.isInteger(REANALYZE_BATCH_SIZE) && REANALYZE_BATCH_SIZE > 0, String(REANALYZE_BATCH_SIZE));
+
+  // 9h. 接线检查：合并页真的有这个按钮，且走的是同一份规范提示词
+  const mergeSrc = read('src/ui/pages/MergePage.ts');
+  check('合并页有「AI 重新分析义项」按钮', mergeSrc.includes('AI 重新分析义项'));
+  check('按钮走 parseWordBatch（= 同一份 PARSE_SYSTEM_PROMPT）', mergeSrc.includes('parseWordBatch'));
+  check('动手前先确认（会覆盖手动编辑）', mergeSrc.includes('会**覆盖**'));
+  check('失败批次保留原样、不阻断', mergeSrc.includes('failedBatches'));
+}
+
 // ─────────────────────────────────────────── 汇总
 console.log(`\n资料整理规范自检：${passed} 项通过，${failed} 项失败`);
 if (failed > 0) process.exit(1);

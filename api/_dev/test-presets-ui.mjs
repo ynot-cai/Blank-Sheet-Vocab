@@ -226,7 +226,8 @@ try {
       // 合并页必须真的把 295 个词渲染成卡片，并显示正确的统计
       const mergeState = await session.evaluate(`(() => ({
         hash: window.location.hash,
-        stat: document.querySelector('.note')?.textContent ?? '',
+        // 用 .merge-stat 精确定位统计行：页面上还有预设提示条等别的 .note
+        stat: document.querySelector('.merge-stat')?.textContent ?? '',
         cards: document.querySelectorAll('details.merge-card').length,
         firstCards: [...document.querySelectorAll('details.merge-card summary')].slice(0, 3).map((s) => s.textContent.trim()),
         commitLabel: [...document.querySelectorAll('button')].map((b) => b.textContent.trim()).find((t) => t.startsWith('确认入库')) ?? '',

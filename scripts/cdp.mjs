@@ -104,11 +104,8 @@ export async function openSession(port, url, opts = {}) {
   let msgId = 0;
   const pending = new Map();
   let loadFired = false;
-
-  await new Promise((resolve, reject) => {
-    ws.addEventListener('open', resolve, { once: true });
-    ws.addEventListener('error', () => reject(new Error('WebSocket 连接失败')), { once: true });
-  });
+  /** 页面上发生的网络请求（排查「请求到底发去哪了」用） */
+  const network = [];
 
   ws.addEventListener('message', (ev) => {
     const msg = JSON.parse(typeof ev.data === 'string' ? ev.data : '');
@@ -120,6 +117,15 @@ export async function openSession(port, url, opts = {}) {
       return;
     }
     if (msg.method === 'Page.loadEventFired') loadFired = true;
+    if (msg.method === 'Network.requestWillBeSent') {
+      network.push({ url: msg.params.request.url, method: msg.params.request.method });
+    }
+  });
+
+  // 必须等 WebSocket 真正连上再发命令，否则 send 会写在未打开的连接上
+  await new Promise((resolve, reject) => {
+    ws.addEventListener('open', resolve, { once: true });
+    ws.addEventListener('error', () => reject(new Error('WebSocket 连接失败')), { once: true });
   });
 
   /** 发一条 CDP 命令 */
@@ -133,6 +139,7 @@ export async function openSession(port, url, opts = {}) {
 
   await send('Page.enable');
   await send('Runtime.enable');
+  await send('Network.enable');
   // 页面可能是新建时就开始加载的，这里显式导航一次以拿到确定的 load 事件
   await send('Page.navigate', { url });
   for (let i = 0; i < 120 && !loadFired; i += 1) await new Promise((r) => setTimeout(r, 100));
@@ -157,6 +164,17 @@ export async function openSession(port, url, opts = {}) {
     /** 取当前页面 HTML */
     async html() {
       return this.evaluate('document.documentElement.outerHTML');
+    },
+    /**
+     * 取页面发过的网络请求（排查「请求到底发去哪了」用）。
+     * @param {string} [filter] 只看 URL 含该子串的
+     */
+    requests(filter) {
+      return filter ? network.filter((r) => r.url.includes(filter)) : [...network];
+    },
+    /** 清空已记录的请求 */
+    clearRequests() {
+      network.length = 0;
     },
     /** 关掉这个标签页 */
     async close() {

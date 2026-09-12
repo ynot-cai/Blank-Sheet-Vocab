@@ -3,7 +3,7 @@ import { planImport, setSourcePriorities } from '../../core/merge';
 import { currentSettings } from './settings/ctx';
 import type { Word } from '../../core/types';
 import * as dao from '../../dao';
-import { aiConfigFromSettings, suggestMerges } from '../../services/ai';
+import { aiConfigFromSettings, parseWordBatch, suggestMerges } from '../../services/ai';
 import type { MergeSuggestion } from '../../services/ai';
 import { clearJob, loadJob, saveJob } from '../../services/importJob';
 import { button, checkbox, debounce, h, textInput } from '../dom';
@@ -12,6 +12,7 @@ import { toastError, toastOk, toastWarn } from '../components/Toast';
 import { navigate } from '../router';
 import type { DraftWord } from './merge/drafts';
 import { draftStats, draftsFromEntries, draftToWord } from './merge/drafts';
+import { REANALYZE_BATCH_SIZE, applyReanalysis, draftsToSourceLines } from './merge/reanalyze';
 import { renderMergeCard } from './merge/MergeCard';
 
 /** 「智能再合并」每次送给 AI 的词数 */
@@ -36,7 +37,24 @@ export function renderMergePage(): HTMLElement {
   let onlyMulti = false;
   let busy = false;
 
-  const statLine = h('p', { class: 'note' });
+  // class 里带一个 merge-stat：页面里 note 不止一处（下面还有预设提示条），
+  // 给统计行一个稳定标识，脚本/测试可以直接定位它。
+  const statLine = h('p', { class: 'note merge-stat' });
+
+  // ★ 预设词库导进来的词，义项是**没整理过的**（每条只有 1 个义项、塞着整串原文），
+  //   因为预设 JSON 是从原始词表直接生成的。这里主动提示一句，
+  //   否则用户会以为「这软件就长这样」而不知道有整理功能。
+  //   判据：所有词都只有 1 个义项 —— 手粘文本走 AI 解析的话不会是这个形态。
+  if (drafts.length > 3 && drafts.every((d) => d.senses.length === 1)) {
+    page.appendChild(
+      h('p', {
+        class: 'note warn',
+        text:
+          '这些词的义项还没有整理过（每个词都只有一条、内容是原始词表里的整串中文）。' +
+          '点上面的「AI 重新分析义项」，让 AI 按整理规范把它们分类成义项、挑出代表词、把近义词逐个分开。',
+      }),
+    );
+  }
 
   // —— 工具条 ——
   const searchInput = textInput(
@@ -60,6 +78,9 @@ export function renderMergePage(): HTMLElement {
   };
 
   const suggestBtn = button('智能再合并', () => void runSuggest(), { variant: 'primary' });
+  const reanalyzeBtn = button('AI 重新分析义项', () => void runReanalyze(), {
+    title: '让 AI 按整理规范把这个词的义项分类、挑代表词、分隔近义词',
+  });
   const toolbar = h(
     'div',
     { class: 'toolbar sticky-row' },
@@ -67,6 +88,7 @@ export function renderMergePage(): HTMLElement {
     multiToggle,
     button('全部展开', () => expandAll(true)),
     button('全部折叠', () => expandAll(false)),
+    reanalyzeBtn,
     suggestBtn,
   );
 
@@ -204,6 +226,83 @@ export function renderMergePage(): HTMLElement {
     }
     toastOk(`拿到 ${applied} 条合并建议，卡片里点「接受」才会生效`);
     renderList();
+  };
+
+  // —— AI 重新分析义项 ——
+  /**
+   * 让 AI 按《资料整理规范》（core/senseRules.ts）重新整理义项。
+   *
+   * 主要用途是**预设词库导入之后**：预设数据是从原始词表直接生成的，
+   * 每条只有 1 个义项、里面塞着一整串原文（"v. 获取 n. 接近，入口"），
+   * 既没分类成义项，也没把近义词分开。这个按钮把整理这步交给 AI。
+   *
+   * 会上网、要花钱、会覆盖手动编辑，所以动手前必须确认；
+   * 失败或没配密钥时**保留原有内容**，不清空、不阻断（本地优先是基石）。
+   */
+  const runReanalyze = async (): Promise<void> => {
+    if (busy) return;
+    const cfg = aiConfigFromSettings(currentSettings());
+    if (cfg.key.trim() === '') {
+      toastWarn('AI 重新分析需要密钥，请先去设置页填写接口地址和密钥');
+      return;
+    }
+    const targets = drafts.filter((d) => !d.dropped);
+    if (targets.length === 0) {
+      toastWarn('没有可分析的词');
+      return;
+    }
+    const batchCount = Math.ceil(targets.length / REANALYZE_BATCH_SIZE);
+    const ok = await confirmModal(
+      'AI 重新分析义项',
+      `会用 AI 把 ${targets.length} 个词重新整理一遍（分 ${batchCount} 批发给你的 AI 接口）：\n` +
+        '把中文意思分类成义项、每个义项挑一个代表词、近义词逐个分开、多词性判断是否同源。\n\n' +
+        '⚠️ 会**覆盖**你在这些词上已经做过的修改（改代表词、划掉义项、加近义词）。\n' +
+        '分析失败的批次会保持原样，不会清空。确定继续吗？',
+      '开始分析',
+    );
+    if (!ok) return;
+
+    busy = true;
+    reanalyzeBtn.disabled = true;
+    renderList();
+
+    let done = 0;
+    let failedBatches = 0;
+    let updated = 0;
+    let skipped = 0;
+    try {
+      for (let i = 0; i < targets.length; i += REANALYZE_BATCH_SIZE) {
+        const batch = targets.slice(i, i + REANALYZE_BATCH_SIZE);
+        reanalyzeBtn.textContent = `分析中… ${done}/${targets.length}`;
+        const res = await parseWordBatch(cfg, draftsToSourceLines(batch));
+        done += batch.length;
+        if (res.failed) {
+          failedBatches += 1;
+          continue;
+        }
+        const applied = applyReanalysis(drafts, res.entries);
+        drafts = applied.drafts;
+        updated += applied.stat.updated;
+        skipped += applied.stat.skipped;
+      }
+    } catch (err) {
+      toastError(err instanceof Error ? err.message : String(err));
+    } finally {
+      busy = false;
+      reanalyzeBtn.disabled = false;
+      reanalyzeBtn.textContent = 'AI 重新分析义项';
+    }
+
+    persist();
+    renderList();
+    refreshStats();
+
+    if (failedBatches > 0) toastWarn(`${failedBatches} 批分析失败，那些词保持原样，可再点一次只重试失败的部分`);
+    if (updated === 0) {
+      toastWarn('AI 没有返回可用的结果，内容未改动');
+    } else {
+      toastOk(`已重新整理 ${updated} 个词的义项${skipped > 0 ? `，${skipped} 个未变（AI 没返回或返回为空）` : ''}`);
+    }
   };
 
   // —— 确认入库 ——
