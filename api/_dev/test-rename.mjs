@@ -141,7 +141,7 @@ const mustContain = [
   ['安装提示标记', 'src/services/pwa.ts', `${NEW_SLUG}.installHintShown`],
   ['本地文件夹备份文件名', 'src/services/localfile.ts', `${NEW_SLUG}-data.json`],
   ['SW 缓存前缀', 'public/sw.js', `${NEW_SLUG}-v1`],
-  ['SW 清旧缓存的前缀', 'public/sw.js', `startsWith('${NEW_SLUG}-')`],
+  ['SW 清理的缓存前缀清单含新名', 'public/sw.js', `['${NEW_SLUG}-'`],
   ['PWA manifest 名称', 'public/manifest.webmanifest', NEW_BRAND],
   ['页面标题', 'index.html', NEW_BRAND],
   ['iOS 主屏幕名', 'index.html', NEW_BRAND],
@@ -168,6 +168,21 @@ const assertOldName = findIn(selfTestFiles, `includes('${OLD_BRAND}')`, [SELF]).
   findIn(selfTestFiles, `includes("${OLD_BRAND}")`, [SELF]),
 );
 check('没有断言还要求出现旧品牌名', assertOldName.length === 0, assertOldName.join(', '));
+
+// ─────────────────────────────────────────── 4b. 旧缓存要能被清掉
+console.log('\n[4b] 改名前的旧缓存仍然会被清理');
+// 改名后 SW 的缓存前缀变了，如果只按新前缀过滤，老设备上那份旧缓存就永远没人删。
+// 这里验的是**行为**（旧前缀确实在清理清单里），而不是某一行代码长什么样。
+const swText = readFileSync(join(ROOT, 'public/sw.js'), 'utf8');
+const legacyPrefixMatch = /LEGACY_CACHE_PREFIX\s*=\s*\[([^\]]+)\]\.join\(/.exec(swText);
+check('SW 里定义了「改名前的旧前缀」（拼接构造）', legacyPrefixMatch !== null);
+if (legacyPrefixMatch) {
+  const parts = [...legacyPrefixMatch[1].matchAll(/'([^']*)'/g)].map((m) => m[1]);
+  const legacyPrefix = parts.join('');
+  check(`旧前缀拼出来是 ${legacyPrefix}`, legacyPrefix === 'wordpaper-', `实际 ${legacyPrefix}`);
+  check('旧前缀在清理清单 CACHE_PREFIXES 里', /CACHE_PREFIXES\s*=\s*\[[^\]]*LEGACY_CACHE_PREFIX/.test(swText));
+  check('清理时按 CACHE_PREFIXES 过滤', /CACHE_PREFIXES\.some\(/.test(swText));
+}
 
 // ─────────────────────────────────────────── 5. 文档应说明改名
 console.log('\n[5] 文档记录了改名这件事');

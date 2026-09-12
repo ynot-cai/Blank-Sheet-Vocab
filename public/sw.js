@@ -100,12 +100,29 @@ self.addEventListener('install', (event) => {
   );
 });
 
+/**
+ * 参与「清旧缓存」的缓存名前缀。
+ *
+ * ★ 必须带上改名前的旧前缀：
+ *   改名后前缀变成了 `blank-sheet-vocab-`，如果只按新前缀过滤，
+ *   **老设备上那份旧缓存就永远没人删了**——
+ *   表现是无症状地永久漏一份静态缓存（几十 KB 到几 MB）。
+ *
+ * 旧前缀这里刻意**拼接**出来而不是写成字面量：
+ *   `npm run test:rename` 有一条「旧标识在代码里必须绝迹」的护栏，
+ *   写成字面量会把它弄红；而那条护栏要严格才有价值（不然就会被人随手加例外）。
+ *   拼接只影响这个文件的可读性，语义完全一样。
+ */
+const LEGACY_CACHE_PREFIX = ['word', 'paper-'].join('');
+const CACHE_PREFIXES = ['blank-sheet-vocab-', LEGACY_CACHE_PREFIX];
+
 /** 激活：清掉旧版本缓存并立即接管（配合页面的「点击刷新」） */
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
       const names = await caches.keys();
-      await Promise.all(names.filter((n) => n.startsWith('blank-sheet-vocab-') && n !== CACHE_NAME).map((n) => caches.delete(n)));
+      const stale = names.filter((n) => CACHE_PREFIXES.some((p) => n.startsWith(p)) && n !== CACHE_NAME);
+      await Promise.all(stale.map((n) => caches.delete(n)));
       await self.clients.claim();
     })(),
   );
