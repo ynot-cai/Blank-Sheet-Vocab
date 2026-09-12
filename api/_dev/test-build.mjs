@@ -88,10 +88,19 @@ console.log('[1] 所有相对导入都能解析到真实文件');
   for (const file of files) {
     const text = readFileSync(file, 'utf8');
     // 匹配 `from '...'`、`import('...')`、`import '...'`
+    //
+    // ★ 正则必须**锚定行首**，不能写成 /(?:^|\s)import[\s\S]{0,400}?from/
+    //   那种松散写法：代码里出现「import」这个词的地方太多了
+    //   （中文注释「这个文件不许 import 任何东西」、断言字符串里也有），
+    //   松散正则会把注释/字符串里的话题当成导入语句，
+    //   然后报出一个**根本不存在的坏路径**——这个坑真的踩过：
+    //   护栏报 `→ ./senseRules` 解析失败，查了半天发现是注释里提了一句 import。
+    //   锚定行首之后，只有真正的语句级导入会被匹配到；副作用是
+    //   「已经写了对、只是缩进很深的导入」不会被检查，这是可以接受的取舍。
     const specs = [
-      ...text.matchAll(/(?:^|\s)(?:import|export)[\s\S]{0,400}?from\s+['"]([^'"]+)['"]/g),
+      ...text.matchAll(/^[ \t]*(?:import|export)[\s\S]*?from[ \t]*['"]([^'"]+)['"]/gm),
+      ...text.matchAll(/^[ \t]*import[ \t]*['"]([^'"]+)['"]/gm),
       ...text.matchAll(/import\(\s*['"]([^'"]+)['"]\s*\)/g),
-      ...text.matchAll(/^\s*import\s+['"]([^'"]+)['"]/gm),
     ].map((m) => m[1]);
 
     for (const spec of specs) {

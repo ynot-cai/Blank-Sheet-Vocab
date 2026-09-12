@@ -16,6 +16,7 @@
 import type { Settings } from '../core/types';
 import { normalizeApiBase } from '../core/syncHelper';
 import { splitPackedSenses } from '../core/model';
+import { SENSE_RULES_FOR_AI, normalizeAliases } from '../core/senseRules';
 import { API_ROUTES } from '../dao/syncServer';
 
 /** AI 接口配置（三项全部由用户填） */
@@ -328,7 +329,13 @@ export async function testConnection(cfg: AiConfig): Promise<{ ok: boolean; mess
   }
 }
 
-/** AI 解析用的 system prompt（中文，严格要求只输出 JSON） */
+/**
+ * AI 解析用的 system prompt（中文，严格要求只输出 JSON）。
+ *
+ * ★★★ 义项怎么整理，规则全文在 `core/senseRules.ts` 的 `SENSE_RULES_FOR_AI`。
+ *     这里只写「输出格式 + 不许做什么」，语义规则一律引用那份，不在这里重写一遍：
+ *     规则抄两份的话，改了这份忘了那份，AI 的行为就会和代码兜底、和文档互相矛盾。
+ */
 export const PARSE_SYSTEM_PROMPT = `你是一个英语词库结构化助手。把用户给的生词文本解析成严格 JSON。
 
 输出 schema：
@@ -336,16 +343,18 @@ export const PARSE_SYSTEM_PROMPT = `你是一个英语词库结构化助手。�
 
 规则：
 1. 只输出 JSON，不要 markdown 代码块、不要任何解释文字。
-2. 义项拆分与近义合并：
-   - 一个义项的 text 只能是「一个独立的核心含义」，绝不允许把多个含义用顿号/逗号连在一起
-     （例如「n. 量纲、维度」是错误的，必须拆成 {"text":"n. 量纲"} 和 {"text":"n. 维度"} 两个义项）。
-   - 含义相近的说法合并到同一个义项：挑最常用的一个作为 text，其余全部放进 aliases
-     （例如「放弃/抛弃/遗弃」合并为 text:"v. 放弃"，aliases:["抛弃","遗弃"]）。
-   - 主动为每个义项寻找 1~3 个常见的近义词/等价说法写入 aliases（没有就留空数组）。
+2. 义项怎么拆分、怎么挑代表、近义词怎么分隔、多词性怎么判断——**严格按下面这份规范执行**：
+
+${SENSE_RULES_FOR_AI}
+
 3. 义项保留词性前缀（n. v. adj. adv. prep. 等；原文写「adj./adv.」这种多词性就原样保留）。
+   ★ 但第 4 步判定为「同源」而合并起来的义项，代表词**不加词性前缀**，
+     因为它是跨词性的（例如 run 的义项①写 "跑"，不要写 "v. 跑"）。
 4. 音标用国际音标并带斜杠；例句要简短、能体现该词主要用法；如果原文没有音标/例句就自己补一个合适的。
 5. 英文单词原样保留大小写，不要翻译，不要造词。
-6. 原文一行一个词，输出顺序与输入一致，不要漏词、不要增加原文没有的词。`;
+6. 原文一行一个词，输出顺序与输入一致，不要漏词、不要增加原文没有的词。
+7. 主动为每个义项补 1~3 个常见近义词写进 aliases（没有就留空数组），
+   但**必须逐个分隔**，且每个都是「一个纯中文说法」。`;
 
 /**
  * 把文本按行切成若干批。
@@ -371,9 +380,15 @@ function stripCodeFence(text: string): string {
 
 /**
  * 校验并归一化模型返回的一个词。
- * @param raw 原始对象
+ *
+ * ★ 导出是为了能被自检直接调用（`npm run test:sense-rules`）。
+ *   这是**不可信输入**（模型输出）的边界，也是「约束 1」的执行点：
+ *   模型经常把多个近义词打包成一项，这里必须拆开。
+ *   不导出的话只能靠起假上游 + 打网络请求来测这一段，太重，实际没人会去测。
+ *
+ * @param raw 原始对象（模型返回的一条）
  */
-function coerceParsedWord(raw: unknown): ParsedWord | null {
+export function coerceParsedWord(raw: unknown): ParsedWord | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const obj = raw as Record<string, unknown>;
   const en = typeof obj.en === 'string' ? obj.en.trim() : '';
@@ -385,9 +400,14 @@ function coerceParsedWord(raw: unknown): ParsedWord | null {
       const so = s as Record<string, unknown>;
       const text = typeof so.text === 'string' ? so.text.trim() : '';
       if (text === '') return [];
-      const aliases = Array.isArray(so.aliases)
-        ? so.aliases.filter((a): a is string => typeof a === 'string').map((a) => a.trim()).filter(Boolean)
-        : [];
+      // ★ 约束 1 的执行点：模型经常把多个近义词打包成一项
+      //   （aliases:["跑步，奔跑"]）。不拆开的话判分时整串比对，
+      //   用户答「跑步」或「奔跑」**都会判错**，而界面上完全看不出来。
+      const aliases = normalizeAliases(
+        Array.isArray(so.aliases)
+          ? so.aliases.filter((a): a is string => typeof a === 'string')
+          : [],
+      );
       // 兜底：模型偶尔会把「量纲、维度」塞进一个义项，这里强制拆成多个（词性前缀复制到每一段）
       const pieces = splitPackedSenses(text);
       return pieces.map((piece, i) => ({

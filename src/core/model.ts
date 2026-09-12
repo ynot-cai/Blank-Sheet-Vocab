@@ -1,3 +1,4 @@
+import { normalizeAliases } from './senseRules';
 import type { Attrs, RawSourceRecord, Sense, Word } from './types';
 
 /**
@@ -24,11 +25,17 @@ export function defaultAttrs(): Attrs {
 
 /**
  * 新建一个义项。
- * @param text 义项文本（可含词性前缀）
- * @param aliases 近义词/等价写法
+ *
+ * ★ aliases 会过一遍 `normalizeAliases`（见 core/senseRules.ts 的约束 1）：
+ *   把「跑步，奔跑」这种打包项拆成两项。不拆的话判分时整串比对，
+ *   用户答「跑步」或「奔跑」都会判错，而界面上完全看不出来。
+ *   所有非 AI 的写入路径（合并页、卡片编辑、预设导入）都经过这里，所以在这一层兜住。
+ *
+ * @param text 代表词（可含词性前缀，如 "n. 苹果"）
+ * @param aliases 近义词/等价说法（允许传打包项，会被拆开）
  */
 export function createSense(text: string, aliases: string[] = []): Sense {
-  return { id: uid(), text: text.trim(), aliases: aliases.map((a) => a.trim()).filter(Boolean), enabled: true };
+  return { id: uid(), text: text.trim(), aliases: normalizeAliases(aliases), enabled: true };
 }
 
 /**
@@ -160,8 +167,21 @@ const CIRCLED = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', 
 
 /**
  * 把生效义项拼成白纸上显示的简版中文意思。
- * 格式：`词性.①义项1②义项2`（只显示每个义项的「代表」，近义词 aliases 不显示；
- * 如果各义项词性不同，就退化成「词性. 义项；词性. 义项」逐条罗列）。
+ *
+ * ★ 只显示每个义项的**代表词**（`s.text`），近义词（aliases）一律不显示。
+ *   这是「资料整理规范」的第 2 条硬约束（见 core/senseRules.ts）：
+ *   一个义项可能有七八个近义词，全铺在白纸上会糊成一片，
+ *   所以挑代表词这件事是有实际后果的——代表词必须能独立看懂。
+ *
+ * 两种格式：
+ *   · 统一形式 → `词性.①义项1②义项2`
+ *     什么算「统一」：① 每个义项都带**同一个**词性前缀（"n. 苹果" / "n. 梨"）；
+ *     或者 ② **都不带**前缀。后者是常见情况——按规范第 4 步，
+ *     同源跨词性合并起来的义项（如 run 的「跑」把动词性、名词性合在一起）
+ *     **本来就不该加词性前缀**。
+ *   · 形式不统一（有的带前缀、有的不带，或前缀各不相同）→ 退化成 `义项；义项` 逐条罗列，
+ *     因为这时候丢掉前缀会让用户分不清词性。
+ *
  * @param senses 义项列表
  */
 export function formatSensesBrief(senses: Sense[]): string {
@@ -169,13 +189,16 @@ export function formatSensesBrief(senses: Sense[]): string {
   if (active.length === 0) return '';
   const prefixOf = (s: Sense): string => posPrefixOf(s.text);
   const firstPrefix = prefixOf(active[0]);
-  const samePrefix = firstPrefix !== '' && active.every((s) => prefixOf(s) === firstPrefix);
-  if (samePrefix) {
+  // 「统一」= 全部同一个非空前缀，或全部都没有前缀
+  const uniform = active.every((s) => prefixOf(s) === firstPrefix);
+  // 只有一个义项时不该出现圈号（"①跑" 是噪音，"跑" 就够了）
+  if (uniform && active.length > 1) {
     const numbered = active
       .map((s, i) => `${CIRCLED[i] ?? `(${i + 1})`}${stripPosPrefix(s.text)}`)
       .join('');
     return `${firstPrefix} ${numbered}`.trim();
   }
+  if (uniform && active.length === 1) return stripPosPrefix(active[0].text);
   return active.map((s) => s.text.trim()).join('；');
 }
 
