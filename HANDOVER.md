@@ -438,10 +438,12 @@ npm run dev     # 窗口 2：前端（Vite 已把 /api 代理到 127.0.0.1:3000�
 
 ### 环境相关
 
-- 本机开着**系统代理 `127.0.0.1:7897`**：PowerShell/curl 会走，但 **Node 的 fetch 默认忽略代理**。
-  表现为「浏览器能开、curl 能通、Node 超时」。`scripts/run-live.mjs` / `run-e2e.mjs`
-  会自动识别系统代理并加 `--use-env-proxy`。自己写脚本打线上时注意这点。
-- 到 GitHub / Vercel 的网络**间歇性不稳定**，push 失败重试一两次通常就好。
+- 本机开着**系统代理 `127.0.0.1:7897`**。关键点：**PowerShell / curl 会自动走系统代理，
+  但 `git` 和 Node 的 `fetch` 都不会**。表现为「浏览器能打开、curl 能通，git push / Node 却超时」。
+  - 已在**本仓库**配好 git 代理：`git config http.proxy http://127.0.0.1:7897`（https 同理）
+  - Node 脚本用 `scripts/run-live.mjs` / `run-e2e.mjs`（自动识别代理并加 `--use-env-proxy`）
+  - 自己写脚本打线上时注意这点；代理端口变了要同步改 git 配置
+- 到 GitHub / Vercel 的网络**间歇性不稳定**：配置代理前 `git push` 约有一半概率失败（`Failed to connect to github.com:443 after 21s`）。配好后明显稳定；万一仍失败，重试一两次通常就好。
 
 ---
 
