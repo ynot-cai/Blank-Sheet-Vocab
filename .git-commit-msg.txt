@@ -1,35 +1,24 @@
-修复「同步不了」：前端请求的接口路径与 Vercel 实际路由不一致（404）
+新增两个真打线上的测试：路由冒烟 + 真实用户流程端到端
 
-线上探测结果：
-  /api/health      200 ✅
-  /api/ai-proxy    403 ✅（来源白名单生效）
-  /api/sync/pull   404 ❌  ← 前端一直在请求这个
-  /api/sync-pull   401 ✅  ← 真实路由是这个
+背景：这次的「同步不了」暴露了一个盲区——本地 353 项自检**全部直接调用处理函数**，
+不经过 URL 匹配也不经过 Vercel 的部署映射，所以「前端请求的路径 ≠ 线上真实路径」
+这类问题一个都测不出来。补上两个真的打线上后端的测试：
 
-根因：Vercel 把 api/ 下的**文件名**直接映射成路由，api/sync-pull.ts 对应
-`/api/sync-pull`（连字符），不是 `/api/sync/pull`（斜杠）。
-前端、本地测试壳、文档里全都写成了带斜杠的版本，所以线上永远 404——
-后端本身一直是好的，只是没人叫对门牌号。
+1) npm run test:live —— 接口冒烟（读 src/dao/syncServer.ts 的 API_ROUTES，不手写路径）
+   覆盖：路由可达性（防 404）/ 健康检查 / 401 / 非法 spaceKey / 空库拉取 /
+   推送拉回 / 空间隔离 / 批量上限 500 / 来源白名单 403 / 清理
+   → 线上 20 项全过
 
-顺带修掉的第二个线上问题（上一条提交）：api 的相对导入用 .ts 后缀，
-Vercel 剥类型后仍按 .ts 去找文件 → ERR_MODULE_NOT_FOUND → 500。
+2) npm run test:e2e —— 真实用户流程（import src/dao/cloudSync.ts，就是前端用的那份代码）
+   覆盖：测试连接 → 首次同步推 3 条 → 换设备拉回 3 条 → 增量同步传到另一台 →
+   换同步码隔离 → 后端挂掉不阻断本地 → 清理测试数据
+   → 线上 29 项全过
 
-修复：
-- src/dao/syncServer.ts 新增 API_ROUTES 路由表，路径只在这里定义一处
-  （syncPull/syncPush/syncPurge 全部改成连字符形式）
-- src/services/ai.ts 的代理路径改为引用同一张路由表，消除第二份硬编码
-- api/_dev/harness.mjs（本地后端壳）的路由键同步改成连字符，
-  这样「前端路径 ≠ 本地路径」在本地就会暴露，不会再拖到线上
-- 所有测试脚本与文档里的路径统一更正
+两个入口都配了 scripts/run-live.mjs / run-e2e.mjs：自动识别 Windows 系统代理并加
+--use-env-proxy。原因：这台机器开着系统代理 127.0.0.1:7897，PowerShell/curl 会走，
+但 Node 的 fetch 默认完全忽略代理，表现为「浏览器能开、curl 能通、Node 超时」。
 
-新增两道防线（这次的教训：本地 353 项测试全都直接调用处理函数，
-完全不经过 URL 匹配，所以路径不一致一个都测不出来）：
-- test:build 第 8 组：校验「前端 API_ROUTES ⇄ api/ 真实文件」一一对应，
-  并禁止 src/ 里再出现 /api/sync/ 老写法
-- npm run test:live：**按真实 URL** 打线上后端（读路由表，不手写路径），
-  覆盖健康检查/401/隔离/推送拉回/批量上限/来源白名单，跑完自动清理测试数据。
-  附带 scripts/run-live.mjs 自动识别系统代理——Node 的 fetch 默认不用系统代理，
-  这台机器开着 127.0.0.1:7897，表现为「PowerShell 能通、Node 超时」，
-  用 --use-env-proxy 解决。
+test:build 第 8 组护栏：校验「前端 API_ROUTES ⇄ api/ 真实文件」一一对应，
+并禁止 src/ 里再出现 /api/sync/ 斜杠老写法。
 
-验证：npm test 353 项全过；npm run test:live 线上 20 项全过
+验证：npm test 353 项全过；test:live 20 项全过；test:e2e 29 项全过

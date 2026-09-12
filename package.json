@@ -23,6 +23,7 @@
     "test:about": "node api/_dev/test-about.mjs",
     "test:build": "node api/_dev/test-build.mjs",
     "test:live": "node scripts/run-live.mjs",
+    "test:e2e": "node scripts/run-e2e.mjs",
     "icons": "node scripts/make-icons.mjs",
     "test": "npm run typecheck && npm run build && npm run verify:api && npm run test:build && npm run test:api && npm run test:sync && npm run test:ai && npm run test:mobile && npm run test:pwa && npm run test:about"
   },
