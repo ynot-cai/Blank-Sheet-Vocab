@@ -11,7 +11,7 @@
  * 这里没有 users 表，也没有任何存密钥的表——服务器不接触 AI 密钥（方案 B）。
  */
 import { createClient, type Client } from '@libsql/client';
-import { requiredEnv } from './env.ts';
+import { requiredEnv } from './env.js';
 
 let client: Client | null = null;
 let schemaPromise: Promise<void> | null = null;

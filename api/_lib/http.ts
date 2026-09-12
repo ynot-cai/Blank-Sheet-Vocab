@@ -1,7 +1,7 @@
 /**
  * 统一的 JSON 响应 + 请求体解析工具。
  */
-import type { ApiResponse, HeaderMap } from './types.ts';
+import type { ApiResponse, HeaderMap } from './types.js';
 
 /** 响应头：不缓存任何 API 结果（同步数据要实时） */
 const NO_STORE = 'no-store';

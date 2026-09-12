@@ -11,7 +11,7 @@
  * 3. 检查资源引用（index.html / manifest）指向的文件真的存在。
  */
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import { loadEnvFiles } from './envFile.mjs';
 
 loadEnvFiles('..');
@@ -52,20 +52,27 @@ function walk(dir, filter) {
 
 /**
  * 解析一个相对导入是否指向真实文件。
+ *
+ * 注意 `.js` → `.ts` 这一层：api/ 的源码里相对导入写的是 `.js`（TS 的 ESM 标准写法，
+ * 因为线上 Vercel 会把 .ts 剥成 .js 且不改 import 路径），而源码文件本身是 `.ts`。
+ * 所以 `./db.js` 要判成「能找到 db.ts」才算合法。
  * @param {string} fromFile 发起导入的文件
  * @param {string} spec 导入路径
  */
 function resolves(fromFile, spec) {
   const base = join(fromFile, '..', spec);
+  const stripJs = base.endsWith('.js') ? base.slice(0, -3) : '';
   const candidates = [
     base,
     `${base}.ts`,
     `${base}.tsx`,
     `${base}.js`,
     `${base}.mjs`,
+    stripJs !== '' ? `${stripJs}.ts` : '',
+    stripJs !== '' ? `${stripJs}.tsx` : '',
     join(base, 'index.ts'),
     join(base, 'index.js'),
-  ];
+  ].filter((c) => c !== '');
   return candidates.some((c) => existsSync(c) && statSync(c).isFile());
 }
 
@@ -199,35 +206,105 @@ console.log('\n[6] 类型检查配置：api/ 必须被覆盖，且 .ts 后缀相
   check('根 tsconfig 的 include 覆盖 api', (root.include ?? []).includes('api'), JSON.stringify(root.include));
   check('根 tsconfig 的 include 覆盖 src', (root.include ?? []).includes('src'), JSON.stringify(root.include));
   check('根 tsconfig 不是零文件的 solution 配置', !(root.files?.length === 0 && (root.include ?? []).length === 0));
-  check('根 tsconfig 开启 allowImportingTsExtensions', root.compilerOptions?.allowImportingTsExtensions === true);
-  check('根 tsconfig 开启 noEmit（allowImportingTsExtensions 的前提）', root.compilerOptions?.noEmit === true);
+  check('根 tsconfig 开启 noEmit', root.compilerOptions?.noEmit === true);
 
   check('tsconfig.api.json 的 include 覆盖 api', (api.include ?? []).includes('api'), JSON.stringify(api.include));
-  check('tsconfig.api.json 开启 allowImportingTsExtensions', api.compilerOptions?.allowImportingTsExtensions === true);
   check('tsconfig.api.json 只放 Node 类型（看不到 DOM）', !(api.compilerOptions?.types ?? []).includes('vite/client'));
   check('tsconfig.app.json 只放浏览器类型（看不到 Node）', !(app.compilerOptions?.types ?? []).includes('node'));
 
-  // api 下的相对导入必须都带 .ts（Node 直接跑 TS 源码的前提）
-  const apiFiles = walk('api', /\.ts$/);
-  const missingExt = [];
+  // ⚠️ 这条规则被线上 500 教过一次（详见 scripts/emit-api.mjs 顶部注释）：
+  // Vercel 用 Node 的类型擦除把 .ts 变成 .js，**但不重写 import 路径**。
+  // 所以被部署的源码（api/*.ts 与 api/_lib/*.ts）里，相对导入必须写 .js 后缀。
+  // 只有 api/_dev/（本地工具，不部署）才允许写 .ts。
+  const deployedFiles = [
+    ...walk('api', /\.ts$/).filter((f) => !f.replace(/\\/g, '/').includes('/_dev/')),
+  ];
+  const wrongExt = [];
   let relCount = 0;
-  for (const file of apiFiles) {
+  for (const file of deployedFiles) {
     const text = readFileSync(file, 'utf8');
-    for (const m of text.matchAll(/from\s+['"](\.[^'"]+)['"]/g)) {
+    for (const m of text.matchAll(/(?:from\s+|import\(\s*)['"](\.[^'"]+)['"]/g)) {
       const spec = m[1];
       relCount += 1;
-      if (!spec.endsWith('.ts')) missingExt.push(`${file} → ${spec}`);
+      if (!spec.endsWith('.js')) wrongExt.push(`${file} → ${spec}`);
     }
   }
-  check(`api 下的 ${relCount} 个相对导入都带 .ts 后缀`, missingExt.length === 0, missingExt.join(' | '));
+  check(
+    `被部署的 api 源码 ${relCount} 个相对导入都写 .js 后缀`,
+    wrongExt.length === 0,
+    `${wrongExt.slice(0, 5).join(' | ')}${wrongExt.length > 5 ? ` …共 ${wrongExt.length} 处` : ''}`,
+  );
 
-  // build 脚本必须用 --noEmit 跑 tsc（用户明确要求的第 2 点）
+  // build 脚本必须用 --noEmit 跑 tsc
   const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
   check('build 脚本里 tsc 带 --noEmit', /tsc --noEmit/.test(pkg.scripts?.build ?? ''), pkg.scripts?.build);
   check('build 脚本先跑 preflight（esbuild 二进制检查）', /preflight/.test(pkg.scripts?.build ?? ''), pkg.scripts?.build);
   check('有独立的 typecheck:api 脚本', Boolean(pkg.scripts?.['typecheck:api']));
   check('有独立的 typecheck:app 脚本', Boolean(pkg.scripts?.['typecheck:app']));
-  check('package.json 里放行了 esbuild 安装脚本', Boolean(pkg.allowScripts?.['esbuild@0.25.12']) || Object.keys(pkg.allowScripts ?? {}).some((k) => k.startsWith('esbuild')));
+  check(
+    'package.json 里放行了 esbuild 安装脚本',
+    Boolean(pkg.allowScripts?.['esbuild@0.25.12']) ||
+      Object.keys(pkg.allowScripts ?? {}).some((k) => k.startsWith('esbuild')),
+  );
+  check('有 verify:api 脚本（模拟 Vercel 产物并校验）', Boolean(pkg.scripts?.['verify:api']));
+}
+
+// ─────────────────────────────────────────── 7. Vercel 产物模拟（线上 500 的本地探测器）
+console.log('\n[7] 模拟 Vercel 产物：每个 import 都要能解析到真实文件');
+{
+  const { execFileSync } = await import('node:child_process');
+  const emitDir = '.tmp/api-emit';
+  let emitOk = true;
+  let emitErr = '';
+  try {
+    execFileSync(process.execPath, ['scripts/emit-api.mjs'], { stdio: 'pipe' });
+  } catch (err) {
+    emitOk = false;
+    emitErr = err instanceof Error ? err.message : String(err);
+  }
+  check('能生成 Vercel 产物（剥类型后的 .js）', emitOk, emitErr);
+
+  if (emitOk && existsSync(emitDir)) {
+    const jsFiles = [];
+    const collect = (dir) => {
+      for (const name of readdirSync(dir)) {
+        const full = join(dir, name);
+        if (statSync(full).isDirectory()) collect(full);
+        else if (name.endsWith('.js')) jsFiles.push(full);
+      }
+    };
+    collect(emitDir);
+
+    const broken = [];
+    const tsSpecs = [];
+    let specCount = 0;
+    for (const file of jsFiles) {
+      const code = readFileSync(file, 'utf8');
+      for (const m of code.matchAll(/(?:from\s+|import\(\s*)['"](\.[^'"]+)['"]/g)) {
+        const spec = m[1];
+        specCount += 1;
+        if (spec.endsWith('.ts')) tsSpecs.push(`${file} → ${spec}`);
+        if (!existsSync(resolve(dirname(file), spec))) broken.push(`${file} → ${spec}`);
+      }
+    }
+    check(`产物里 ${specCount} 个相对导入没有 .ts 说明符`, tsSpecs.length === 0, tsSpecs.slice(0, 5).join(' | '));
+    check('产物里所有相对导入都能解析', broken.length === 0, broken.slice(0, 5).join(' | '));
+
+    // 真的把产物跑起来：能加载就算过（不期望它成功处理请求，只要求模块能 import 成功）
+    let runnable = true;
+    let runErr = '';
+    try {
+      execFileSync(process.execPath, [join(emitDir, 'health.js')], { stdio: 'pipe', timeout: 20_000 });
+    } catch (err) {
+      const out = `${err.stdout ?? ''}${err.stderr ?? ''}`;
+      // 只加载模块时不该有 ERR_MODULE_NOT_FOUND
+      if (String(out).includes('ERR_MODULE_NOT_FOUND') || String(err.message).includes('ERR_MODULE_NOT_FOUND')) {
+        runnable = false;
+        runErr = 'ERR_MODULE_NOT_FOUND';
+      }
+    }
+    check('产物能被 node 真正加载（不再 ERR_MODULE_NOT_FOUND）', runnable, runErr);
+  }
 }
 
 console.log(`\n=== 结果：通过 ${passed} 项，失败 ${failed} 项 ===\n`);

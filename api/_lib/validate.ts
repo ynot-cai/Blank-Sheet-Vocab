@@ -5,8 +5,8 @@
  * 脏数据一律「跳过并计数」，而不是整批 400——同步是后台静默任务，
  * 因为一条坏记录就让整批重试，用户会卡在永远同步不完的状态里。
  */
-import { isRecord } from './http.ts';
-import type { SourceInput, WordInput } from './inventory.ts';
+import { isRecord } from './http.js';
+import type { SourceInput, WordInput } from './inventory.js';
 
 /** 归一化结果：合法的行 + 被跳过的条数 */
 export interface CoercedBatch {

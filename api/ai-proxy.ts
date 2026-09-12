@@ -18,11 +18,11 @@
  */
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { allowedUpstreamHosts } from './_lib/env.ts';
-import { applyCors, isOriginAllowed, handleOptions } from './_lib/cors.ts';
-import { readHeader, sendError, sendJson } from './_lib/http.ts';
-import { AI_PROXY_TIMEOUT_MS } from './_lib/limits.ts';
-import type { ApiHandler } from './_lib/types.ts';
+import { allowedUpstreamHosts } from './_lib/env.js';
+import { applyCors, isOriginAllowed, handleOptions } from './_lib/cors.js';
+import { readHeader, sendError, sendJson } from './_lib/http.js';
+import { AI_PROXY_TIMEOUT_MS } from './_lib/limits.js';
+import type { ApiHandler } from './_lib/types.js';
 
 /** 转发次数计数器（**只累计次数**，不保存任何请求内容） */
 let forwardedCount = 0;

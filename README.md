@@ -82,9 +82,11 @@ npm run api        # 本地后端，零依赖、不用登录 Vercel
 |---|---|
 | `npm warn install-scripts esbuild@0.25.12 (postinstall: node install.js)` | npm 11 默认不跑依赖的安装脚本。**这个警告本身无害**：esbuild 的二进制来自平台包 `@esbuild/win32-x64`，`npm install` 时就已经装好了（已实测：全新安装后 `esbuild.transformSync` 正常工作）。想彻底消掉它：`npm install-scripts approve esbuild` —— 放行记录会写进 `package.json` 的 `allowScripts`，其他人克隆后也不再看到。 |
 | 构建报 esbuild 相关错误 | `npm rebuild esbuild`；仍不行就删掉 `node_modules` 重新 `npm install` |
-| 一堆 `TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled` | **不要去删 `api/**.ts` 里的 `.ts` 后缀**，那样会炸：本地测试是直接用 `node` 跑 TypeScript 源码的，Node 的 ESM 解析器要求显式扩展名（实测删掉后缀立刻 `ERR_MODULE_NOT_FOUND`）。正确做法是**保留后缀 + 打开 `allowImportingTsExtensions`**（`tsconfig.json` 与 `tsconfig.api.json` 都已打开，并由 `npm run test:build` 的护栏守住）。 |
+| 线上 `/api/*` 返回 500，日志里是 `ERR_MODULE_NOT_FOUND: Cannot find module '/var/task/api/_lib/db.ts'` | **这是本项目踩过的大坑**：Vercel 用 Node 的类型擦除把 `.ts` 剥成 `.js`，但**不重写 import 路径**。源码写 `from './_lib/db.ts'` → 线上产物仍去找 `db.ts`，而磁盘上只有 `db.js`。**修法：`api/*.ts` 与 `api/_lib/*.ts` 里的相对导入一律写 `.js` 后缀**（TypeScript ESM 的标准写法）。跑 `npm run verify:api` 可以在本地复现并检出这类问题。 |
+| 一堆 `TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled` | 说明有人把 import 后缀改回 `.ts` 了。改成 `.js` 即可（见上一条）。**不要靠开 `allowImportingTsExtensions` 让 `.ts` 后缀通过检查** —— 那样类型检查会过，但线上必崩。 |
 | `npx tsc --noEmit` 什么都没查就通过 | 以前根 `tsconfig.json` 是 `{"files": [], "references": [...]}` 这种「solution 风格」配置，**零文件**，所以它静默通过、什么也没检查。现在已改成真正 `include: ["src", "api", "vite.config.ts"]`，可以直接用。 |
 | 想确认 `api/` 真的被检查了 | 跑 `npm run typecheck:api`（只查 api，纯 Node 类型）。故意在 `api/` 里写 `const x: number = 'a'` 应该立刻报错。 |
+| 想在上线前确认部署不会崩 | 跑 `npm run verify:api` —— 它剥一遍类型生成 `.tmp/api-emit/`（等价于 `/var/task` 的样子），检查每个 import 能否解析，并真的把产物加载一次。`npm test` 里已包含这一步。 |
 
 ---
 

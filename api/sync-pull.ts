@@ -12,13 +12,13 @@
  *   `hasMore` 为 false。这次先按「个人自用、词量几千」的规模实现，
  *   不做服务器端游标。
  */
-import { requireSpaceKey, spaceKeyHint, SpaceKeyError } from './_lib/spaceAuth.ts';
-import { applyCors, handleOptions } from './_lib/cors.ts';
-import { firstQueryValue, sendError, sendJson } from './_lib/http.ts';
-import { MAX_PULL_ROWS } from './_lib/limits.ts';
-import { initSchema } from './_lib/db.ts';
-import { selectSourcesSince, selectWordsSince } from './_lib/inventory.ts';
-import type { ApiHandler } from './_lib/types.ts';
+import { requireSpaceKey, spaceKeyHint, SpaceKeyError } from './_lib/spaceAuth.js';
+import { applyCors, handleOptions } from './_lib/cors.js';
+import { firstQueryValue, sendError, sendJson } from './_lib/http.js';
+import { MAX_PULL_ROWS } from './_lib/limits.js';
+import { initSchema } from './_lib/db.js';
+import { selectSourcesSince, selectWordsSince } from './_lib/inventory.js';
+import type { ApiHandler } from './_lib/types.js';
 
 /** 允许的最早时间戳（2001-09-09，比它小的一律当 0 处理） */
 const MIN_TIMESTAMP = 1_000_000_000_000;

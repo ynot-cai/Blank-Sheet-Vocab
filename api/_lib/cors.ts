@@ -7,9 +7,9 @@
  * 安全：允许来源从环境变量 ALLOWED_ORIGIN 读（逗号分隔可填多个），**不使用 `*`**。
  * 自用工具也要保持这个习惯——代理一旦公网可访问，`*` 就等于给别人白用。
  */
-import { allowedOrigins } from './env.ts';
-import { readHeader } from './http.ts';
-import type { ApiRequest, ApiResponse } from './types.ts';
+import { allowedOrigins } from './env.js';
+import { readHeader } from './http.js';
+import type { ApiRequest, ApiResponse } from './types.js';
 
 /** 允许的请求方法 */
 const ALLOW_METHODS = 'GET, POST, OPTIONS';

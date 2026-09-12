@@ -6,7 +6,7 @@
  *
  * 这里也**绝不存明文同步码**：传进来的 spaceKey 本身就是 SHA-256 哈希（见 spaceAuth.ts）。
  */
-import { getDB } from './db.ts';
+import { getDB } from './db.js';
 import type { InValue } from '@libsql/client';
 
 /** 单词行（words 表） */

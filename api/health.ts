@@ -4,10 +4,10 @@
  * 用途：前端设置页的「测试连接」按钮、Vercel 部署后自查。
  * 只回「连不连得上数据库」，绝不包含连接串、库名、表名等任何环境细节。
  */
-import { pingDB } from './_lib/db.ts';
-import { applyCors, handleOptions } from './_lib/cors.ts';
-import { sendJson } from './_lib/http.ts';
-import type { ApiHandler } from './_lib/types.ts';
+import { pingDB } from './_lib/db.js';
+import { applyCors, handleOptions } from './_lib/cors.js';
+import { sendJson } from './_lib/http.js';
+import type { ApiHandler } from './_lib/types.js';
 
 const handler: ApiHandler = async (req, res) => {
   if (handleOptions(req, res)) return;

@@ -12,12 +12,12 @@
  * - 必须显式带 `confirm: "DELETE"`，避免误触把云端数据清掉；
  * - 日志只打条数，不打印 spaceKey 完整值、不打印词条内容。
  */
-import { requireSpaceKey, spaceKeyHint, SpaceKeyError } from './_lib/spaceAuth.ts';
-import { applyCors, handleOptions } from './_lib/cors.ts';
-import { readJsonBody, sendError, sendJson } from './_lib/http.ts';
-import { initSchema } from './_lib/db.ts';
-import { purgeSpace } from './_lib/inventory.ts';
-import type { ApiHandler } from './_lib/types.ts';
+import { requireSpaceKey, spaceKeyHint, SpaceKeyError } from './_lib/spaceAuth.js';
+import { applyCors, handleOptions } from './_lib/cors.js';
+import { readJsonBody, sendError, sendJson } from './_lib/http.js';
+import { initSchema } from './_lib/db.js';
+import { purgeSpace } from './_lib/inventory.js';
+import type { ApiHandler } from './_lib/types.js';
 
 /** 确认口令：前端要显式传它，防止误触 */
 const CONFIRM_WORD = 'DELETE';

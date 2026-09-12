@@ -15,11 +15,11 @@
  * 安全与日志要求：
  * - 只打条数和耗时；**绝不打印完整 spaceKey**（最多前 8 位），也绝不打印任何单词内容。
  */
-import { requireSpaceKey, spaceKeyHint, SpaceKeyError } from './_lib/spaceAuth.ts';
-import { applyCors, handleOptions } from './_lib/cors.ts';
-import { readJsonBody, sendError, sendJson } from './_lib/http.ts';
-import { MAX_PUSH_BATCH } from './_lib/limits.ts';
-import { initSchema } from './_lib/db.ts';
+import { requireSpaceKey, spaceKeyHint, SpaceKeyError } from './_lib/spaceAuth.js';
+import { applyCors, handleOptions } from './_lib/cors.js';
+import { readJsonBody, sendError, sendJson } from './_lib/http.js';
+import { MAX_PUSH_BATCH } from './_lib/limits.js';
+import { initSchema } from './_lib/db.js';
 import {
   selectExistingSourceTimes,
   selectExistingWordTimes,
@@ -27,9 +27,9 @@ import {
   upsertWords,
   type SourceInput,
   type WordInput,
-} from './_lib/inventory.ts';
-import { coerceBatch } from './_lib/validate.ts';
-import type { ApiHandler } from './_lib/types.ts';
+} from './_lib/inventory.js';
+import { coerceBatch } from './_lib/validate.js';
+import type { ApiHandler } from './_lib/types.js';
 
 /**
  * 过滤出「该写」的行：云端没有，或客户端版本不比云端旧。

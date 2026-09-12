@@ -1,0 +1,25 @@
+修复线上 500：api 的相对导入改用 .js 后缀（Vercel 类型擦除不改 import 路径）
+
+线上日志确凿证据：
+  Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/var/task/api/_lib/db.ts'
+    imported from /var/task/api/health.js
+
+根因：Vercel 用 Node 的类型擦除把 .ts 变成 .js，但**不重写 import 路径**。
+源码写 from './_lib/db.ts' → 产物里还是找 db.ts，磁盘上却只有 db.js → 函数加载失败 → 500。
+之前我判断「Vercel 的 esbuild 能处理 .ts 后缀」是错的：本地工具链能跑通，
+线上运行时不会，而且构建阶段也不报错，所以一直没暴露。
+
+修复：
+- api/*.ts 与 api/_lib/*.ts 的 39 处相对导入统一改为 .js 后缀（11 个文件）
+  （TypeScript ESM 的标准写法；不用「去掉后缀」是因为 Node ESM 不允许）
+- api/_dev/loader-hooks.mjs 增加 .js → 同名 .ts 的映射，
+  本地 node 直接跑 TS 源码因此照样能解析（构建产物的真 .js 优先命中）
+- 新增 scripts/emit-api.mjs：用 Node 的 stripTypeScriptTypes 模拟 Vercel 那一步，
+  在本地复现 /var/task 的产物（已确认能 1:1 复现线上那个 ERR_MODULE_NOT_FOUND）
+- 新增 scripts/verify-api-emit.mjs + npm run verify:api：
+  检查产物里每个 import 能否解析，并真的把产物加载一次；已接进 npm test
+- test:build 第 6/7 组护栏改正（之前那条「必须带 .ts 后缀」的规则本身就是错的）：
+  被部署的 api 源码必须写 .js；产物里不允许出现 .ts 说明符且必须可加载
+- README 排查表改正，并写明为什么不能靠 allowImportingTsExtensions 绕过
+
+自检：342 项全过（34+58+43+53+48+49+57），npx tsc --noEmit 与 npm run build 均零报错

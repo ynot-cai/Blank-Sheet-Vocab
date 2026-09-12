@@ -7,7 +7,7 @@
  *
  * 客户端上传前先做哈希，所以这里只接受 64 位十六进制。
  */
-import type { ApiRequest } from './types.ts';
+import type { ApiRequest } from './types.js';
 
 /** spaceKey 的合法格式：SHA-256 的十六进制表示 */
 const SPACE_KEY_RE = /^[0-9a-f]{64}$/i;
