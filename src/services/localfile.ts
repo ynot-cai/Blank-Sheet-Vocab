@@ -14,7 +14,7 @@ import { applyBackup, parseBackupText, serializeBackup } from './backup';
 /** 句柄在 IndexedDB settings 表里的 key */
 const HANDLE_KEY = 'fsHandle';
 /** 备份文件名 */
-const FILE_NAME = 'wordpaper-data.json';
+const FILE_NAME = 'blank-sheet-vocab-data.json';
 /** 自动同步防抖时间 */
 const DEBOUNCE_MS = 2000;
 
@@ -172,7 +172,7 @@ export async function linkFolder(): Promise<boolean> {
   if (!isSupported()) return false;
   try {
     const w = window as unknown as PickerWindow;
-    const picked = await w.showDirectoryPicker?.({ mode: 'readwrite', id: 'wordpaper-backup' });
+    const picked = await w.showDirectoryPicker?.({ mode: 'readwrite', id: 'blank-sheet-vocab-backup' });
     if (!picked) return false;
     cachedHandle = picked as DirHandleLike;
     permissionNeeded = false;
@@ -200,7 +200,7 @@ export async function unlink(): Promise<void> {
 }
 
 /**
- * 立即写一次 wordpaper-data.json。
+ * 立即写一次 blank-sheet-vocab-data.json。
  */
 export async function syncNow(): Promise<void> {
   if (!cachedHandle) throw new Error('还没有连接文件夹');
@@ -221,7 +221,7 @@ export async function syncNow(): Promise<void> {
 }
 
 /**
- * 从文件夹里的 wordpaper-data.json 恢复（覆盖当前库，调用方必须先确认）。
+ * 从文件夹里的 blank-sheet-vocab-data.json 恢复（覆盖当前库，调用方必须先确认）。
  * @returns 是否有文件并恢复成功
  */
 export async function restoreFromFile(): Promise<boolean> {

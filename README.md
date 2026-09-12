@@ -1,4 +1,4 @@
-# 单词白纸（wordpaper）
+# 白纸单词（blank-sheet-vocab）
 
 **本地优先**的背单词 Web 应用：单词随机散落在满屏白纸上，靠 **位置 + 语音** 建立记忆，
 配默写自测和可自定义的间隔复习优先度。
@@ -12,8 +12,32 @@
 
 密钥永远只存在你自己的浏览器里（**方案 B**），服务器不接触 AI 密钥，也不知道你的明文同步码。
 
-> 当前进度：**同步版阶段 01~07 全部完成**。本地功能（录入 / 背诵 / 记忆 / 复习 / 列表 / 备份）
-> 一行都没删，云同步是**增量加上去**的：不开启就是纯本地。
+> 当前进度：**同步版阶段 01~07 全部完成**，另加了**改名**与**预设词库**。
+> 本地功能（录入 / 背诵 / 记忆 / 复习 / 列表 / 备份）一行都没删，云同步是**增量加上去**的：
+> 不开启就是纯本地。
+
+---
+
+## 预设词库（一键导入，不用自己找词表）
+
+录入页顶部有「**0. 预设词库**」区块，五套内置词表点一下整档导入：
+
+| 档位 | 词数 | 说明 |
+|---|---|---|
+| 初中 | 1987 | |
+| 四级 | 3104 | 已剔除初中词 |
+| 六级 | 2060 | 已剔除初中、四级词 |
+| 考研 | 295 | 已剔除初中、四级、六级词 |
+| 雅思 | 904 | 已剔除初中、四级、六级、考研词 |
+
+**各档之间保证没有重复词**，所以挨个点一遍就行（顺序随便），同一个词不会被两个来源争抢义项。
+
+> ⚠️ 考研只剩 295 词是**实测数据**，不是算错：考研原表 5047 词里 94.2% 本来就在低档表里。
+> 要背完整考研词，得把初中 / 四级 / 六级也导入。想换一种剔除口径（考研能到 2497 词，
+> 但会残留 2202 个初中词）见 [HANDOVER.md](./HANDOVER.md) §0.2。
+
+改词表：改 `一期预设词库/*.txt` → `npm run presets` → `git diff` 复核 →
+`npm run test:presets` 验证。生成物（`public/presets/*.json` + `src/core/presets.ts`）**要提交**。
 
 ---
 
@@ -47,7 +71,9 @@ npm run api        # 本地后端，零依赖、不用登录 Vercel
 | `npm run typecheck` | 权威类型检查（`tsc -b`，按 references 分别查 src 与 api） |
 | `npm run typecheck:app` | 只查 `src/`（DOM + vite/client 类型） |
 | `npm run typecheck:api` | 只查 `api/`（Node 类型，看不到 window/document） |
-| `npm test` | **全套自检 339 项**（见下；先构建再逐项跑） |
+| `npm test` | **全套自检**（见下；先构建再逐项跑） |
+| `npm run presets` | 从 `一期预设词库/*.txt` 重新生成预设词库产物（改词表后跑） |
+| `npm run test:presets-ui` | 真浏览器跑一遍预设导入（需要本机有 Chrome / Edge，**不在 `npm test` 里**） |
 | `npm run icons` | 重新生成 PWA 图标 |
 
 ### 自检脚本（不需要任何云端账号）
@@ -62,9 +88,16 @@ npm run api        # 本地后端，零依赖、不用登录 Vercel
 | `npm run test:mobile` | 移动端：断点、右下角按钮避让、字号与热区、义项序号规则 |
 | `npm run test:pwa` | PWA：真跑一遍 Service Worker 的 install/activate/fetch，验证离线回落与「不缓存 API」 |
 | `npm run test:about` | 数据说明页文案与代码事实是否一致、错误边界、footer |
-| `npm run test:build` | 构建完整性：393 个相对导入可解析、无孤儿模块、**类型检查配置防回归** |
+| `npm run test:build` | 构建完整性：相对导入可解析、无孤儿模块、**类型检查配置防回归** |
+| `npm run test:rename` | 改名护栏：旧名绝迹、新名出现在 17 个关键位置、自检没把旧名写死 |
+| `npm run test:presets` | 预设词库：拿原始词表**独立复算**、各档两两不相交、清单与产物一致 |
 
 `npm test` 会把上面全部跑一遍并做类型检查。**改完代码先跑它。**
+
+> `test:presets-ui` 单独跑：它要起一个真实的预览服务 + 无头浏览器，
+> 验「点预设按钮 → 下载 → 建来源 → 合并页 → 确认入库 → IndexedDB 里真的有了」。
+> 这类**构建产物层面**的问题本地纯 Node 测不出来（和 §「两条本地测不出来的教训」同一类），
+> 所以放在需要浏览器的那一档；本机没有 Chrome/Edge 时它会自动跳过而不是失败。
 
 ### 遇到构建 / 类型检查报错时
 
@@ -95,7 +128,7 @@ npm run api        # 本地后端，零依赖、不用登录 Vercel
 设置 → **F. 云同步**：
 
 1. 打开「启用云同步」（会先弹一个说明，读完点「知道了」）；
-2. 「后端地址」填你的域名，例如 `https://wordpaper.vercel.app`，**不要带 `/api`**；
+2. 「后端地址」填你的域名，例如 `https://blank-sheet-vocab.vercel.app`，**不要带 `/api`**；
    本地开发就填 `http://localhost:3000`；
 3. 「同步码」自己编一个（至少 8 位、要含字母和数字），**所有设备填同一个**；
 4. 「测试连接」→ 绿字 → 「立即同步」。
@@ -162,10 +195,10 @@ npm run api        # 本地后端，零依赖、不用登录 Vercel
 
 ## 数据存在哪（三层）
 
-1. **浏览器本地（主）**：IndexedDB，库名 `wordpaper`。断网可用，秒开。
+1. **浏览器本地（主）**：IndexedDB，库名 `blank-sheet-vocab`。断网可用，秒开。
 2. **云端（可选）**：Turso 数据库，只存单词数据 + **同步码的 SHA-256 哈希**。
 3. **本地备份文件（可选）**：Chrome / Edge 连接本地文件夹后，每次改动自动写
-   `wordpaper-data.json`（防抖 2 秒）；浏览器重启后顶部黄条点一下恢复授权。
+   `blank-sheet-vocab-data.json`（防抖 2 秒）；浏览器重启后顶部黄条点一下恢复授权。
 
 手动导出：设置页或列表页「导出备份」→ 得到 json；「导入备份（合并/覆盖）」可恢复。
 **导出不包含 AI 密钥**（密钥从设计上就不进备份、不进云端）。
@@ -223,13 +256,16 @@ src/
 │  └─ pages/               Home / Import / Merge / List / Settings / About
 │     ├─ LearnPage MemorizePage ReviewPage
 │     ├─ paper/            PaperStage / AnswerCard / rounds / finish / flow（白纸引擎，三页共用）
+│     ├─ import/           InputPanel / JobPanel / PresetPanel（预设词库按钮）
 │     ├─ list/             ListTable（桌面表格）+ ListCards（手机卡片流）
 │     └─ settings/         A~G 七个分区
 ├─ dev/selftest.ts         控制台自测
 └─ styles/                 global.css / paper.css
 public/                    manifest.webmanifest / sw.js / icons/（由 npm run icons 生成）
-scripts/make-icons.mjs     零依赖生成真 PNG 图标
-wordpaper-proxy/           可选：Cloudflare Worker 自建转发（阶段 08，独立小项目）
+public/presets/            ★预设词库产物（由 npm run presets 生成，要提交；按需 fetch）
+一期预设词库/               预设词库的原始素材 txt（改词表改这里）
+scripts/                   preflight / emit-api / make-icons / ★build-presets / preset-lib / cdp
+blank-sheet-vocab-proxy/   可选：Cloudflare Worker 自建转发（阶段 08，独立小项目）
 ```
 
 ---
@@ -259,7 +295,7 @@ wordpaper-proxy/           可选：Cloudflare Worker 自建转发（阶段 08�
 - 删除用软删除墓碑（保证多设备一致），墓碑会一直留着，不占多少空间但不会自动清
 - 同步冲突策略是「后写覆盖」：两台设备离线各改同一个词，后同步的会覆盖前面的
 - Vercel 的 `*.vercel.app` 域名在国内可能访问慢——但本地优先，慢不影响背单词
-- Worker 限流是单实例内存计数，多实例部署会失效（仅 `wordpaper-proxy/` 那个可选脚本）
+- Worker 限流是单实例内存计数，多实例部署会失效（仅 `blank-sheet-vocab-proxy/` 那个可选脚本）
 
 ---
 

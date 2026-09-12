@@ -1,10 +1,12 @@
 import { uid } from '../../core/model';
+import type { PresetTier } from '../../core/presets';
 import { currentSettings } from './settings/ctx';
 import * as dao from '../../dao';
 import { aiConfigFromSettings, normalizeEndpoint, splitIntoChunks } from '../../services/ai';
 import type { ImportJob } from '../../services/importJob';
 import { clearJob, jobProgress, loadJob, saveJob } from '../../services/importJob';
 import { dedupeResults, runJob } from '../../services/parsePipeline';
+import { PresetLoadError, clearPresetCache, loadPreset } from '../../services/presetVocab';
 import { button, h } from '../dom';
 import { confirmModal } from '../components/Modal';
 import { toastError, toastOk, toastWarn } from '../components/Toast';
@@ -13,7 +15,7 @@ import { renderInputPanel } from './import/InputPanel';
 import { renderJobPanel } from './import/JobPanel';
 
 /**
- * 录入页：来源设置 + 输入方式 + 解析设置 + 分批解析（含断点续传）。
+ * 录入页：预设词库 + 来源设置 + 输入方式 + 解析设置 + 分批解析（含断点续传）。
  */
 export function renderImportPage(): HTMLElement {
   const page = h('div', { class: 'page' });
@@ -22,7 +24,11 @@ export function renderImportPage(): HTMLElement {
     h('p', { class: 'note' }, '贴进来的文本会先解析成「英文条目（单词 / 短语 / 缩写）+ 义项」，解析完进下一屏逐词确认，确认后才真正入库。'),
   );
 
-  const panel = renderInputPanel();
+  let presetBusy = false;
+  const panel = renderInputPanel({
+    onPreset: (tier) => void importPreset(tier),
+    isPresetBusy: () => presetBusy,
+  });
   page.appendChild(panel.el);
 
   const startBtn = button('开始解析', () => void start(), { variant: 'primary' });
@@ -50,6 +56,60 @@ export function renderImportPage(): HTMLElement {
 
   let job: ImportJob | null = loadJob();
   let running = false;
+
+  /**
+   * 导入一整档预设词库。
+   *
+   * 这些词表的义项是现成的，所以**不经过 AI 解析**：
+   * 直接把词条填进 ImportJob.results，复用 jobPanel（看进度）和合并确认页（逐词确认）。
+   * 走的是和「粘贴文本→解析」完全相同的下游路径，只是跳过了「解析」这一步。
+   *
+   * @param tier 选中的档位
+   */
+  const importPreset = async (tier: PresetTier): Promise<void> => {
+    if (presetBusy || running) return;
+    presetBusy = true;
+    try {
+      const loaded = await loadPreset(tier);
+      if (loaded.words.length === 0) {
+        toastError(`预设词库「${tier.label}」是空的，请重新生成产物（npm run presets）`);
+        return;
+      }
+
+      const source = await dao.sources.ensureByName(tier.sourceName, tier.priority);
+
+      // chunks 在预设预览流程里**不会被读取**——合并页只用 results。
+      // 但 ImportJob 的类型要求它是数组，而且任务面板/续传横幅会显示「已完成 x/y 批」，
+      // 所以留一个已经完成的占位批次（写清楚来源），既满足类型也让人看得懂。
+      // 这里刻意**不**按词数切几百个批次：那是纯粹的内存浪费。
+      const chunks: string[][] = [[`预设词库：${tier.label}`]];
+
+      const next: ImportJob = {
+        id: uid(),
+        sourceId: source.id,
+        sourceName: source.name,
+        priority: source.priority,
+        chunks,
+        doneFlags: chunks.map(() => true),
+        errors: chunks.map(() => null),
+        results: loaded.words,
+        useAi: false,
+        createdAt: Date.now(),
+      };
+      job = next;
+      saveJob(next);
+      clearPresetCache();
+      refreshBanner();
+      jobPanel.update(next, false);
+      toastOk(`已载入「${tier.sourceName}」${loaded.words.length} 词、${loaded.senseCount} 个义项，正在进入确认页`);
+      navigate('/merge');
+    } catch (err) {
+      if (err instanceof PresetLoadError) toastError(err.message);
+      else toastError(err instanceof Error ? err.message : String(err));
+    } finally {
+      presetBusy = false;
+    }
+  };
 
   /** 刷新「有未完成任务」提示 */
   const refreshBanner = (): void => {

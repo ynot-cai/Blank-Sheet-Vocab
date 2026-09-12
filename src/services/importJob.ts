@@ -5,7 +5,7 @@
 import type { ParsedWord } from './ai';
 
 /** sessionStorage 的键 */
-const JOB_KEY = 'wordpaper.importJob';
+const JOB_KEY = 'blank-sheet-vocab.importJob';
 
 /** 一次录入任务 */
 export interface ImportJob {

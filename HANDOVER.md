@@ -1,7 +1,78 @@
-# 项目交接文档（单词白纸 / wordpaper）
+# 项目交接文档（白纸单词 / blank-sheet-vocab）
 
 > 面向接替开发的人。**读完这份 + `README.md` 就能上手改代码。**
-> 最后更新：云同步阶段全部完成并已在线上验证通过。
+> 最后更新：改名 + 预设词库完成。
+
+---
+
+## 0. 最近一次改动（接手先看这里）
+
+### 0.1 改名：wordpaper → blank-sheet-vocab
+
+因为 `wordpaper` 这个域名被人占了，所以整项目改了名。**改名是一件很容易漏的事情**，
+漏掉的地方往往不报错，只是悄悄不对，所以列清楚改了哪些：
+
+| 类别 | 旧值 | 新值 | 漏了会怎样 |
+|---|---|---|---|
+| 包名 | `wordpaper` | `blank-sheet-vocab` | 只影响 npm 脚本标题，无实际风险 |
+| IndexedDB 库名 | `wordpaper` | `blank-sheet-vocab` | ⚠️ **旧数据读不到了**（见下） |
+| 设置镜像键 | `wordpaper.settings` | `blank-sheet-vocab.settings` | 设置缓存丢失，重进设置页会重建 |
+| 导入任务存档键 | `wordpaper.importJob` | `blank-sheet-vocab.importJob` | 断点续传丢失 |
+| iOS 语音解锁标记 | `wordpaper.speechUnlocked` | `blank-sheet-vocab.speechUnlocked` | 语音解锁状态丢失 |
+| 安装提示标记 | `wordpaper.installHintShown` | `blank-sheet-vocab.installHintShown` | 会再弹一次安装引导 |
+| 本地文件夹备份文件名 | `wordpaper-data.json` | `blank-sheet-vocab-data.json` | 旧备份文件不再被自动读写 |
+| 救火导出文件名 | `wordpaper-rescue-*.json` | `blank-sheet-vocab-rescue-*.json` | 无 |
+| 手动导出文件名 | `单词白纸备份_*.json` | `白纸单词备份_*.json` | 无 |
+| SW 缓存前缀 | `wordpaper-v1` | `blank-sheet-vocab-v1` | 缓存不会清，孤儿缓存堆积 |
+| PWA / 页面标题 | 单词白纸 | 白纸单词 | 主屏幕图标名不对 |
+| 界面品牌名 | 单词白纸 | 白纸单词 | 顶栏/footer/首页还挂旧名 |
+| 可选转发脚本目录 | `wordpaper-proxy/` | `blank-sheet-vocab-proxy/` | 只是个独立小项目 |
+
+> ★ **IndexedDB 库名一改，用户已录入的词就读不到了**（数据其实还在浏览器里，只是程序不再去读）。
+> 这次是**明确选择不迁移**（用户确认过：直接改名，不要旧数据）。
+> 如果哪天需要迁移，做法是：启动时先 `indexedDB.open('wordpaper')` 把 4 张表读出来
+> 写进新库，再 `indexedDB.deleteDatabase('wordpaper')`。`ErrorBoundary.ts` 里已经有一段
+> 「直接开库读原始记录」的代码（救火导出用），可以照着写。
+
+**改名这件事有护栏**：`npm run test:rename`（已进 `npm test`）会检查
+「旧名在代码里绝迹」「新名出现在 17 个关键位置」「自检脚本没把旧名写死」。
+★ 其中最后一条是防一种很阴的修法：改名后 `api/_dev/` 里的断言红了，
+顺手把断言改回旧值来「修好」测试——那等于把 bug 焊死。
+
+### 0.2 新增：预设词库（一键导入）
+
+录入页顶部多了「**0. 预设词库**」区块，五个按钮对应五套内置词表，
+点一下整档导入，不用粘贴文本、也不用 AI 解析。
+
+- 数据：`一期预设词库/*.txt`（原始素材）→ `scripts/build-presets.mjs` → `public/presets/*.json` + `src/core/presets.ts`
+- 逻辑：`scripts/preset-lib.mjs`（纯函数，能被构建脚本和自检同时复用）
+- 前端：`src/services/presetVocab.ts`（加载）+ `src/ui/pages/import/PresetPanel.ts`（按钮）
+- 自检：`npm run test:presets`（61 项）、`npm run test:presets-ui`（21 项，需本机有 Chrome/Edge）
+
+**★ 剔除规则是递归的**，每一档减掉所有更低档：
+
+| 档位 | 原表 | 剔除 | 保留 |
+|---|---|---|---|
+| 初中 | 1987 | 0 | **1987** |
+| 四级 | 4543 | 初中 1439 | **3104** |
+| 六级 | 3991 | 初中 339 / 四级 1592 | **2060** |
+| 考研 | 5047 | 初中 1233 / 四级 2550 / 六级 969 | **295** |
+| 雅思 | 3592 | 初中 320 / 四级 1612 / 六级 696 / 考研 60 | **904** |
+
+> ⚠️ **考研只剩 295 词看着很怪，但这是实测的真实数据**：
+> 考研原表 5047 词里有 4752 个（94.2%）本来就在初中/四级/六级表里。
+> 用户明确选择了「保持递归」——换来的是**任意两档没有重复词**。
+> 要背完整考研词，得把初中/四级/六级也导入。
+> 想改成「只减相邻下一档」（考研能到 2497 词，但会残留 2202 个初中词），
+> 改 `scripts/preset-lib.mjs` 的 `TIERS[].excludes` 再跑 `npm run presets`。
+
+**★ 改词表的工作流**：改 `一期预设词库/` 下的 txt → `npm run presets` → `git diff` 复核产物。
+产物（JSON + `presets.ts`）**要提交进仓库**，它是「可复核的数据」而不是构建中间物：
+这样 `git diff` 能看出哪个词被加进来/剔出去了，而且 `test:presets` 能拿原始词表**独立复算一遍**验证没算错。
+
+**★ 预设导入走的是既有路径**：词表直接填进 `ImportJob.results`，跳过「解析」，
+往后还是「合并确认页 → 逐词确认 → 入库」，和粘贴文本完全同一条下游。
+所以没有「只在预设模式才跑」的分支。渲染几千张卡片实测 39ms（3104 词），不需要分页。
 
 ---
 
@@ -40,7 +111,7 @@
 ┌─ 浏览器（手机 / 平板 / 电脑）────────────────────────────────┐
 │  Vite 构建的静态站（Vercel 托管）                             │
 │                                                             │
-│  ┌─ IndexedDB（库名 wordpaper，v2）★主存储，断网可用        │
+│  ┌─ IndexedDB（库名 blank-sheet-vocab，v2）★主存储，断网可用        │
 │  │    words / sources / settings / sessions                │
 │  ├─ localStorage 镜像（设置快照、语音解锁标记、安装提示标记）│
 │  └─ Service Worker（离线缓存：静态资源 Cache First）         │
@@ -180,7 +251,7 @@ CREATE INDEX idx_sources_space  ON sources(space_key, updated_at);
 
 ### 4.2 本地（IndexedDB，`src/core/db.ts`）
 
-库名 `wordpaper`，版本 **2**（v1→v2 迁移补了 `sources.updatedAt` 等云同步字段）。
+库名 `blank-sheet-vocab`，版本 **2**（v1→v2 迁移补了 `sources.updatedAt` 等云同步字段）。
 
 | 表 | keyPath | 说明 |
 |---|---|---|
@@ -296,6 +367,7 @@ src/
 │  ├─ priority.ts           优先度表达式求值
 │  ├─ layout.ts             jitteredGrid 布点（含右下角避让 avoidPx）+ resolvePaperSize
 │  ├─ pick.ts               记忆环节抽词规则
+│  ├─ presets.ts            ★预设档位清单（**自动生成**，不要手改）
 │  ├─ syncHelper.ts         sha256 / getSpaceKey / apiUrl / normalizeApiBase / relativeTime
 │  └─ version.ts            构建时间戳（vite define 注入）
 │
@@ -315,6 +387,7 @@ src/
 │  ├─ ai.ts                 ★AI 调用：直连 ⇄ 代理自动切换；getLastAiRoute() 供设置页显示
 │  ├─ parsePipeline.ts       分批解析 + 断点续传
 │  ├─ importJob.ts           导入任务状态
+│  ├─ presetVocab.ts         ★预设词库加载（fetch public/presets/*.json → ParsedWord）
 │  ├─ backup.ts              导出/导入 json
 │  ├─ localfile.ts           本地文件夹自动备份（File System Access API）
 │  ├─ tts.ts                 语音朗读
@@ -330,7 +403,7 @@ src/
 │     ├─ HomePage / ImportPage / MergePage / ListPage / SettingsPage / AboutPage
 │     ├─ LearnPage / MemorizePage / ReviewPage
 │     ├─ paper/             ★白纸引擎：PaperStage / rounds / AnswerCard / finish / flow
-│     ├─ import/            InputPanel / JobPanel
+│     ├─ import/            InputPanel / JobPanel / PresetPanel(预设按钮)
 │     ├─ list/              ListTable(桌面表格) / ListCards(手机卡片流) / ListFilters
 │     │                      / BatchBar / RawSourcesModal(低优先级来源手动采纳)
 │     ├─ merge/             MergeCard / drafts
@@ -340,6 +413,12 @@ src/
 ├─ state/store.ts           极简发布订阅 + emitDataChanged/onDataChanged
 ├─ dev/selftest.ts          浏览器控制台自测（window.__selftest）
 └─ styles/global.css paper.css
+
+public/presets/             ★预设词库产物（自动生成，要提交；按需 fetch，不进 JS 包）
+一期预设词库/                预设词库的**原始素材** txt（改词表改这里，再跑 npm run presets）
+scripts/build-presets.mjs   ★生成 public/presets/*.json + src/core/presets.ts
+scripts/preset-lib.mjs      解析 / 递归剔除的纯函数（构建脚本与自检共用同一份）
+scripts/cdp.mjs             真浏览器测试用的 CDP 小工具（起预览服务 / 跑表达式 / 取 DOM）
 ```
 
 ### 白纸引擎（最复杂的部分，三页共用）
@@ -357,9 +436,10 @@ src/
 ## 8. 自检与验证（改完必跑）
 
 ```bash
-npm test          # 类型检查 + 构建 + 353 项本地自检（不需要任何云端账号）
-npm run test:live # 打线上真实 URL 的接口冒烟（20 项）
-npm run test:e2e  # 用前端真实代码路径跑完整用户流程（29 项，打线上）
+npm test                # 类型检查 + 构建 + 本地自检（不需要任何云端账号）
+npm run test:live       # 打线上真实 URL 的接口冒烟（20 项）
+npm run test:e2e        # 用前端真实代码路径跑完整用户流程（29 项，打线上）
+npm run test:presets-ui # 预设导入的真浏览器流程（需要本机有 Chrome/Edge，不在 npm test 里）
 ```
 
 ### 本地自检分组（`npm test` 跑这些）
@@ -367,6 +447,8 @@ npm run test:e2e  # 用前端真实代码路径跑完整用户流程（29 项，
 | 命令 | 项数 | 验什么 |
 |---|---|---|
 | `test:build` | 45 | 相对导入可解析 / 无孤儿模块 / **类型检查配置护栏** / **产物模拟** / **路由表⇄api文件对应** |
+| `test:rename` | 23 | 旧名绝迹 / 新名出现在 17 个关键位置 / 自检没把旧名写死 |
+| `test:presets` | 61 | 拿原始词表**独立复算** / **各档两两不相交** / 清单⇄产物一致 / SW 缓存了 json |
 | `test:api` | 58 | 后端：401 / 空间隔离 / 软删除 / 500 上限 / 分批 / 老库主键升级 |
 | `test:sync` | 43 | 前端同步：多设备 / 增量 / 墓碑 / 断网不阻断 / 1100 条自动分批 |
 | `test:ai` | 53 | AI 代理：来源白名单 / 上游白名单 / SSE 透传 / **日志里搜不到密钥** |
@@ -384,6 +466,17 @@ npm run test:e2e  # 用前端真实代码路径跑完整用户流程（29 项，
 2. 前端请求 `/api/sync/pull` 而真实路由是 `/api/sync-pull` → 线上 404（已修，有护栏 + 冒烟测试）
 
 所以：**任何改动涉及路由路径、模块导入、部署行为，都要跑 `test:live` / `test:e2e`。**
+
+### 第三条：界面流程要真浏览器才测得出（`test:presets-ui`）
+
+预设导入这条链路上踩过一模一样的坑，值得单独记一笔：
+
+- 一开始用 `chrome --headless --dump-dom` 抓页面，结果抓到的 `<div id="app">` **是空的**——
+  模块脚本还没跑就被 dump 了。**看着像「功能没实现」，其实是测法错了**。
+  改用 CDP（`scripts/cdp.mjs`）先等 load 再 `Runtime.evaluate` 才拿到真实 DOM。
+- 只验「数据文件在不在」和「按钮画出来没有」是不够的：**接线错了照样能画出来**。
+  所以 `test:presets-ui` 真的去 `click()` 那个按钮，然后等跳转、数卡片、
+  点「确认入库」，最后直接开 IndexedDB 数一遍**是不是真有 295 个词**。
 
 ### 本地怎么跑起来
 
@@ -432,7 +525,7 @@ npm run dev     # 窗口 2：前端（Vite 已把 /api 代理到 127.0.0.1:3000�
 - 词量上万时列表筛选是内存过滤，会卡（改造方向：索引游标）
 - 删除用软删除墓碑保证多设备一致，但**墓碑不会自动清理**
 - 同步冲突是「后写覆盖」：两台设备离线各改同一个词，后同步的会覆盖前面的
-- `wordpaper-proxy/`（阶段 08 的 Cloudflare Worker 转发脚本）与新的 `/api/ai-proxy`
+- `blank-sheet-vocab-proxy/`（阶段 08 的 Cloudflare Worker 转发脚本）与新的 `/api/ai-proxy`
   **功能重叠**，目前两套并存；建议后续合并
 - Worker 限流是单实例内存计数，多实例部署会失效（仅指那个可选 Worker）
 
@@ -464,7 +557,7 @@ npm run dev     # 窗口 2：前端（Vite 已把 /api 代理到 127.0.0.1:3000�
 
 ## 12. 下一步建议（如果要继续做）
 
-1. **合并两套 AI 转发**：`wordpaper-proxy/`（Cloudflare Worker）与 `/api/ai-proxy` 功能重叠，留一个即可
+1. **合并两套 AI 转发**：`blank-sheet-vocab-proxy/`（Cloudflare Worker）与 `/api/ai-proxy` 功能重叠，留一个即可
 2. **真机跑查**：照 `CHECKLIST.md` 在三端勾一遍，尤其是 iOS 语音与添加到主屏幕
 3. **墓碑清理**：加一个「清理 30 天前的墓碑」按钮（`deleted=1 AND updated_at < 阈值`）
 4. **冲突提示**：现在冲突是静默后写覆盖；后端已返回 `conflicts` 计数，可以做成提示
@@ -491,11 +584,17 @@ npm run dev     # 窗口 2：前端（Vite 已把 /api 代理到 127.0.0.1:3000�
 | `preflight.mjs` | 构建前置检查（Node / esbuild / vite） | 每次 build 自动跑 |
 | `emit-api.mjs` + `verify-api-emit.mjs` | ★模拟 Vercel 剥类型后的产物并校验 import 可解析 | `npm run verify:api`，测试自动跑 |
 | `make-icons.mjs` | 零依赖生成 PWA 真 PNG 图标 | 改图标时跑 |
+| `build-presets.mjs` | ★从原始词表生成预设词库产物（`--check` 只校验不写） | 改词表时跑 |
+| `preset-lib.mjs` | 预设词表的解析 / 递归剔除纯函数（不是可执行脚本，被上面那个和自检 import） | — |
+| `cdp.mjs` | 真浏览器测试工具：起预览服务 + CDP 连无头浏览器跑表达式 | 被 `test:presets-ui` 用 |
 | `run-live.mjs` / `run-e2e.mjs` | 自动识别系统代理后启动线上测试 | 打线上时跑 |
 | `fix-api-extensions.mjs` | **一次性迁移**：把 api 的 `.ts` 后缀改成 `.js` | 历史脚本，已完成，可删 |
 | `fix-api-paths.mjs` | **一次性迁移**：把 `/api/sync/pull` 改成 `/api/sync-pull` | 历史脚本，已完成，可删 |
 
 > 两个 `fix-*.mjs` 是修线上故障时写的一次性迁移脚本，留着是为了留痕。
 > 新代码不要模仿它们的写法（它们直接改文件，不经检查）。
+>
+> 同理，`.tmp/rename.mjs` 是改名时用的一次性脚本（也直接改文件），
+> 留档是为了说明「当时到底替换了哪些字符串」。
 
 代码里凡是有坑的地方都留了 `★` 或 `⚠️` 注释，**改之前请先读那段注释**——那些注释都是踩过坑才写下的。

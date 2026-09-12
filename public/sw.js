@@ -1,6 +1,6 @@
 /* eslint-disable no-undef */
 /**
- * 单词白纸 · Service Worker（阶段 06：PWA 离线可用）
+ * 白纸单词 · Service Worker（阶段 06：PWA 离线可用）
  *
  * 为什么手写而不用 vite-plugin-pwa：
  * 我们要的策略很少（静态资源 Cache First、导航 Network First、/api 不缓存），
@@ -20,12 +20,22 @@
  */
 
 /* 缓存版本号：改了这个字符串才会触发「清旧缓存 + 重新预缓存」。 */
-const CACHE_VERSION = 'wordpaper-v1';
+const CACHE_VERSION = 'blank-sheet-vocab-v1';
 const CACHE_NAME = `${CACHE_VERSION}-static`;
 const OFFLINE_URL = './index.html';
 
-/** 允许预缓存的静态资源后缀 */
-const PRECACHE_EXT = /\.(?:js|css|png|jpg|jpeg|svg|webp|ico|woff2?|webmanifest)$/i;
+/**
+ * 允许预缓存的静态资源后缀。
+ *
+ * ★ `json` 是给 `presets/*.json`（预设词库）留的。
+ *   预设词表放在 `public/` 下，属于「同源静态资源」，
+ *   不把 json 算进来的话，它们在离线时**取不到**——
+ *   表现是「装到主屏幕后断网，点预设按钮提示下载失败」，
+ *   而其它功能都正常，很容易误判成预设功能坏了。
+ *   这里**不预缓存**（首个用户可能一档都不用，没必要替他下 442 KB），
+ *   而是在第一次点某档时按 Cache First 落缓存，之后离线也能用。
+ */
+const PRECACHE_EXT = /\.(?:js|css|json|png|jpg|jpeg|svg|webp|ico|woff2?|webmanifest)$/i;
 
 /** 当前 SW 的作用域（Vercel 部署在根路径下就是 '/'） */
 const SCOPE = new URL(self.registration?.scope ?? self.location.href).pathname;
@@ -95,7 +105,7 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
       const names = await caches.keys();
-      await Promise.all(names.filter((n) => n.startsWith('wordpaper-') && n !== CACHE_NAME).map((n) => caches.delete(n)));
+      await Promise.all(names.filter((n) => n.startsWith('blank-sheet-vocab-') && n !== CACHE_NAME).map((n) => caches.delete(n)));
       await self.clients.claim();
     })(),
   );

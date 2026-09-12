@@ -1,4 +1,4 @@
-# wordpaper-proxy（自建转发脚本，可选）
+# blank-sheet-vocab-proxy（自建转发脚本，可选）
 
 > 独立小项目，**前端代码零改动**。能直连官方接口就不用装它。
 
@@ -15,7 +15,7 @@
 ## 部署步骤
 
 ```bash
-cd wordpaper-proxy
+cd blank-sheet-vocab-proxy
 npm i
 npx wrangler login
 # （可选）把上游密钥固定写在服务端：

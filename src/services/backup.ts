@@ -98,7 +98,7 @@ export async function applyBackup(
 }
 
 /**
- * 导出备份并触发浏览器下载，文件名 单词白纸备份_YYYYMMDD_HHmm.json。
+ * 导出备份并触发浏览器下载，文件名 白纸单词备份_YYYYMMDD_HHmm.json。
  */
 export async function exportBackup(): Promise<void> {
   const text = await serializeBackup();
@@ -120,7 +120,7 @@ export async function exportBackup(): Promise<void> {
  */
 export function backupFileName(date: Date): string {
   const p = (n: number): string => String(n).padStart(2, '0');
-  return `单词白纸备份_${date.getFullYear()}${p(date.getMonth() + 1)}${p(date.getDate())}_${p(date.getHours())}${p(date.getMinutes())}.json`;
+  return `白纸单词备份_${date.getFullYear()}${p(date.getMonth() + 1)}${p(date.getDate())}_${p(date.getHours())}${p(date.getMinutes())}.json`;
 }
 
 /**

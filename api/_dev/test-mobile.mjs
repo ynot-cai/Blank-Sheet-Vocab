@@ -212,7 +212,7 @@ console.log('\n[7] iOS 语音解锁层');
   check('解锁在点击回调里同步执行', /button\([\s\S]{0,240}unlockSpeech\(\)/.test(gate));
   check('提醒关闭 iPhone 侧边静音键', gate.includes('静音键'));
   check('桌面不弹（只在 iOS 类设备弹）', gate.includes('isIosLike'));
-  check('只提示一次（localStorage 记标记）', gate.includes('wordpaper.speechUnlocked'));
+  check('只提示一次（localStorage 记标记）', gate.includes('blank-sheet-vocab.speechUnlocked'));
 }
 
 console.log(`\n=== 结果：通过 ${passed} 项，失败 ${failed} 项 ===\n`);

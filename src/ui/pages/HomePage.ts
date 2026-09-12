@@ -21,7 +21,7 @@ const ENTRIES: { path: string; label: string; desc: string }[] = [
  */
 export function renderHomePage(): HTMLElement {
   const page = h('div', { class: 'page home-page' });
-  page.appendChild(h('h2', { class: 'page-title', text: '单词白纸' }));
+  page.appendChild(h('h2', { class: 'page-title', text: '白纸单词' }));
   page.appendChild(
     h('p', { class: 'note' }, '本地离线、单用户的背单词工具。条目可以是单词、短语（give up）或缩写（NASA / etc.）。数据存在本机浏览器里，不联网（AI 解析除外）。'),
   );

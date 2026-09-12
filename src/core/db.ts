@@ -1,10 +1,10 @@
 /**
  * 原生 IndexedDB 封装（不引第三方库）。
- * 库名 wordpaper，版本 2，4 张表：words / sources / settings / sessions。
+ * 库名 blank-sheet-vocab，版本 2，4 张表：words / sources / settings / sessions。
  */
 
 /** 库名 */
-export const DB_NAME = 'wordpaper';
+export const DB_NAME = 'blank-sheet-vocab';
 /** 库版本：v2 给 words / sources 补云同步用的字段（见 migrateToV2） */
 export const DB_VERSION = 2;
 

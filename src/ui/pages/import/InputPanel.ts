@@ -1,10 +1,12 @@
 import { currentSettings } from '../settings/ctx';
 import * as dao from '../../../dao';
 import type { Source } from '../../../core/types';
+import type { PresetTier } from '../../../core/presets';
 import { button, details, h, numberInput, textInput } from '../../dom';
 import { toastError, toastWarn } from '../../components/Toast';
+import { renderPresetPanel } from './PresetPanel';
 
-/** 录入页第一~三区收集到的输入 */
+/** 录入页各分区收集到的输入 */
 export interface InputState {
   sourceId: string | null;
   sourceName: string;
@@ -28,9 +30,14 @@ const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const PREVIEW_LINES = 20;
 
 /**
- * 渲染录入页的第一区（来源）、第二区（输入方式）、第三区（解析设置）。
+ * 渲染录入页的第零区（预设词库）、第一区（来源）、第二区（输入方式）、第三区（解析设置）。
+ * @param opts.onPreset 点了某个预设档位的回调（由录入页负责加载与跳转）
+ * @param opts.isPresetBusy 是否有预设正在加载
  */
-export function renderInputPanel(): InputPanel {
+export function renderInputPanel(opts: {
+  onPreset: (tier: PresetTier) => void;
+  isPresetBusy: () => boolean;
+}): InputPanel {
   const settings = currentSettings();
   const state: InputState = {
     sourceId: null,
@@ -44,6 +51,9 @@ export function renderInputPanel(): InputPanel {
   };
 
   const wrap = h('div', { class: 'stack' });
+
+  // —— 第零区：预设词库 ——
+  wrap.appendChild(renderPresetPanel(opts.onPreset, opts.isPresetBusy));
 
   // —— 第一区：来源设置 ——
   const sourceBox = h('div', { class: 'card' });

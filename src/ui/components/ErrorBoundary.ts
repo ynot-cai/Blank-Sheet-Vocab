@@ -82,7 +82,7 @@ async function exportRaw(): Promise<void> {
   const note = document.querySelector<HTMLElement>('.fatal-msg');
   try {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const req = indexedDB.open('wordpaper');
+      const req = indexedDB.open('blank-sheet-vocab');
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error ?? new Error('打不开本地数据库'));
     });
@@ -110,7 +110,7 @@ async function exportRaw(): Promise<void> {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `wordpaper-rescue-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `blank-sheet-vocab-rescue-${new Date().toISOString().slice(0, 10)}.json`;
     document.body.appendChild(a);
     a.click();
     a.remove();

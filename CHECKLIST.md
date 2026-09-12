@@ -88,13 +88,13 @@
 
 - [ ] 设置 → G 区「导出备份」能下载到 json，文件里词条数量对得上
 - [ ] 同步码已经记在别的地方（手机备忘录 / 密码管理器）
-- [ ] Chrome / Edge：连接本地文件夹后，改一个词，2 秒后 `wordpaper-data.json` 内容变了
+- [ ] Chrome / Edge：连接本地文件夹后，改一个词，2 秒后 `blank-sheet-vocab-data.json` 内容变了
 - [ ] 换一台设备：只靠同步码 + 导出备份，能把数据恢复回来
 
 ## 九、手动触发错误边界
 
 - [ ] F12 控制台执行 `throw new Error('test')` → 出现「出问题了，但你的数据还在」兜底页，**没有白屏**
-- [ ] 点「导出数据」能下载到 `wordpaper-rescue-*.json`
+- [ ] 点「导出数据」能下载到 `blank-sheet-vocab-rescue-*.json`
 - [ ] 点「返回首页」能回到首页继续用
 
 ---

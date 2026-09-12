@@ -17,7 +17,7 @@ export function renderFooter(): HTMLElement {
   const footer = h('footer', { class: 'app-footer' });
 
   const line1 = h('div', { class: 'footer-line' });
-  line1.appendChild(h('span', { class: 'footer-name', text: '单词白纸' }));
+  line1.appendChild(h('span', { class: 'footer-name', text: '白纸单词' }));
   line1.appendChild(h('span', { class: 'footer-small', text: `版本 ${appVersionLabel()}` }));
   const aboutLink = h('button', {
     class: 'link-btn',

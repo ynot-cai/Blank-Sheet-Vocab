@@ -1,9 +1,9 @@
 {
-  "name": "wordpaper",
+  "name": "blank-sheet-vocab",
   "private": true,
   "version": "0.5.0",
   "type": "module",
-  "description": "单词白纸 —— 白纸空间记忆背单词应用（本地优先 + 可选云同步）",
+  "description": "白纸单词 —— 白纸空间记忆背单词应用（本地优先 + 可选云同步）",
   "scripts": {
     "dev": "vite",
     "api": "node api/_dev/server.mjs",
@@ -22,10 +22,14 @@
     "test:pwa": "node api/_dev/test-pwa.mjs",
     "test:about": "node api/_dev/test-about.mjs",
     "test:build": "node api/_dev/test-build.mjs",
+    "test:presets": "node api/_dev/test-presets.mjs && node scripts/build-presets.mjs --check",
+    "test:presets-ui": "node api/_dev/test-presets-ui.mjs",
+    "test:rename": "node api/_dev/test-rename.mjs",
+    "presets": "node scripts/build-presets.mjs",
     "test:live": "node scripts/run-live.mjs",
     "test:e2e": "node scripts/run-e2e.mjs",
     "icons": "node scripts/make-icons.mjs",
-    "test": "npm run typecheck && npm run build && npm run verify:api && npm run test:build && npm run test:api && npm run test:sync && npm run test:ai && npm run test:mobile && npm run test:pwa && npm run test:about"
+    "test": "npm run typecheck && npm run build && npm run verify:api && npm run test:build && npm run test:rename && npm run test:presets && npm run test:api && npm run test:sync && npm run test:ai && npm run test:mobile && npm run test:pwa && npm run test:about"
   },
   "devDependencies": {
     "@types/node": "^22.20.2",

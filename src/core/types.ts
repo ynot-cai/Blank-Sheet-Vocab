@@ -163,7 +163,7 @@ export interface BackupSettings {
  */
 export interface CloudSettings {
   enabled: boolean; // 是否开启云同步
-  apiBase: string; // 后端地址，如 https://wordpaper.vercel.app（不要带 /api，代码自动拼）
+  apiBase: string; // 后端地址，如 https://blank-sheet-vocab.vercel.app（不要带 /api，代码自动拼）
   syncCode: string; // 同步码（明文，只存本机）
   lastSyncAt: number; // 上次同步成功的时间戳（0 = 从未同步）
   autoSync: boolean; // 数据变动后防抖自动同步

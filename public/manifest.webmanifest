@@ -1,6 +1,6 @@
 {
-  "name": "单词白纸",
-  "short_name": "单词白纸",
+  "name": "白纸单词",
+  "short_name": "白纸单词",
   "description": "白纸空间记忆，离线可用的背单词工具",
   "lang": "zh-CN",
   "start_url": "./",

@@ -33,10 +33,10 @@ npm run dev
 
 1. 打开 <https://turso.tech>，用 GitHub 账号登录（免费版够用）。
 2. 控制台里 **Create Database**：
-   - 名字随意，例如 `wordpaper`；
+   - 名字随意，例如 `blank-sheet-vocab`；
    - 区域选**离你最近**的，国内用户建议 `Hong Kong (hkg)` 或 `Singapore (sin)`。
 3. 建好后点进数据库，记下两样东西：
-   - **URL**：形如 `libsql://wordpaper-你的名字.turso.io`
+   - **URL**：形如 `libsql://blank-sheet-vocab-你的名字.turso.io`
    - **Token**：点 *Create Token* 生成一个（**只显示一次**，先复制好）
 
 > 这两样就是环境变量 `TURSO_DATABASE_URL` 和 `TURSO_AUTH_TOKEN`。
@@ -72,13 +72,13 @@ Vercel 项目 → **Settings → Environment Variables**，加这三条（Produc
 
 | 名称 | 填什么 | 说明 |
 |---|---|---|
-| `TURSO_DATABASE_URL` | `libsql://wordpaper-xxx.turso.io` | 第 1 步拿到的 URL |
+| `TURSO_DATABASE_URL` | `libsql://blank-sheet-vocab-xxx.turso.io` | 第 1 步拿到的 URL |
 | `TURSO_AUTH_TOKEN` | 第 1 步生成的 Token | **不要**提交到 Git |
 | `ALLOWED_ORIGIN` | `https://你的项目.vercel.app` | 你的真实域名，**不要写 `*`** |
 | `AI_ALLOWED_HOSTS` | `api.deepseek.com`（可留空） | AI 代理允许转发的上游域名，填上更安全 |
 
 > 有自定义域名就填自定义域名；想两个都能用就写成一列，逗号分隔：
-> `https://wordpaper.vercel.app,https://words.example.com`
+> `https://blank-sheet-vocab.vercel.app,https://words.example.com`
 
 **填完必须重新部署一次才会生效**：控制台 Development… → 右侧 **Redeploy**，或再跑一次 `vercel --prod`。
 
@@ -154,7 +154,7 @@ Vercel 的 `*.vercel.app` 域名在国内有时会被墙或很慢。三种应对
 同步码和词库都在浏览器里。**清除浏览器数据 / 换手机 / 忘记同步码 = 数据没了**。
 
 - 设置 → G 区「导出备份」→ 得到一个 json，丢进网盘；
-- Chrome / Edge 还可以「连接本地文件夹」，之后每次改动自动写 `wordpaper-data.json`；
+- Chrome / Edge 还可以「连接本地文件夹」，之后每次改动自动写 `blank-sheet-vocab-data.json`；
 - 云端那份在 Turso 里，但你得**记得同步码**才能取回来。
 
 建议：起好同步码之后，立刻在手机备忘录里存一份，并导出一次备份。

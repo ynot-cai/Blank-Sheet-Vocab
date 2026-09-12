@@ -5,7 +5,7 @@ import type { DeepPartial, Settings } from '../core/types';
 /** 设置在主存储里的固定 key */
 const MAIN_KEY = 'main';
 /** localStorage 镜像的键名（只存一份，供启动时同步读取与排查） */
-const MIRROR_KEY = 'wordpaper.settings';
+const MIRROR_KEY = 'blank-sheet-vocab.settings';
 
 /** 设置表里的一行 */
 interface SettingsRow {

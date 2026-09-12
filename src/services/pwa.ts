@@ -11,7 +11,7 @@
 let bannerHost: HTMLElement | null = null;
 
 /** 「添加到主屏幕」引导的标记键 */
-const INSTALL_HINT_KEY = 'wordpaper.installHintShown';
+const INSTALL_HINT_KEY = 'blank-sheet-vocab.installHintShown';
 
 /**
  * 设置提示条容器（App 挂载后调用）。

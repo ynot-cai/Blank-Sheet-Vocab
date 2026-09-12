@@ -33,7 +33,7 @@ export function getSpaceKey(syncCode: string): Promise<string> {
 
 /**
  * 拼接 API 地址：用户只填域名，路径由代码补，避免各人填法不一。
- * @param apiBase 后端地址，如 `https://wordpaper.vercel.app`（可带结尾斜杠）
+ * @param apiBase 后端地址，如 `https://blank-sheet-vocab.vercel.app`（可带结尾斜杠）
  * @param path 接口路径，如 `/api/sync-pull`（路径集中定义在 `src/dao/syncServer.ts` 的 `API_ROUTES`）
  */
 export function apiUrl(apiBase: string, path: string): string {

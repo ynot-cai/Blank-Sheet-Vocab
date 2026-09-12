@@ -100,7 +100,7 @@ export function renderApp(root: HTMLElement): void {
   const paintNav = (): void => {
     const active = currentPath();
     navBox.replaceChildren();
-    navBox.appendChild(h('span', { class: 'brand', text: '单词白纸' }));
+    navBox.appendChild(h('span', { class: 'brand', text: '白纸单词' }));
     for (const item of NAV) {
       const btn = button(item.label, () => {
         if (item.path === '/memorize') onMemorizeClick();

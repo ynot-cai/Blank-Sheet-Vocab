@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 设置页 · 云同步分区（阶段 02）。
  *
  * 三件必须讲清楚的事（界面文案里都写了）：
@@ -59,7 +59,7 @@ export function renderCloudSection(): HTMLElement {
       '后端地址',
       textInput(cloud.apiBase, (v) => {
         void patchSettings({ cloud: { apiBase: v } });
-      }, { placeholder: 'https://wordpaper.vercel.app' }),
+      }, { placeholder: 'https://blank-sheet-vocab.vercel.app' }),
       '填你的 Vercel 域名，不要带 /api（代码会自动拼）。本地开发可以填 http://localhost:3000',
     ),
   );

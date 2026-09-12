@@ -37,7 +37,7 @@ export default defineConfig({
         '**/.git/**',
         '**/dist/**',
         '**/node_modules/**',
-        '**/wordpaper-proxy/**', // 独立小项目，不属于前端源码
+        '**/blank-sheet-vocab-proxy/**', // 独立小项目，不属于前端源码
         '**/.*.tmpdir/**',
         '**/*.tmp',
         '**/*.tmpdir/**',

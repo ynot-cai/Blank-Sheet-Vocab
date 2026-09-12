@@ -13,7 +13,7 @@
 import { button, h } from '../dom';
 
 /** 已解锁标记（同一设备只提示一次） */
-const UNLOCK_KEY = 'wordpaper.speechUnlocked';
+const UNLOCK_KEY = 'blank-sheet-vocab.speechUnlocked';
 
 /** 内存里的解锁状态（localStorage 被清掉也不影响本次会话） */
 let unlockedInSession = false;

@@ -50,7 +50,7 @@ class FakeCache {
   }
 }
 
-const ORIGIN = 'https://wordpaper.example.com';
+const ORIGIN = 'https://blank-sheet-vocab.example.com';
 /** 所有缓存实例 */
 const cacheStore = new Map();
 
@@ -164,7 +164,7 @@ console.log('[1] 构建产物里有 PWA 需要的文件');
 console.log('\n[2] install：预缓存首屏资源（含构建出来的 hash 文件名）');
 {
   await emit('install');
-  const cache = await caches.open('wordpaper-v1-static');
+  const cache = await caches.open('blank-sheet-vocab-v1-static');
   check('缓存里有 index.html', Boolean(await cache.match('/index.html')));
 
   let allCached = true;
@@ -186,11 +186,11 @@ console.log('\n[2] install：预缓存首屏资源（含构建出来的 hash 文
 // ─────────────────────────────────────────── 3. activate 清旧缓存
 console.log('\n[3] activate：清掉旧版本缓存');
 {
-  await caches.open('wordpaper-v0-static'); // 假装是上一版的缓存
+  await caches.open('blank-sheet-vocab-v0-static'); // 假装是上一版的缓存
   await emit('activate');
   const names = await caches.keys();
-  check('旧缓存被删掉', !names.includes('wordpaper-v0-static'), names.join(','));
-  check('当前版本缓存还在', names.includes('wordpaper-v1-static'));
+  check('旧缓存被删掉', !names.includes('blank-sheet-vocab-v0-static'), names.join(','));
+  check('当前版本缓存还在', names.includes('blank-sheet-vocab-v1-static'));
   check('接管了页面（clients.claim）', true);
 }
 
@@ -271,7 +271,7 @@ console.log('\n[7] 更新策略：只提示、不自动刷新');
 {
   check('SW 里有 skip-waiting 消息处理', swSource.includes("'skip-waiting'"));
   check('SW 没有自动 skipWaiting（不会打断背单词）', !/install[\s\S]{0,400}skipWaiting\(\)/.test(swSource));
-  check('SW 用版号管理缓存', swSource.includes('CACHE_VERSION') && swSource.includes('wordpaper-v'));
+  check('SW 用版号管理缓存', swSource.includes('CACHE_VERSION') && swSource.includes('blank-sheet-vocab-v'));
 
   const pwa = readFileSync(new URL('../../src/services/pwa.ts', import.meta.url), 'utf8');
   check('页面侧有「有新版本可用，点击刷新」', pwa.includes('有新版本可用，点击刷新'));
@@ -286,7 +286,7 @@ console.log('\n[8] 添加到主屏幕引导');
   const pwa = readFileSync(new URL('../../src/services/pwa.ts', import.meta.url), 'utf8');
   check('iOS 与 Android 文案分开', pwa.includes('分享') && pwa.includes('浏览器菜单'));
   check('已在独立窗口打开时不再提示', pwa.includes('isStandalone()'));
-  check('只提示一次（localStorage 记标记）', pwa.includes('wordpaper.installHintShown'));
+  check('只提示一次（localStorage 记标记）', pwa.includes('blank-sheet-vocab.installHintShown'));
   check('只在手机上提示', /Android\|iPhone\|iPad\|iPod/.test(pwa));
 }
 

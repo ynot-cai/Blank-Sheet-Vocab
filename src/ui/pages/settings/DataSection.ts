@@ -1,4 +1,4 @@
-import * as dao from '../../../dao';
+﻿import * as dao from '../../../dao';
 import { exportBackup, importBackup } from '../../../services/backup';
 import * as localfile from '../../../services/localfile';
 import { button, checkbox, h } from '../../dom';
@@ -104,7 +104,7 @@ export function renderDataSection(): HTMLElement {
           void localfile
             .syncNow()
             .then(() => {
-              toastOk('已写入 wordpaper-data.json');
+              toastOk('已写入 blank-sheet-vocab-data.json');
               refreshFolder();
             })
             .catch((err: unknown) => toastError(err instanceof Error ? err.message : String(err)));
@@ -113,7 +113,7 @@ export function renderDataSection(): HTMLElement {
           void (async () => {
             const ok = await confirmModal(
               '从文件恢复',
-              '会用文件夹里的 wordpaper-data.json 覆盖当前浏览器里的全部数据，确定吗？',
+              '会用文件夹里的 blank-sheet-vocab-data.json 覆盖当前浏览器里的全部数据，确定吗？',
               '覆盖恢复',
               true,
             );

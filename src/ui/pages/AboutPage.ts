@@ -3,9 +3,9 @@
  *
  * 自用工具，语气直白：核心就一件事——**我的数据到底在哪**。
  * 内容必须与实际实现一致，不夸大也不含糊（这里的每一条都能在代码里对上）：
- * - 浏览器本地（主存储）：IndexedDB 库名 wordpaper；
+ * - 浏览器本地（主存储）：IndexedDB 库名 blank-sheet-vocab；
  * - 云端（可选）：Turso，只存同步码的 SHA-256 哈希 + 单词数据；
- * - 本地备份文件（可选）：Chrome/Edge 连文件夹后自动写 wordpaper-data.json；
+ * - 本地备份文件（可选）：Chrome/Edge 连文件夹后自动写 blank-sheet-vocab-data.json；
  * - 服务器**不接触** AI 密钥（方案 B），也没有任何存密钥的表。
  */
 import { appVersionLabel } from '../../core/version';
@@ -33,7 +33,7 @@ export function renderAboutPage(): HTMLElement {
       'div',
       { class: 'about-grid' },
       aboutCard('1. 浏览器本地（主）', [
-        '单词、学习记录、设置、AI 接口配置全部存在你当前这台设备的浏览器里（IndexedDB，库名 wordpaper）。',
+        '单词、学习记录、设置、AI 接口配置全部存在你当前这台设备的浏览器里（IndexedDB，库名 blank-sheet-vocab）。',
         '断网也能用：录入、背诵、记忆、复习、列表都不依赖网络。',
         '换浏览器 / 清缓存就会没有——这是唯一的存储风险。',
       ]),
@@ -43,7 +43,7 @@ export function renderAboutPage(): HTMLElement {
         `同步是后台静默的，失败也不影响本地使用（顶部只给一条轻提示）。`,
       ]),
       aboutCard('3. 本地备份文件（可选）', [
-        'Chrome / Edge 上可以「连接本地文件夹」，之后每次改动自动写 wordpaper-data.json（防抖 2 秒）。',
+        'Chrome / Edge 上可以「连接本地文件夹」，之后每次改动自动写 blank-sheet-vocab-data.json（防抖 2 秒）。',
         '这个文件在你自己指定的文件夹里，和浏览器、和云端都无关。',
         'Safari 不支持这个能力，请用手动「导出备份」。',
       ]),

@@ -51,7 +51,7 @@ console.log('[1] 页面入口');
 console.log('\n[2] 数据说明页的要点（逐条对代码事实）');
 {
   check('讲了「数据存在哪」三层', about.includes('浏览器本地（主）') && about.includes('云端数据库') && about.includes('本地备份文件'));
-  check('明确写了 IndexedDB 库名', about.includes('IndexedDB') && read('src/core/db.ts').includes("DB_NAME = 'wordpaper'"));
+  check('明确写了 IndexedDB 库名', about.includes('IndexedDB') && read('src/core/db.ts').includes("DB_NAME = 'blank-sheet-vocab'"));
   check('明确写了「断网也能用」', about.includes('断网也能用'));
   check('讲了服务器存什么（哈希）', about.includes('SHA-256') && about.includes('不知道你的明文同步码'));
   check('讲了服务器不存 AI 密钥', about.includes('不存：你的 AI 接口密钥'));
@@ -63,7 +63,7 @@ console.log('\n[2] 数据说明页的要点（逐条对代码事实）');
   check('有免责说明', about.includes('按「现状」提供'));
   check('AI 释义可能有误的提醒', about.includes('可能有误'));
 
-  // 内容必须与实现一致：哈希是 SHA-256、库名是 wordpaper、代理不连库
+  // 内容必须与实现一致：哈希是 SHA-256、库名是 blank-sheet-vocab、代理不连库
   check('哈希算法与实现一致（SHA-256）', read('src/core/syncHelper.ts').includes('SHA-256'));
   check('代理不连库的说法与实现一致', !read('api/ai-proxy.ts').includes('_lib/db'));
 }
@@ -82,7 +82,7 @@ console.log('\n[3] 页面回显真实状态（不是写死的文案）');
 // ─────────────────────────────────────────── 4. footer
 console.log('\n[4] 首页 footer');
 {
-  check('显示应用名', footer.includes('单词白纸'));
+  check('显示应用名', footer.includes('白纸单词'));
   check('显示版本号', footer.includes('appVersionLabel()'));
   check('有「关于数据」链接', footer.includes('关于数据'));
   check('有一行数据存放说明', footer.includes('数据存储在你自己的浏览器和私有数据库'));
@@ -104,7 +104,7 @@ console.log('\n[5] 错误边界（不白屏）');
     .join('\n');
   check(
     '导出不依赖应用模块（直接读 IndexedDB）',
-    boundary.includes("indexedDB.open('wordpaper')") && !/services\/|dao\//.test(boundaryImports),
+    boundary.includes("indexedDB.open('blank-sheet-vocab')") && !/services\/|dao\//.test(boundaryImports),
     boundaryImports,
   );
   check('导出内容是词库本身', boundary.includes('words, sources'));
