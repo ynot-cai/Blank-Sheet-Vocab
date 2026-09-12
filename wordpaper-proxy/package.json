@@ -1,0 +1,17 @@
+{
+  "name": "wordpaper-proxy",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "单词白纸自建转发脚本：解决浏览器直连 AI 接口被跨域拦截的问题（可选，独立于前端）",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "wrangler": "^3.90.0"
+  }
+}

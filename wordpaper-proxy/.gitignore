@@ -1,0 +1,6 @@
+# 这个子项目自己的忽略规则（根目录的 .gitignore 也会生效，这里是双保险）
+node_modules
+.npm-cache
+.wrangler
+.dev.vars
+*.local

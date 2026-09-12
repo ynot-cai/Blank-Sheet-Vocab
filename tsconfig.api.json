@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    // 只放 Node 类型：api/ 跑在 Vercel 的 Node 运行时里，不该看到 DOM 的 window / document。
+    "types": ["node"],
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+
+    "noEmit": true,
+    // 相对导入统一带 .ts 后缀：Node 的 ESM 解析器要求显式扩展名，
+    // 而本地测试脚本（api/_dev）是直接用 node 跑 TypeScript 源码的，所以必须带上。
+    // Vercel 自己的构建用 esbuild 打包，带 .ts 后缀同样能处理。
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "composite": true
+  },
+  "include": ["api"]
+}

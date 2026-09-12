@@ -1,0 +1,14 @@
+node_modules
+dist
+.env
+.env.local
+.vercel
+.npm-cache
+.tmp
+*.local
+.DS_Store
+# Cloudflare Worker（wordpaper-proxy/）的本地产物
+.wrangler
+.dev.vars
+tsconfig.tsbuildinfo
+*.tsbuildinfo

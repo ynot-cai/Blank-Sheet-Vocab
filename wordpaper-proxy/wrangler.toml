@@ -1,0 +1,10 @@
+name = "wordpaper-proxy"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+[vars]
+UPSTREAM_BASE = "https://api.deepseek.com"
+# ALLOW_ORIGIN = "*"
+
+# 注意：UPSTREAM_KEY 和 ACCESS_TOKEN 不要写进这个文件，
+# 用 `npx wrangler secret put UPSTREAM_KEY` / `npx wrangler secret put ACCESS_TOKEN` 设置。

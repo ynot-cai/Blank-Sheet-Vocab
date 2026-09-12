@@ -1,0 +1,19 @@
+# 统一换行符：仓库里一律存 LF，检出到 Windows 时也保持 LF。
+# 否则 Windows 上的 Git 会把 LF 转成 CRLF，导致「没改过的文件显示被修改」，
+# 也会让 prettier / eslint 之类的工具在不同机器上给出不同结果。
+* text=auto eol=lf
+
+# 二进制文件不要做任何转换
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+
+# 让 GitHub 的语言统计正确（不然 .mjs / .ts 会被算成别的）
+*.ts text
+*.mjs text
+*.js text
+*.css text
+*.json text
+*.md text
