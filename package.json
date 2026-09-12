@@ -7,9 +7,12 @@
   "scripts": {
     "dev": "vite",
     "api": "node api/_dev/server.mjs",
-    "build": "tsc --noEmit && vite build",
+    "preflight": "node scripts/preflight.mjs",
+    "typecheck": "tsc -b",
+    "typecheck:app": "tsc -p tsconfig.app.json",
+    "typecheck:api": "tsc -p tsconfig.api.json",
+    "build": "npm run preflight && tsc --noEmit && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit",
     "test:api": "node api/_dev/test-api.mjs",
     "test:sync": "node api/_dev/test-sync.mjs",
     "test:ai": "node api/_dev/test-aiproxy.mjs",
@@ -28,5 +31,8 @@
   },
   "dependencies": {
     "@libsql/client": "^0.18.0"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true
   }
 }

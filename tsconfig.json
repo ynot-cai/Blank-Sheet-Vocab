@@ -1,4 +1,44 @@
 {
-  "files": [],
-  "references": [{ "path": "./tsconfig.app.json" }, { "path": "./tsconfig.api.json" }]
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 这个根配置的作用：让 `npx tsc --noEmit`（在仓库根目录直接跑）**真的检查东西**。
+  //
+  // 之前这里是 `{"files": [], "references": [...]}`（solution-style，零文件），
+  // 后果是 `npx tsc --noEmit` 什么都不查就返回 0——
+  // 于是有人给 api/ 单独配 tsconfig 时才发现一堆 TS5097，很容易误以为是代码写错了。
+  //
+  // 权威的类型检查仍然是下面两条（各自带正确的 lib 与 types，不会互相污染）：
+  //   npm run typecheck          → tsc -b（按 references 分别检查 src 与 api）
+  //   npm run typecheck:app      → 只查 src（DOM + vite/client）
+  //   npm run typecheck:api      → 只查 api（Node，看不到 window/document）
+  //
+  // 这个根配置把两边合在一起，只做「顺手一查」：
+  // 它会同时看到 DOM 与 Node 的全局变量，所以**不能**靠它发现
+  // 「api 里误用了 window」这类跨环境错误——那种错误由 typecheck:api 负责。
+  // ─────────────────────────────────────────────────────────────────────────────
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["node", "vite/client"],
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+
+    "noEmit": true,
+    // api/**.ts 的 import 一律带 .ts 后缀（原因见 tsconfig.api.json 的注释）：
+    // 没有这一行，`npx tsc --noEmit` 会报一堆 TS5097。
+    // 它要求同时开启 noEmit（上面已开）。
+    "allowImportingTsExtensions": true,
+
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "useDefineForClassFields": true
+  },
+  "include": ["src", "api", "vite.config.ts"]
 }

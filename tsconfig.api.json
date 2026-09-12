@@ -13,9 +13,13 @@
     "noImplicitOverride": true,
 
     "noEmit": true,
-    // 相对导入统一带 .ts 后缀：Node 的 ESM 解析器要求显式扩展名，
-    // 而本地测试脚本（api/_dev）是直接用 node 跑 TypeScript 源码的，所以必须带上。
-    // Vercel 自己的构建用 esbuild 打包，带 .ts 后缀同样能处理。
+    // ⚠️ 这一行不是可选项，删掉会立刻炸出一堆 TS5097。
+    //
+    // api/**/*.ts 的相对导入**必须**带 .ts 后缀，原因有两个：
+    // 1. 本项目的测试脚本（api/_dev/*.mjs）是**直接用 node 跑 TypeScript 源码**的，
+    //    Node 的 ESM 解析器要求显式扩展名——去掉后缀会 ERR_MODULE_NOT_FOUND；
+    // 2. Vercel 用 esbuild 打包 api/，带 .ts 后缀能正常解析。
+    // 所以「去掉后缀」这个看起来很自然的做法在本项目里是行不通的（实测已验证）。
     "allowImportingTsExtensions": true,
     "isolatedModules": true,
     "esModuleInterop": true,

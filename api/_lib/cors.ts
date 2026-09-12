@@ -9,7 +9,7 @@
  */
 import { allowedOrigins } from './env.ts';
 import { readHeader } from './http.ts';
-import type { ApiRequest, ApiResponse } from './types';
+import type { ApiRequest, ApiResponse } from './types.ts';
 
 /** 允许的请求方法 */
 const ALLOW_METHODS = 'GET, POST, OPTIONS';

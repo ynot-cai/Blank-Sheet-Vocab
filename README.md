@@ -41,10 +41,13 @@ npm run api        # 本地后端，零依赖、不用登录 Vercel
 |---|---|
 | `npm run dev` | 启动前端开发服务器 |
 | `npm run api` | 启动本地后端（api/ 里的 Serverless Functions） |
-| `npm run build` | `tsc --noEmit && vite build`，产物在 `dist/` |
+| `npm run preflight` | 构建前置检查（Node 版本 / esbuild 二进制 / vite 是否可用） |
+| `npm run build` | 先 preflight，再 `tsc --noEmit && vite build`，产物在 `dist/` |
 | `npm run preview` | 预览构建产物 |
-| `npm run typecheck` | 只做类型检查 |
-| `npm test` | **全套自检 324 项**（见下；先构建再逐项跑，最后一步就是生产构建） |
+| `npm run typecheck` | 权威类型检查（`tsc -b`，按 references 分别查 src 与 api） |
+| `npm run typecheck:app` | 只查 `src/`（DOM + vite/client 类型） |
+| `npm run typecheck:api` | 只查 `api/`（Node 类型，看不到 window/document） |
+| `npm test` | **全套自检 339 项**（见下；先构建再逐项跑） |
 | `npm run icons` | 重新生成 PWA 图标 |
 
 ### 自检脚本（不需要任何云端账号）
@@ -59,8 +62,29 @@ npm run api        # 本地后端，零依赖、不用登录 Vercel
 | `npm run test:mobile` | 移动端：断点、右下角按钮避让、字号与热区、义项序号规则 |
 | `npm run test:pwa` | PWA：真跑一遍 Service Worker 的 install/activate/fetch，验证离线回落与「不缓存 API」 |
 | `npm run test:about` | 数据说明页文案与代码事实是否一致、错误边界、footer |
+| `npm run test:build` | 构建完整性：393 个相对导入可解析、无孤儿模块、**类型检查配置防回归** |
 
 `npm test` 会把上面全部跑一遍并做类型检查。**改完代码先跑它。**
+
+### 遇到构建 / 类型检查报错时
+
+**先跑 `npm run preflight`**，它能把「环境有问题」和「代码有问题」区分开：
+
+```
+=== 构建前置检查 ===
+  ✓ Node 版本 ≥ 20.6 —— 当前 v24.21.0
+  ✓ typescript 可用 —— v5.9.3
+  ✓ esbuild 能用（二进制已就位） —— v0.25.12，transform 调用成功
+  ✓ vite 可用
+```
+
+| 症状 | 原因与修复 |
+|---|---|
+| `npm warn install-scripts esbuild@0.25.12 (postinstall: node install.js)` | npm 11 默认不跑依赖的安装脚本。**这个警告本身无害**：esbuild 的二进制来自平台包 `@esbuild/win32-x64`，`npm install` 时就已经装好了（已实测：全新安装后 `esbuild.transformSync` 正常工作）。想彻底消掉它：`npm install-scripts approve esbuild` —— 放行记录会写进 `package.json` 的 `allowScripts`，其他人克隆后也不再看到。 |
+| 构建报 esbuild 相关错误 | `npm rebuild esbuild`；仍不行就删掉 `node_modules` 重新 `npm install` |
+| 一堆 `TS5097: An import path can only end with a '.ts' extension when 'allowImportingTsExtensions' is enabled` | **不要去删 `api/**.ts` 里的 `.ts` 后缀**，那样会炸：本地测试是直接用 `node` 跑 TypeScript 源码的，Node 的 ESM 解析器要求显式扩展名（实测删掉后缀立刻 `ERR_MODULE_NOT_FOUND`）。正确做法是**保留后缀 + 打开 `allowImportingTsExtensions`**（`tsconfig.json` 与 `tsconfig.api.json` 都已打开，并由 `npm run test:build` 的护栏守住）。 |
+| `npx tsc --noEmit` 什么都没查就通过 | 以前根 `tsconfig.json` 是 `{"files": [], "references": [...]}` 这种「solution 风格」配置，**零文件**，所以它静默通过、什么也没检查。现在已改成真正 `include: ["src", "api", "vite.config.ts"]`，可以直接用。 |
+| 想确认 `api/` 真的被检查了 | 跑 `npm run typecheck:api`（只查 api，纯 Node 类型）。故意在 `api/` 里写 `const x: number = 'a'` 应该立刻报错。 |
 
 ---
 

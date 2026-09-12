@@ -170,5 +170,65 @@ console.log('\n[5] 没有「写了但没接上」的孤儿文件');
   check('没有未被任何文件引用的模块', orphans.length === 0, orphans.join(', '));
 }
 
+/**
+ * 读一个 tsconfig 并解析。
+ *
+ * tsconfig 允许写注释与尾逗号（JSONC），标准 JSON.parse 会直接报错，
+ * 所以这里先去掉注释和尾逗号再解析——不为了「能解析」而把配置里的说明删掉。
+ * @param {string} file 文件路径
+ */
+function readTsConfig(file) {
+  const raw = readFileSync(file, 'utf8')
+    .replace(/^\s*\/\/.*$/gm, '') // 行注释
+    .replace(/\/\*[\s\S]*?\*\//g, '') // 块注释
+    .replace(/,(\s*[}\]])/g, '$1'); // 尾逗号
+  return JSON.parse(raw);
+}
+
+// ─────────────────────────────────────────── 6. 类型检查配置的防回归护栏
+console.log('\n[6] 类型检查配置：api/ 必须被覆盖，且 .ts 后缀相关开关不能丢');
+{
+  // 这一组是「有人好心改坏了」的护栏：
+  // - 去掉 allowImportingTsExtensions → 立刻一堆 TS5097；
+  // - 把 api/**.ts 的 .ts 后缀去掉 → npm run test / api 本地服务全炸（Node 要求显式扩展名）；
+  // - 根 tsconfig 变成零文件 → `npx tsc --noEmit` 静默什么都不查（本次踩的坑）。
+  const root = readTsConfig('tsconfig.json');
+  const api = readTsConfig('tsconfig.api.json');
+  const app = readTsConfig('tsconfig.app.json');
+
+  check('根 tsconfig 的 include 覆盖 api', (root.include ?? []).includes('api'), JSON.stringify(root.include));
+  check('根 tsconfig 的 include 覆盖 src', (root.include ?? []).includes('src'), JSON.stringify(root.include));
+  check('根 tsconfig 不是零文件的 solution 配置', !(root.files?.length === 0 && (root.include ?? []).length === 0));
+  check('根 tsconfig 开启 allowImportingTsExtensions', root.compilerOptions?.allowImportingTsExtensions === true);
+  check('根 tsconfig 开启 noEmit（allowImportingTsExtensions 的前提）', root.compilerOptions?.noEmit === true);
+
+  check('tsconfig.api.json 的 include 覆盖 api', (api.include ?? []).includes('api'), JSON.stringify(api.include));
+  check('tsconfig.api.json 开启 allowImportingTsExtensions', api.compilerOptions?.allowImportingTsExtensions === true);
+  check('tsconfig.api.json 只放 Node 类型（看不到 DOM）', !(api.compilerOptions?.types ?? []).includes('vite/client'));
+  check('tsconfig.app.json 只放浏览器类型（看不到 Node）', !(app.compilerOptions?.types ?? []).includes('node'));
+
+  // api 下的相对导入必须都带 .ts（Node 直接跑 TS 源码的前提）
+  const apiFiles = walk('api', /\.ts$/);
+  const missingExt = [];
+  let relCount = 0;
+  for (const file of apiFiles) {
+    const text = readFileSync(file, 'utf8');
+    for (const m of text.matchAll(/from\s+['"](\.[^'"]+)['"]/g)) {
+      const spec = m[1];
+      relCount += 1;
+      if (!spec.endsWith('.ts')) missingExt.push(`${file} → ${spec}`);
+    }
+  }
+  check(`api 下的 ${relCount} 个相对导入都带 .ts 后缀`, missingExt.length === 0, missingExt.join(' | '));
+
+  // build 脚本必须用 --noEmit 跑 tsc（用户明确要求的第 2 点）
+  const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+  check('build 脚本里 tsc 带 --noEmit', /tsc --noEmit/.test(pkg.scripts?.build ?? ''), pkg.scripts?.build);
+  check('build 脚本先跑 preflight（esbuild 二进制检查）', /preflight/.test(pkg.scripts?.build ?? ''), pkg.scripts?.build);
+  check('有独立的 typecheck:api 脚本', Boolean(pkg.scripts?.['typecheck:api']));
+  check('有独立的 typecheck:app 脚本', Boolean(pkg.scripts?.['typecheck:app']));
+  check('package.json 里放行了 esbuild 安装脚本', Boolean(pkg.allowScripts?.['esbuild@0.25.12']) || Object.keys(pkg.allowScripts ?? {}).some((k) => k.startsWith('esbuild')));
+}
+
 console.log(`\n=== 结果：通过 ${passed} 项，失败 ${failed} 项 ===\n`);
 process.exit(failed === 0 ? 0 : 1);

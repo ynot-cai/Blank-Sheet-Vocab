@@ -84,8 +84,7 @@ function hostAllowed(hostname: string): boolean {
  * 把请求体读成 Buffer（Vercel 的 Node 运行时给的是流；本地测试可能直接给对象）。
  * @param body 请求体
  */
-async function readBody(body: unknown): Promise<Buffer | null> {
-  if (body === null || body === undefined) return null;
+async function readBody(body: unknown): Promise<Buffer | null> {  if (body === null || body === undefined) return null;
   if (Buffer.isBuffer(body)) return body;
   if (typeof body === 'string') return Buffer.from(body, 'utf8');
   if (typeof body === 'object' && Symbol.asyncIterator in (body as object)) {
@@ -100,6 +99,14 @@ async function readBody(body: unknown): Promise<Buffer | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * Buffer → ArrayBuffer（只取这一段，不带底层内存池的多余字节）。
+ * @param buf Node Buffer
+ */
+function toArrayBuffer(buf: Buffer): ArrayBuffer {
+  return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
 }
 
 const handler: ApiHandler = async (req, res) => {
@@ -142,13 +149,19 @@ const handler: ApiHandler = async (req, res) => {
   if (accept !== '') headers.set('Accept', accept);
 
   const body = await readBody(req.body);
+  // 交给 fetch 的 body 用 ArrayBuffer：
+  // 纯 Node 类型下 Buffer 本身是合法的 BodyInit，但根 tsconfig（`npx tsc --noEmit` 用的那个）
+  // 会把 DOM 的 BodyInit 一起并进来，那时 `Buffer` 和 `Uint8Array` 都不满足 DOM 的 BodyInit
+  // （DOM 只认 ArrayBuffer / ArrayBufferView / Blob / string / FormData / URLSearchParams）→ TS2769。
+  // ArrayBuffer 是它明确接受的类型，且在两套类型集下都合法。
+  const bodyInit: ArrayBuffer | undefined = body === null ? undefined : toArrayBuffer(body);
   let upstreamStarted = false;
 
   try {
     const upstream = await fetch(target.toString(), {
       method: 'POST',
       headers,
-      body: body ?? undefined,
+      body: bodyInit,
       signal: AbortSignal.timeout(AI_PROXY_TIMEOUT_MS),
     });
 
@@ -156,7 +169,8 @@ const handler: ApiHandler = async (req, res) => {
     // ⚠️ 只打一个计数，绝不打印密钥、目标 body 或请求头
     console.info(`[ai-proxy] 第 ${forwardedCount} 次转发，上游状态 ${upstream.status}`);
 
-    // 6) 原样返回上游状态与响应头（去掉 set-cookie，避免把上游会话带回来）    //    注意：没有转发任何**请求**头给客户端，只转发上游响应头
+    // 6) 原样返回上游状态与响应头（去掉 set-cookie，避免把上游会话带回来）
+    //    注意：没有转发任何**请求**头给客户端，只转发上游响应头
     upstreamStarted = true;
     res.statusCode = upstream.status;
     upstream.headers.forEach((value, key) => {
