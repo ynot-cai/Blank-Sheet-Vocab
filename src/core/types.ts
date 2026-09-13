@@ -164,6 +164,16 @@ export interface PrioritySettings {
   customExpr: string; // 非空时优先于 preset
 }
 
+/**
+ * 背诵抽词设置（R3）。
+ *
+ * 优先级永远是第一关键字（绝对优先，不可配置）——这里只调**同一优先级内部**的顺序。
+ */
+export interface LearnPickSettings {
+  /** 同级内按什么排：createdAt = 先录入的先背（默认，可预测）；random = 同级内确定性地打乱 */
+  samePriorityOrder: 'createdAt' | 'random';
+}
+
 /** AI 设置：地址/模型/密钥三项全部由用户在设置页自己填 */
 export interface AiSettings {
   proxyUrl: string; // 可选：自建转发地址（阶段 08），留空则直接用 baseUrl
@@ -224,6 +234,8 @@ export interface Settings {
   parse: ParseSettings;
   memorize: MemorizeSettings;
   priority: PrioritySettings;
+  /** ★ R3：背诵抽词（优先级绝对优先，这里只调同级内顺序） */
+  learnPick: LearnPickSettings;
   ai: AiSettings;
   practice: PracticeSettings;
   backup: BackupSettings;

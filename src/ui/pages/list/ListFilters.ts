@@ -1,4 +1,5 @@
 import type { Source, WordQuery, WordStatus } from '../../../core/types';
+import { WORD_PRIORITY_OPTIONS } from '../../../core/types';
 import { checkbox, h, numberInput, select, textInput } from '../../dom';
 
 /** 列表页筛选状态 */
@@ -11,6 +12,8 @@ export interface ListFilterState {
   includeChopped: boolean;
   minFailCount: number | null;
   minPriority: number | null;
+  /** ★ R3：按**词级**优先级精确筛选（null = 全部） */
+  wordPriority: number | null;
   sort: NonNullable<WordQuery['sort']>;
   order: 'asc' | 'desc';
   page: number;
@@ -27,6 +30,7 @@ export function defaultFilterState(): ListFilterState {
     includeChopped: false,
     minFailCount: null,
     minPriority: null,
+    wordPriority: null,
     sort: 'createdAt',
     order: 'desc',
     page: 1,
@@ -146,6 +150,26 @@ export function renderListFilters(opts: ListFiltersOptions): HTMLElement {
     ),
   );
 
+  // ★ R3：词级优先级筛选（与上面的「复习优先度」是两回事，标签写清楚）
+  wrap.appendChild(
+    h(
+      'div',
+      { class: 'filter-item' },
+      h('span', { class: 'filter-label', text: '词优先级' }),
+      select(
+        [
+          { value: '', label: '全部优先级' },
+          ...WORD_PRIORITY_OPTIONS.slice()
+            .reverse()
+            .map((o) => ({ value: String(o.value), label: `P${o.value}` })),
+        ],
+        state.wordPriority === null ? '' : String(state.wordPriority),
+        (v) => opts.onChange({ wordPriority: v === '' ? null : Number(v) }),
+      ),
+      h('span', { class: 'field-hint', text: '背诵先抽高优先级（绝对优先）' }),
+    ),
+  );
+
   // 排序 + 升降序
   wrap.appendChild(
     h(
@@ -157,6 +181,7 @@ export function renderListFilters(opts: ListFiltersOptions): HTMLElement {
         { class: 'row' },
         select(
           [
+            { value: 'priority', label: '词优先级（高→低）' },
             { value: 'learnOrder', label: '背诵顺序' },
             { value: 'reviewPriority', label: '复习优先度' },
             { value: 'createdAt', label: '创建时间' },

@@ -2,22 +2,28 @@ import type { WordStats } from '../../core/types';
 import * as dao from '../../dao';
 import { button, h } from '../dom';
 import { confirmModal } from '../components/Modal';
-import { toastWarn } from '../components/Toast';
 import { navigate } from '../router';
 
-/** 主页上的六个入口 */
+/** 主页上的六个入口（R3：删掉「记忆」入口，它作为内嵌环节留在背诵页里） */
 const ENTRIES: { path: string; label: string; desc: string }[] = [
   { path: '/import', label: '录入', desc: '粘贴或上传单词/短语/缩写，解析成词条' },
   { path: '/learn', label: '背诵', desc: '白纸空间记忆：靠位置 + 语音建立记忆' },
-  { path: '/memorize', label: '记忆', desc: '默写自测，未通过优先再抽，接拼写环节' },
   { path: '/list', label: '单词列表', desc: '筛选 / 编辑属性 / 斩词复活' },
   { path: '/review', label: '复习', desc: '按复习优先度分组抽取' },
   { path: '/settings', label: '设置', desc: '星号参数 / AI 接口 / 备份恢复' },
 ];
 
 /**
- * 主页：6 个入口 + 词库概览 + 未完成会话角标。
+ * 主页：入口 + 词库概览 + 未完成会话角标。
  * 背诵/复习有未完成会话时显示「上次未完成：N 词」，点击询问继续还是重新开始。
+ *
+ * ★ R3 变更：这里**不再有「记忆」入口**。
+ *   理由（提示词第一部分）：记忆环节（默写自测）依赖背诵时已经出现的单词列表，
+ *   无法独立存在；它现在是背诵流程的**内嵌环节**——
+ *   背诵页里「再背一个」累计点 memorizeEvery 次后按钮自动变成「记忆」，
+ *   右下角还有一个独立的「再次记忆」。主界面上再放一个入口是冗余的。
+ *   **功能一行都没删**：MemorizePage / #/memorize 路由、记忆环节的组件与 DAO 调用全部保留，
+ *   由背诵页继续调用（长按/直达路由仍然可用，只是不再从主界面露出来）。
  */
 export function renderHomePage(): HTMLElement {
   const page = h('div', { class: 'page home-page' });
@@ -60,17 +66,7 @@ export function renderHomePage(): HTMLElement {
     card.appendChild(h('span', { class: 'home-desc', text: entry.desc }));
     card.addEventListener('click', () => {
       if (entry.path === '/learn' || entry.path === '/review') enterLearning(entry.path);
-      else if (entry.path === '/memorize') {
-        void (async () => {
-          const session = await dao.session.loadSession();
-          if (!session || session.finished || session.type !== 'learn' || session.wordIds.length === 0) {
-            toastWarn('请先开始一轮背诵');
-            navigate('/learn');
-            return;
-          }
-          navigate('/memorize');
-        })();
-      } else navigate(entry.path);
+      else navigate(entry.path);
     });
     grid.appendChild(card);
   }

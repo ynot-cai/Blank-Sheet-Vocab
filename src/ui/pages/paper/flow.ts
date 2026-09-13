@@ -122,7 +122,15 @@ export function createPaperFlow(opts: FlowOptions): PaperFlow {
         : '再背一个 (Enter)';
   };
 
-  /** 再背一个 / 每 N 个新词后的记忆 */
+  /**
+   * 再背一个 / 每 N 个新词后的记忆。
+   *
+   * ★ R3：浏览阶段是按 `words` 的**数组顺序**逐个上纸的，而 `words` 的顺序来自
+   *   `session.wordIds`——它由 `LearnPage` 用 `core/pick.ts` 的 `sortForLearn()`
+   *   排好（优先级降序是第一关键字，绝对优先）。
+   *   所以「再背一个」天然就是「先抽高优先级的词」，这里不需要再排一次；
+   *   真正需要单独抽词的地方（换词、断点续跑后取下一个）用 `pickNextForLearn()`。
+   */
   const nextAction = (): void => {
     if (destroyed || flowMode !== 'browse' || roundBusy) return;
     if (batchReady()) {

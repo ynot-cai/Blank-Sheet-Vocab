@@ -1,5 +1,6 @@
 import { uid } from '../../core/model';
-import { setSettingsCache } from '../../core/config';
+import { DEFAULT_SETTINGS, getSettings, setSettingsCache } from '../../core/config';
+import { sortForLearn } from '../../core/pick';
 import type { Session, Word } from '../../core/types';
 import * as dao from '../../dao';
 import { h } from '../dom';
@@ -29,20 +30,38 @@ export function renderLearnPage(ctx?: RouteContext): HTMLElement {
     registerCleanup(page, () => flow.destroy());
   };
 
-  /** 抽词：未背且未斩，createdAt 升序（先录入的先背），最多 learnMaxCount 个 */
-  /** 取词：未背且未斩，createdAt 升序（先录入的先背）。
-   *  不设数量上限：点一次「再背一个」就多上一个词，由用户自己决定何时停下。 */
-  const pickWords = async (): Promise<Word[]> => {
+  /**
+   * 取词：未背且未斩。
+   * 不设数量上限：点一次「再背一个」就多上一个词，由用户自己决定何时停下。
+   *
+   * ★ R3：排序规则改为**优先级绝对优先**（`core/pick.ts` 的 `sortForLearn`）：
+   *   先按 `word.priority` 降序（5 → 1），同级内再按设置决定的顺序（默认 createdAt）。
+   *   这和「再背一个」用的 `pickNextForLearn` 是**同一个排序函数**，
+   *   所以「词单顺序」和「逐个上纸的顺序」永远一致——
+   *   两处各写一份的话，用户会看到「我点的顺序和它给的不一样」，很难查。
+   *
+   * @param sessionId 本次会话 id（random 模式下当随机种子，保证同一会话顺序稳定）
+   */
+  const pickWords = async (sessionId: string): Promise<Word[]> => {
     const all = await dao.words.getAll();
-    return all
-      .filter((w) => w.status === 'unlearned')
-      .sort((a, b) => a.createdAt - b.createdAt);
+    const candidates = all.filter((w) => w.status === 'unlearned' && w.deleted !== 1);
+    return sortForLearn(candidates, getSettingsSafe().learnPick.samePriorityOrder, sessionId);
+  };
+
+  /** 读设置（缓存没准备好时退回默认值，避免整页崩掉） */
+  const getSettingsSafe = (): ReturnType<typeof getSettings> => {
+    try {
+      return getSettings();
+    } catch {
+      return DEFAULT_SETTINGS;
+    }
   };
 
   /** 开始新一轮（无对话框：直接取全部未背词） */
   const startNew = async (): Promise<void> => {
     await syncSettings();
-    const picked = await pickWords();
+    const sessionId = uid();
+    const picked = await pickWords(sessionId);
     if (picked.length === 0) {
       toastWarn('没有可背的未背词，先去「录入」页加词吧');
       navigate('/import');
@@ -50,7 +69,7 @@ export function renderLearnPage(ctx?: RouteContext): HTMLElement {
     }
     const now = Date.now();
     const session: Session = {
-      id: uid(),
+      id: sessionId,
       type: 'learn',
       wordIds: picked.map((w) => w.id),
       placements: {},

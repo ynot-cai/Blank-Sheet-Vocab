@@ -1,8 +1,10 @@
 /**
- * 抽词算法：记忆环节必抽规则 / 复习推荐值 / 复习抽词 / 分组。
+ * 抽词算法：记忆环节必抽规则 / 复习推荐值 / 复习抽词 / 分组 / ★ 背诵抽词（绝对优先）。
  */
 import type { Session, Settings, Word } from './types';
 import { computePriority } from './priority';
+import { wordPriorityOf } from './model';
+import { mulberry32, seedFromString } from './layout';
 
 /**
  * Fisher–Yates 随机打乱（返回新数组）。
@@ -120,4 +122,84 @@ export function groupWords(ids: string[], size: number): string[][] {
     groups.push(ids.slice(i, i + n));
   }
   return groups;
+}
+
+// ══════════════════════════════════════════ R3：背诵抽词（绝对优先）
+
+/**
+ * ★ 背诵抽词的排序规则（R3 第一关键字是**绝对**优先）。
+ *
+ * 为什么单独抽成导出的函数，而不是在两个地方各写一遍：
+ *   1. 「开始背诵」（LearnPage 取全部未背词）和「再背一个」（pickNextForLearn 取下一个）
+ *      必须是**同一套顺序**——两处各写一遍的话，会出现「词单顺序 A、再背一个顺序 B」，
+ *      用户看到的现象是「我自己点的顺序和它给我的不一样」，很难查；
+ *   2. 顺序规则是这一阶段的核心验收项（连续抽 10 次：前 5 次必须全是 priority=5），
+ *      抽成纯函数才能被自检直接断言。
+ *
+ * 排序：
+ *   1. `priority` **降序**（5 → 1）—— 它是第一关键字，**绝对优先不掺概率**；
+ *   2. 同级内按 `samePriorityOrder`：
+ *      · `'createdAt'`（默认）：先录入的先背，可预测、可复核；
+ *      · `'random'`：把同级词用**确定性**随机打乱（种子来自 sessionId + 词 id），
+ *        所以同一次会话里反复算的结果一致（不会「点了下一步又跳回上一个词」），
+ *        而不同会话的顺序不同。
+ *
+ * @param words 候选词（调用方已经过滤过状态与 appearedIds）
+ * @param samePriorityOrder 同级内的顺序（来自设置）
+ * @param seedText 随机模式的种子文本（用 sessionId 即可）
+ */
+export function sortForLearn(
+  words: Word[],
+  samePriorityOrder: 'createdAt' | 'random' = 'createdAt',
+  seedText = 'learn',
+): Word[] {
+  if (samePriorityOrder === 'random') {
+    // 给每个词算一个稳定的随机权重，再按（优先级降序，权重升序）排。
+    // 用确定性随机而不是 Math.random()：同一个词在**同一次会话**里的权重必须一样，
+    // 否则每次重算顺序都会变，用户会看到「同一个词被抽中两次、或者上一个词又回来了」。
+    const weighted = words.map((w) => ({
+      word: w,
+      weight: mulberry32(seedFromString(`${seedText}#${w.id}`))(),
+    }));
+    weighted.sort((a, b) => {
+      const pd = wordPriorityOf(b.word) - wordPriorityOf(a.word);
+      if (pd !== 0) return pd;
+      return a.weight - b.weight;
+    });
+    return weighted.map((x) => x.word);
+  }
+  return [...words].sort((a, b) => {
+    const pd = wordPriorityOf(b) - wordPriorityOf(a);
+    if (pd !== 0) return pd;
+    return a.createdAt - b.createdAt;
+  });
+}
+
+/**
+ * ★ 背诵抽词：取「下一个该背的词」。
+ *
+ * 候选池（提示词 2.2 节）：`status` 为未背 / 学习中、**未被斩**、**不在 appearedIds 里**。
+ * 顺序：见 `sortForLearn` —— 优先级降序是**绝对优先**（5 的词没抽完不会抽 4 的）。
+ *
+ * @param words 词库全量（内部自己过滤候选池）
+ * @param appearedIds 本次会话已经出现过的词 id
+ * @param opts.samePriorityOrder 同级内的顺序（默认按 createdAt）
+ * @param opts.seedText 随机模式的种子（传 session.id）
+ * @returns 下一个词；没有候选时返回 null
+ */
+export function pickNextForLearn(
+  words: Word[],
+  appearedIds: Set<string>,
+  opts: { samePriorityOrder?: 'createdAt' | 'random'; seedText?: string } = {},
+): Word | null {
+  const candidates = words.filter(
+    (w) =>
+      w.deleted !== 1 &&
+      w.status !== 'chopped' &&
+      (w.status === 'unlearned' || w.status === 'learning') &&
+      !appearedIds.has(w.id),
+  );
+  if (candidates.length === 0) return null;
+  const ordered = sortForLearn(candidates, opts.samePriorityOrder ?? 'createdAt', opts.seedText ?? 'learn');
+  return ordered[0] ?? null;
 }

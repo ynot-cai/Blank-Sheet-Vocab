@@ -216,6 +216,8 @@ export const DEFAULT_SETTINGS: Settings = {
   parse: { fieldSep: 'auto', senseSep: '；;／/|', priorityDir: 'desc' },
   memorize: { position: 'centerTop', offsetY: 0.3 },
   priority: { preset: 'balanced' satisfies PriorityPreset, customExpr: '' },
+  // R3：同级内先录入的先背（可预测，便于复核）；用户可在设置页改成 random
+  learnPick: { samePriorityOrder: 'createdAt' },
   ai: {
     proxyUrl: '',
     baseUrl: 'https://api.deepseek.com',

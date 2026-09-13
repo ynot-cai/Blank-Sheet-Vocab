@@ -26,11 +26,18 @@ import { renderKcReviewPage } from './ui/pages/KcReviewPage';
 import { renderKcSettingsPage } from './ui/pages/KcSettingsPage';
 import { renderKcBankPage } from './ui/pages/KcBankPage';
 
-/** 顶部导航按钮（全部点亮） */
+/**
+ * 顶部导航按钮（全部点亮）。
+ *
+ * ★ R3：删掉了 `/memorize`「记忆」这一项。
+ *   记忆环节现在是**背诵流程的内嵌环节**（背诵页的「再背一个」点够次数后按钮变「记忆」，
+ *   右下角还有独立的「再次记忆」），主界面和顶栏都不再需要独立入口。
+ *   路由本身**保留**（`/memorize` 仍然可用、背记页照常跳得过去），
+ *   所以没有任何「孤儿链接」：全项目搜索 `#/memorize` / `navigate('/memorize')` 已确认无残留。
+ */
 const NAV: { path: string; label: string }[] = [
   { path: '/import', label: '录入' },
   { path: '/learn', label: '背诵' },
-  { path: '/memorize', label: '记忆' },
   { path: '/list', label: '单词列表' },
   { path: '/review', label: '复习' },
   // 二期入口：数据与一期完全独立，只是共用同一套同步通道（见二期主提示词第 7 节）
@@ -63,19 +70,6 @@ function registerRoutes(): void {
   registerRoute('/kc/settings', () => renderKcSettingsPage());
   registerRoute('/kc/bank', () => renderKcBankPage());
   setFallback('/home');
-}
-
-/** 点「记忆」：没有进行中的背诵会话时给提示 */
-function onMemorizeClick(): void {
-  void (async () => {
-    const session = await dao.session.loadSession();
-    if (!session || session.finished || session.type !== 'learn' || session.wordIds.length === 0) {
-      toastWarn('请先开始一轮背诵');
-      navigate('/learn');
-      return;
-    }
-    navigate('/memorize');
-  })();
 }
 
 /**
@@ -125,10 +119,7 @@ export function renderApp(root: HTMLElement): void {
     navBox.replaceChildren();
     navBox.appendChild(h('span', { class: 'brand', text: '白纸单词' }));
     for (const item of NAV) {
-      const btn = button(item.label, () => {
-        if (item.path === '/memorize') onMemorizeClick();
-        else navigate(item.path);
-      });
+      const btn = button(item.label, () => navigate(item.path));
       // 二期是一整棵子树（/kc、/kc/import、/kc/list…），
       // 所以 /kc 这个入口在它的**所有子路由**下都该点亮
       const active = currentPath() === item.path || (item.path === '/kc' && currentPath().startsWith('/kc/'));

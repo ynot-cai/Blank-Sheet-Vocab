@@ -113,6 +113,8 @@ export function renderListPage(): HTMLElement {
     needSpell: state.needSpellOnly ? true : undefined,
     minFailCount: state.minFailCount ?? undefined,
     minPriority: state.minPriority ?? undefined,
+    // ★ R3：词级优先级精确筛选
+    priority: state.wordPriority ?? undefined,
     sort: state.sort,
     order: state.order,
     page: state.page,
@@ -238,6 +240,8 @@ export function renderListPage(): HTMLElement {
           onSpell: (value) => void batchAttrs({ needSpell: value }),
           onUnlearned: () => void batchStatus('unlearned'),
           onDelete: () => void batchDelete(),
+          // ★ R3：批量设优先级
+          onSetPriority: (priority) => void batchSetPriority(priority),
           onSelectAllMatched: () => selectAllMatched(),
           onClear: () => {
             selected.clear();
@@ -359,6 +363,14 @@ export function renderListPage(): HTMLElement {
     onAdoptRaw: (word: Word): void => {
       handlers.onRawSources(word);
     },
+    /** ★ R3：行内改词级优先级，改完立即生效并同步 */
+    onPriority: (word: Word, priority: number): void => {
+      void (async () => {
+        await dao.words.setWordPriority(word.id, priority);
+        toastOk(`「${word.en}」的词优先级已改为 P${Math.min(5, Math.max(1, Math.round(priority)))}`);
+        await load();
+      })();
+    },
   };
 
   /** 批量改状态 */
@@ -377,6 +389,22 @@ export function renderListPage(): HTMLElement {
     if (ids.length === 0) return;
     await dao.words.updateAttrsMany(ids, patch);
     toastOk(`已处理 ${ids.length} 个词`);
+    selected.clear();
+    await load();
+  };
+
+  /**
+   * ★ R3：批量设词级优先级。
+   * 说明用的是 `setWordPriorityMany`（改 `word.priority`），
+   * 而不是 `updateAttrsMany`（改 attrs）——词级优先级不属于属性组，
+   * 放错层级的话列表页改了、背诵抽词读的还是老值。
+   * @param priority 目标优先级
+   */
+  const batchSetPriority = async (priority: number): Promise<void> => {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+    await dao.words.setWordPriorityMany(ids, priority);
+    toastOk(`已把 ${ids.length} 个词设为 P${priority}`);
     selected.clear();
     await load();
   };

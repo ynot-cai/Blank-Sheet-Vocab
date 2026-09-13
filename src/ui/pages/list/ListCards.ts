@@ -8,11 +8,13 @@
  * 显示/隐藏由 CSS 媒体查询控制（`.list-table` 与 `.list-cards` 二选一），
  * 这样不用监听 resize 重画，横竖屏切换也不会错位。
  */
-import { humanizeDays } from '../../../core/model';
+import { humanizeDays, wordPriorityOf } from '../../../core/model';
 import type { Source, Word } from '../../../core/types';
+import { WORD_PRIORITY_OPTIONS } from '../../../core/types';
 import { button, h } from '../../dom';
 import { openModal } from '../../components/Modal';
 import type { ListTableHandlers } from './ListTable';
+import { renderPriorityBadge } from './ListTable';
 
 /** 状态中文名 */
 const STATUS_LABEL: Record<Word['status'], string> = {
@@ -47,13 +49,15 @@ export function renderListCards(items: Word[], sources: Source[], handlers: List
   function renderCard(word: Word, source: string): HTMLElement {
     const card = h('div', { class: `list-card status-${word.status}` });
 
-    // —— 第一行：单词 + 状态 + 「⋯」——
+    // —— 第一行：单词 + 优先级徽章 + 状态 + 「⋯」——
     const top = h('div', { class: 'list-card-top' });
     const titleBox = h('div', { class: 'list-card-title' });
     titleBox.appendChild(h('span', { class: 'list-card-en', text: word.en }));
     if (word.phonetic.trim() !== '') {
       titleBox.appendChild(h('span', { class: 'list-card-phonetic', text: word.phonetic }));
     }
+    // R3：手机上也要能看到优先级（徽章小、不占地方）
+    titleBox.appendChild(renderPriorityBadge(wordPriorityOf(word)));
     top.appendChild(titleBox);
     top.appendChild(h('span', { class: `stat-label st-${word.status}`, text: STATUS_LABEL[word.status] }));
     top.appendChild(
@@ -100,6 +104,17 @@ export function renderListCards(items: Word[], sources: Source[], handlers: List
       button('改未通过次数', () => handlers.onEditNumber(word, 'failCount')),
     );
     actions.appendChild(button('改复习次数', () => handlers.onEditNumber(word, 'reviewCount')));
+    // R3：手机上改优先级（下拉在卡片里太挤，放菜单里）
+    const prioRow = h('div', { class: 'row' }, h('span', { class: 'field-label', text: '词优先级' }));
+    const prioSel = h('select', { class: 'input mini-select' });
+    for (const opt of WORD_PRIORITY_OPTIONS) {
+      const o = h('option', { value: String(opt.value), text: `P${opt.value}` });
+      if (opt.value === wordPriorityOf(word)) o.selected = true;
+      prioSel.appendChild(o);
+    }
+    prioSel.addEventListener('change', () => handlers.onPriority(word, Number(prioSel.value)));
+    prioRow.appendChild(prioSel);
+    actions.appendChild(prioRow);
     actions.appendChild(
       word.status === 'chopped'
         ? button('复活', () => handlers.onRevive(word))

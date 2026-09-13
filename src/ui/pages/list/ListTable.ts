@@ -1,5 +1,6 @@
-import { humanizeDays } from '../../../core/model';
+import { humanizeDays, wordPriorityOf } from '../../../core/model';
 import type { Attrs, Source, Word, WordStatus } from '../../../core/types';
+import { WORD_PRIORITY_OPTIONS } from '../../../core/types';
 import { button, h } from '../../dom';
 
 /** 表格操作回调 */
@@ -15,6 +16,41 @@ export interface ListTableHandlers {
   onDelete: (word: Word) => void;
   onRawSources: (word: Word) => void;
   onAdoptRaw: (word: Word) => void;
+  /** ★ R3：行内直接改词级优先级 */
+  onPriority: (word: Word, priority: number) => void;
+}
+
+/**
+ * 渲染优先级徽章（`P5` / `P3` …）。
+ *
+ * 颜色语义（提示词第三部分）：P5 红、P4 橙、P3 灰，P2/P1 更浅。
+ * 抽成导出函数是因为**表格和手机卡片流都要用**，两处各写一遍迟早会不一致。
+ * @param priority 词级优先级
+ */
+export function renderPriorityBadge(priority: number): HTMLElement {
+  const level = Math.min(5, Math.max(1, Math.round(priority)));
+  return h('span', {
+    class: `prio-badge prio-${level}`,
+    text: `P${level}`,
+    title: `词级优先级 ${level}（越高越先被背诵抽到）`,
+  });
+}
+
+/**
+ * 渲染「改优先级」下拉（列表页行内用）。
+ * @param word 单词
+ * @param onPriority 回调
+ */
+function renderPrioritySelect(word: Word, onPriority: (w: Word, p: number) => void): HTMLElement {
+  const current = wordPriorityOf(word);
+  const sel = h('select', { class: 'input mini-select', title: '改词级优先级（越高越先被背诵抽到）' });
+  for (const opt of WORD_PRIORITY_OPTIONS) {
+    const o = h('option', { value: String(opt.value), text: `P${opt.value}` });
+    if (opt.value === current) o.selected = true;
+    sel.appendChild(o);
+  }
+  sel.addEventListener('change', () => onPriority(word, Number(sel.value)));
+  return sel;
 }
 
 /** 状态标签颜色 */
@@ -74,12 +110,14 @@ export function renderListTable(
         h('th', { text: '单词' }),
         h('th', { text: '义项' }),
         h('th', { text: '来源' }),
+        // ★ R3：词级优先级列（表头写清楚它和「⑥优先度」不是一回事）
+        h('th', { text: '词优先级', title: '词级优先级（R1 新增）：决定背诵先抽谁，绝对优先' }),
         h('th', { text: '①拼' }),
         h('th', { text: '②未通过' }),
         h('th', { text: '③复习次数' }),
         h('th', { text: '④距上次复习' }),
         h('th', { text: '⑤距背诵' }),
-        h('th', { text: '⑥优先度' }),
+        h('th', { text: '⑥优先度', title: '复习综合优先度：决定复习抽谁' }),
         h('th', { text: '状态' }),
         h('th', { text: '操作' }),
       ),
@@ -126,7 +164,10 @@ export function renderListTable(
 
     // 来源
     const src = sourceName(word.sourceId);
-    tr.appendChild(h('td', { class: 'sub' }, h('div', { text: src.name }), h('div', { class: 'sub', text: `优先级 ${src.priority}` })));
+    tr.appendChild(h('td', { class: 'sub' }, h('div', { text: src.name }), h('div', { class: 'sub', text: `来源优先级 ${src.priority}` })));
+
+    // ★ 词级优先级：徽章 + 行内下拉（改完立即生效并同步）
+    tr.appendChild(h('td', { class: 'prio-cell' }, renderPriorityBadge(wordPriorityOf(word)), renderPrioritySelect(word, handlers.onPriority)));
 
     // ① 拼
     const spell = h('input', { type: 'checkbox', checked: word.attrs.needSpell });
