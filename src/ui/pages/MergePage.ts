@@ -1,4 +1,4 @@
-import { validateWord } from '../../core/model';
+import { normalizeEn, normalizeWordPriority, validateWord, wordPriorityOf } from '../../core/model';
 import { planImport, setSourcePriorities } from '../../core/merge';
 import { currentSettings } from './settings/ctx';
 import type { Word } from '../../core/types';
@@ -8,6 +8,12 @@ import type { MergeSuggestion } from '../../services/ai';
 import { clearJob, loadJob, saveJob } from '../../services/importJob';
 import { button, checkbox, debounce, h, textInput } from '../dom';
 import { confirmModal } from '../components/Modal';
+import {
+  askPriorityConflicts,
+  recallConflict,
+  resetConflictMemory,
+  type PriorityConflict,
+} from '../components/PriorityConflict';
 import { toastError, toastOk, toastWarn } from '../components/Toast';
 import { navigate } from '../router';
 import type { DraftWord } from './merge/drafts';
@@ -17,6 +23,82 @@ import { renderMergeCard } from './merge/MergeCard';
 
 /** 「智能再合并」每次送给 AI 的词数 */
 const MERGE_BATCH_SIZE = 100;
+
+/**
+ * 找出「库里已有该词、但优先级不同」的冲突（R1 提示词 2.5 节）。
+ *
+ * 判据只有一条：**词已存在且优先级不同**。
+ *   · 词不存在 → 不是冲突（正常插入）；
+ *   · 词已存在且优先级相同 → 不是冲突（静默更新其他内容，不打断用户）。
+ *
+ * @param incoming 本次要入库的词（顺序与草稿一致）
+ * @param existing 库里已有的词（含墓碑，按 en 归一化比对）
+ * @returns 冲突列表（去掉本次会话已经问过的那些）
+ */
+function collectPriorityConflicts(incoming: Word[], existing: Word[]): PriorityConflict[] {
+  const byEn = new Map<string, Word>();
+  for (const w of existing) {
+    if (w.deleted === 1) continue;
+    byEn.set(normalizeEnKey(w.en), w);
+  }
+  const out: PriorityConflict[] = [];
+  const seen = new Set<string>();
+  for (const next of incoming) {
+    const hit = byEn.get(normalizeEnKey(next.en));
+    if (!hit) continue;
+    const currentPriority = wordPriorityOf(hit);
+    const incomingPriority = normalizeWordPriority(next.priority);
+    if (currentPriority === incomingPriority) continue;
+    const conflict: PriorityConflict = {
+      wordId: hit.id,
+      en: hit.en,
+      currentPriority,
+      incomingPriority,
+    };
+    // 本次会话已经问过的：直接沿用上次的选择，不再弹窗（提示词要求「不再重复问」）
+    if (recallConflict(conflict) !== null) continue;
+    // 同一批里同一个词只问一次
+    if (seen.has(hit.id)) continue;
+    seen.add(hit.id);
+    out.push(conflict);
+  }
+  return out;
+}
+
+/**
+ * 反查「这次会话里已经决定过的冲突」，把决定直接应用到 incoming。
+ * @param incoming 本次要入库的词
+ * @param existing 库里已有的词
+ * @returns 本次会话里已经决定过的那些词 id 集合（这些词需要按上次的选择处理）
+ */
+function recalledDecisions(incoming: Word[], existing: Word[]): Map<string, 'overwrite' | 'keep'> {
+  const byEn = new Map<string, Word>();
+  for (const w of existing) {
+    if (w.deleted === 1) continue;
+    byEn.set(normalizeEnKey(w.en), w);
+  }
+  const out = new Map<string, 'overwrite' | 'keep'>();
+  for (const next of incoming) {
+    const hit = byEn.get(normalizeEnKey(next.en));
+    if (!hit) continue;
+    const remembered = recallConflict({
+      wordId: hit.id,
+      en: hit.en,
+      currentPriority: wordPriorityOf(hit),
+      incomingPriority: normalizeWordPriority(next.priority),
+    });
+    if (remembered !== null) out.set(hit.id, remembered);
+  }
+  return out;
+}
+
+/**
+ * 英文归一化 key（与 core/merge.ts 的判重口径保持一致：小写 + 去首尾标点 + 压空白）。
+ * @param en 英文
+ */
+function normalizeEnKey(en: string): string {
+  return normalizeEn(en).toLowerCase();
+}
 
 /**
  * 义项合并确认页：逐词确认义项、划掉、合并、加近义词，最后一步确认入库。
@@ -323,7 +405,8 @@ export function renderMergePage(): HTMLElement {
       const incoming: Word[] = [];
       const invalid: string[] = [];
       for (const draft of keep) {
-        const word = draftToWord(draft, job.sourceId);
+        // ★ R1：这一批词的词级优先级来自任务存档（录入页 / 预设确认框里选的）
+        const word = draftToWord(draft, job.sourceId, job.wordPriority);
         const errors = validateWord(word);
         if (errors.length > 0) {
           invalid.push(`${word.en || '（空）'}：${errors.join('，')}`);
@@ -336,11 +419,76 @@ export function renderMergePage(): HTMLElement {
       }
       if (incoming.length === 0) return;
 
-      const plan = planImport(incoming, existing, dir);
+      // ── R1 第 2.5 节：优先级冲突询问 ──
+      // 判据：库里已有该词、且**优先级不同**。顺序固定为「先问、后合并」：
+      // 用户选了「保留」的词直接从本次入库名单里摘掉，这样
+      // planImport 根本看不到它，也就不可能改到它的义项或优先级。
+      const conflicts = collectPriorityConflicts(incoming, existing);
+      const keptIds = new Set<string>();
+      if (conflicts.length > 0) {
+        const answer = await askPriorityConflicts(conflicts, { sourceName: job.sourceName });
+        for (const c of conflicts) {
+          if (answer.decisions.get(c.wordId) === 'overwrite') continue;
+          keptIds.add(c.wordId);
+        }
+        toastOk(`优先级冲突处理完成：覆盖 ${answer.overwrittenCount} 个、保留 ${answer.keptCount} 个`);
+      }
+      // 本次会话里之前已问过的（同一对话再次入库）也一并应用
+      for (const [wordId, decision] of recalledDecisions(incoming, existing)) {
+        if (decision === 'keep') keptIds.add(wordId);
+      }
+
+      // 「保留」= 这个词这次不入库（库里那条原样不动）。
+      // 保留原词是更安全的方向：这一批的义项往往是没整理过的（预设词表就是），
+      // 拿它去覆盖用户已经整理好的义项，比「优先级没改成功」严重得多。
+      const byEnExisting = new Map<string, string>();
+      for (const w of existing) {
+        if (w.deleted === 1) continue;
+        byEnExisting.set(normalizeEnKey(w.en), w.id);
+      }
+      const effective = incoming.filter((w) => {
+        const existingId = byEnExisting.get(normalizeEnKey(w.en));
+        return existingId === undefined || !keptIds.has(existingId);
+      });
+      const skippedByKeep = incoming.length - effective.length;
+
+      if (effective.length === 0) {
+        toastWarn('本次录入的词都和库里已有的词优先级冲突，且你选择了全部保留，所以没有任何改动。要覆盖请重新点「确认入库」并选择「覆盖」。');
+        return;
+      }
+
+      const plan = planImport(effective, existing, dir);
+
+      // ★ 用户选了「覆盖优先级」的词，必须**单独**把优先级写回去。
+      //
+      //   为什么不能只给 incoming 设上 priority 就完事：
+      //   `planImport` 的冲突分支由**来源**优先级决定，来源相同时它走 `keepBoth`，
+      //   而 keepBoth 的结果落在 `plan.keeps` 里——`keeps` 只是给用户看的报告，
+      //   **根本不在写库列表里**（写库只有 `inserts` + `replaces`）。
+      //   于是「我明明点了覆盖，优先级却没变」（实测就是这个现象）。
+      //
+      //   所以这里在 bulkUpsert 之后，用 dao 的批量改优先级把用户的选择落实。
+      //   它按 id 精确改 `word.priority`，不碰义项、状态、属性、来源——
+      //   义项是否被这次录入覆盖，仍然完全由来源优先级规则决定，语义不变。
+      const overwriteEntries: { id: string; priority: number }[] = [];
+      for (const w of effective) {
+        const existingId = byEnExisting.get(normalizeEnKey(w.en));
+        if (existingId !== undefined && !keptIds.has(existingId)) {
+          overwriteEntries.push({ id: existingId, priority: normalizeWordPriority(w.priority) });
+        }
+      }
+
       const result = await dao.words.bulkUpsert([...plan.inserts, ...plan.replaces]);
+      if (overwriteEntries.length > 0) {
+        await dao.words.setWordPriorityByIdMany(overwriteEntries);
+      }
       await dao.sources.upsert({ id: job.sourceId, name: job.sourceName, priority: job.priority, createdAt: Date.now() });
       clearJob();
-      toastOk(`入库完成：新增 ${result.inserted} 个、更新 ${result.updated} 个。${plan.report}`);
+      resetConflictMemory();
+      toastOk(
+        `入库完成：新增 ${result.inserted} 个、更新 ${result.updated} 个。${plan.report}` +
+          (skippedByKeep > 0 ? ` 另有 ${skippedByKeep} 个词因优先级冲突选择了「保留」，未改动。` : ''),
+      );
       navigate('/list');
     } catch (err) {
       toastError(err instanceof Error ? err.message : String(err));

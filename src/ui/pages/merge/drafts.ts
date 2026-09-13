@@ -1,4 +1,4 @@
-import { createSense, uid } from '../../../core/model';
+import { createSense, normalizeWordPriority, uid } from '../../../core/model';
 import type { Sense, Word } from '../../../core/types';
 import type { MergeSuggestion, ParsedWord } from '../../../services/ai';
 
@@ -44,10 +44,15 @@ export function draftsFromEntries(entries: ParsedWord[]): DraftWord[] {
 
 /**
  * 草稿 → 正式 Word（属性全默认、状态 unlearned）。
+ *
  * @param draft 草稿
  * @param sourceId 来源 id
+ * @param priority ★ 本次录入批次的**词级优先级**（R1）。
+ *   刻意做成必传参数：优先级是「这一批词」的属性，不是草稿自己的属性，
+ *   给默认值的话很容易出现「某条调用路径忘了传 → 全部悄悄变成 3」这种
+ *   界面完全看不出来的错误。
  */
-export function draftToWord(draft: DraftWord, sourceId: string): Word {
+export function draftToWord(draft: DraftWord, sourceId: string, priority: number): Word {
   const now = Date.now();
   return {
     id: uid(),
@@ -69,6 +74,7 @@ export function draftToWord(draft: DraftWord, sourceId: string): Word {
       reviewPriority: 0,
     },
     status: 'unlearned',
+    priority: normalizeWordPriority(priority),
     learnOrder: null,
     createdAt: now,
     updatedAt: now,

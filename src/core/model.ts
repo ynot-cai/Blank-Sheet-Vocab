@@ -1,5 +1,6 @@
 import { normalizeAliases } from './senseRules';
 import type { Attrs, RawSourceRecord, Sense, Word } from './types';
+import { WORD_PRIORITY_DEFAULT, WORD_PRIORITY_MAX, WORD_PRIORITY_MIN } from './types';
 
 /**
  * 生成唯一 id（优先用 crypto.randomUUID，环境不支持时降级）。
@@ -43,8 +44,9 @@ export function createSense(text: string, aliases: string[] = []): Sense {
  * @param en 英文单词
  * @param senses 义项列表
  * @param sourceId 来源 id
+ * @param priority 词级优先级（默认 3；录入批次把它传给每个词）
  */
-export function createWord(en: string, senses: Sense[], sourceId: string): Word {
+export function createWord(en: string, senses: Sense[], sourceId: string, priority: number = WORD_PRIORITY_DEFAULT): Word {
   const now = Date.now();
   return {
     id: uid(),
@@ -56,10 +58,41 @@ export function createWord(en: string, senses: Sense[], sourceId: string): Word 
     rawSources: [],
     attrs: defaultAttrs(),
     status: 'unlearned',
+    priority: normalizeWordPriority(priority),
     learnOrder: null,
     createdAt: now,
     updatedAt: now,
   };
+}
+
+/**
+ * 归一化词级优先级：任何来源的值（老数据 undefined / 备份里的字符串 / 越界数字）
+ * 都收敛成 1~5 的整数。
+ *
+ * ★ 为什么必须有这个函数而不是各处写 `w.priority ?? 3`：
+ *   老数据的 `priority` 是 `undefined`，云同步拉回来的可能是字符串，
+ *   而「抽词绝对优先」是拿它做第一关键字的——一旦混进 `undefined`，
+ *   比较结果会是 `NaN`，排序直接错乱，表现成「优先级高的词没被优先抽到」，
+ *   而界面上完全看不出问题。
+ *
+ * @param value 原始值
+ */
+export function normalizeWordPriority(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n)) return WORD_PRIORITY_DEFAULT;
+  const int = Math.round(n);
+  if (int < WORD_PRIORITY_MIN) return WORD_PRIORITY_MIN;
+  if (int > WORD_PRIORITY_MAX) return WORD_PRIORITY_MAX;
+  return int;
+}
+
+/**
+ * 读一个词的词级优先级（老数据缺字段时按默认值 3）。
+ * 所有业务代码都该走这里，不要直接读 `word.priority`。
+ * @param word 单词
+ */
+export function wordPriorityOf(word: { priority?: unknown }): number {
+  return normalizeWordPriority(word.priority);
 }
 
 /**

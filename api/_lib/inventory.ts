@@ -20,6 +20,8 @@ export interface WordRow {
   raw_sources: string | null;
   attrs: string;
   status: string;
+  /** R1 词级优先级（1~5，5 最高；老行可能为 null） */
+  priority: number | null;
   learn_order: number | null;
   created_at: number;
   updated_at: number;
@@ -50,6 +52,8 @@ export interface WordInput {
   /** JSON 字符串 */
   attrs: string;
   status: string;
+  /** R1 词级优先级（1~5，5 最高） */
+  priority: number;
   learnOrder: number | null;
   createdAt: number;
   updatedAt: number;
@@ -102,6 +106,9 @@ const WORD_COLUMNS = [
   'raw_sources',
   'attrs',
   'status',
+  // R1 词级优先级。位置必须与 wordArgs() 的数组顺序**完全一致**，
+  // 否则会把 status 写进 priority 里（两者都是 TEXT/INTEGER，SQLite 不报错，静默写坏）。
+  'priority',
   'learn_order',
   'created_at',
   'updated_at',
@@ -153,6 +160,7 @@ function wordArgs(spaceKey: string, w: WordInput): InValue[] {
     w.rawSources,
     w.attrs,
     w.status,
+    w.priority,
     w.learnOrder,
     w.createdAt,
     w.updatedAt,
@@ -177,7 +185,7 @@ function sourceArgs(spaceKey: string, s: SourceInput): InValue[] {
  */
 export async function selectWordsSince(spaceKey: string, since: number, limit: number): Promise<WordRow[]> {
   const rs = await getDB().execute({
-    sql: `SELECT id, en, phonetic, example, senses, source_id, raw_sources, attrs, status, learn_order, created_at, updated_at, deleted
+    sql: `SELECT id, en, phonetic, example, senses, source_id, raw_sources, attrs, status, priority, learn_order, created_at, updated_at, deleted
           FROM words WHERE space_key = ? AND updated_at > ?
           ORDER BY updated_at ASC, id ASC LIMIT ?`,
     args: [spaceKey, since, limit],

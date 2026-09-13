@@ -1383,3 +1383,242 @@ body {
   min-height: 44px;
   min-width: 120px;
 }
+
+/* ══════════════════════════════════════════════════════════════
+   R1：词级优先级 + 文件上传（txt / docx / pdf）
+   ══════════════════════════════════════════════════════════════ */
+
+/* —— 优先级分段单选控件（components/PrioritySelect.ts） —— */
+.priority-field {
+  gap: 4px;
+}
+
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--paper-bg);
+}
+
+.seg-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  cursor: pointer;
+  border-right: 1px solid var(--line);
+  font-size: 13px;
+  user-select: none;
+}
+
+.seg-item:last-child {
+  border-right: none;
+}
+
+.seg-item:hover {
+  background: #f2f5fb;
+}
+
+/* 真正的 radio 藏起来但保留可聚焦（键盘方向键切换仍然可用） */
+.seg-item input[type='radio'] {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+
+.seg-item:has(input:checked) {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.seg-item:has(input:focus-visible) {
+  outline: 2px solid var(--accent-dark);
+  outline-offset: -2px;
+}
+
+/* —— 文件拖拽区 —— */
+.drop-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 18px 12px;
+  border: 2px dashed var(--line);
+  border-radius: var(--radius);
+  background: #fafbfd;
+  text-align: center;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.drop-zone.dragging {
+  border-color: var(--accent);
+  background: #eef4ff;
+}
+
+.drop-title {
+  font-weight: 600;
+}
+
+.file-list {
+  gap: 4px;
+}
+
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper-bg);
+  flex-wrap: wrap;
+}
+
+.file-row.failed {
+  border-color: var(--danger);
+  background: #fdf4f4;
+}
+
+.file-row.done {
+  border-color: #cfe8db;
+}
+
+.file-icon {
+  font-size: 16px;
+}
+
+.file-name {
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.file-status {
+  font-size: 12px;
+  margin-left: auto;
+}
+
+.file-status.pending {
+  color: var(--fg-dim);
+}
+.file-status.parsing {
+  color: var(--accent);
+}
+.file-status.done {
+  color: var(--ok);
+}
+.file-status.failed {
+  color: var(--danger);
+}
+
+/* —— 优先级冲突询问框（components/PriorityConflict.ts） —— */
+.conflict-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 220px;
+  overflow: auto;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+
+.conflict-line {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.conflict-line.active {
+  background: #eef4ff;
+  outline: 1px solid var(--accent);
+}
+
+.conflict-line.won .conflict-en {
+  color: var(--danger);
+  text-decoration: line-through;
+}
+
+.conflict-line.kept .conflict-en {
+  color: var(--ok);
+}
+
+.conflict-en {
+  font-weight: 600;
+}
+
+/* —— 列表页优先级徽章（R3） —— */
+.prio-badge {
+  display: inline-block;
+  min-width: 26px;
+  text-align: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  background: #8b93a1;
+}
+
+/* P5 红、P4 橙、P3 灰，P2/P1 用更浅的灰蓝做区分 */
+.prio-5 {
+  background: var(--danger);
+}
+.prio-4 {
+  background: #e08a1e;
+}
+.prio-3 {
+  background: #8b93a1;
+}
+.prio-2 {
+  background: #9fb0c9;
+}
+.prio-1 {
+  background: #b9c4d4;
+}
+
+/* —— R2：差异预览 —— */
+.reparse-diff {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 420px;
+  overflow: auto;
+}
+
+.diff-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: var(--paper-bg);
+}
+
+.diff-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.diff-old {
+  color: var(--fg-dim);
+  text-decoration: line-through;
+  font-size: 13px;
+}
+
+.diff-new {
+  color: var(--fg);
+  font-size: 13px;
+  background: #eafaf1;
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+.reparse-progress {
+  font-weight: 600;
+}

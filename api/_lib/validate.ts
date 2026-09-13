@@ -19,6 +19,29 @@ export interface CoercedBatch {
 /** 合法的单词状态（与前端 WordStatus 一致） */
 const WORD_STATUSES = new Set(['unlearned', 'learning', 'learned', 'chopped']);
 
+/**
+ * R1 词级优先级的合法区间与默认值（与前端 `core/types.ts` 的
+ * `WORD_PRIORITY_MIN/MAX/DEFAULT` 一致）。
+ *
+ * 为什么服务端也要钳：客户端版本可能比服务端旧（用户没刷新页面），
+ * 老客户端根本不会传 `priority`；也可能有人手搓请求塞一个 9999。
+ * 不钳的话列表页的「按优先级筛选」和服务端数据就会长期不一致。
+ */
+const WORD_PRIORITY_MIN = 1;
+const WORD_PRIORITY_MAX = 5;
+const WORD_PRIORITY_DEFAULT = 3;
+
+/**
+ * 把词级优先级钳到 1~5（缺失/非法 → 默认 3）。
+ * @param v 原值
+ */
+function toWordPriority(v: unknown): number {
+  const n = toNumber(v, WORD_PRIORITY_DEFAULT);
+  const int = Math.round(n);
+  if (!Number.isFinite(int)) return WORD_PRIORITY_DEFAULT;
+  return Math.min(WORD_PRIORITY_MAX, Math.max(WORD_PRIORITY_MIN, int));
+}
+
 /** 字符串字段的默认值上限，防止有人塞一兆的文本进来 */
 const MAX_TEXT_LENGTH = 20_000;
 
@@ -99,6 +122,7 @@ export function coerceWord(raw: unknown, now: number = Date.now()): WordInput | 
     rawSources: toJsonText(raw.rawSources, '[]'),
     attrs: toJsonText(raw.attrs, '{}'),
     status: WORD_STATUSES.has(status) ? status : 'unlearned',
+    priority: toWordPriority(raw.priority),
     learnOrder:
       learnOrderRaw === null || learnOrderRaw === undefined ? null : Math.trunc(toNumber(learnOrderRaw, 0)),
     createdAt,

@@ -7,15 +7,18 @@
  *   2. 几千个词直接进合并页容易让人以为已经入库了，先确认一下更稳。
  */
 import type { PresetTier } from '../../../core/presets';
-import { h } from '../../dom';
-import { openModal } from '../../components/Modal';
+import { WORD_PRIORITY_DEFAULT } from '../../../core/types';
+import { h } from '../../dom';import { openModal } from '../../components/Modal';
+import { renderPrioritySelect } from '../../components/PrioritySelect';
 
 /** 确认结果 */
 export interface PresetConfirmResult {
   /** 用户确认导入 */
   confirmed: boolean;
-  /** 用户填的优先级（已保证是合法数字） */
+  /** 用户填的**来源**优先级（已保证是合法数字） */
   priority: number;
+  /** 用户选的**词级**优先级（R1：这一批词入库时写入 word.priority） */
+  wordPriority: number;
 }
 
 /**
@@ -40,12 +43,16 @@ export function confirmPresetImport(
       value: String(opts.existing?.priority ?? tier.priority),
     });
 
-    /** 读当前输入的优先级；非法就退回该档位默认值 */
+    /** 读当前输入的来源优先级；非法就退回该档位默认值 */
     const readPriority = (): number => {
       const n = Number(priorityInput.value);
       if (!Number.isFinite(n)) return tier.priority;
       return Math.min(999, Math.max(0, Math.floor(n)));
     };
+
+    // ★ R1：词级优先级。预设档位自带的数字（1~5）正好可以当默认值：
+    //   初中=1、四级=2…雅思=5，用户导入时不用再想「这个表该算几级」。
+    const wordPriority = renderPrioritySelect(tier.priority, () => undefined);
 
     const body = h(
       'div',
@@ -65,19 +72,35 @@ export function confirmPresetImport(
         'label',
         { class: 'field' },
         h('span', { class: 'field-label', text: `来源名称：${tier.sourceName}` }),
-        h('span', { class: 'field-label', text: '优先级' }),
+        h('span', { class: 'field-label', text: '来源优先级' }),
         priorityInput,
         h('span', {
           class: 'field-hint',
           text:
-            '数字越大越优先（方向可在设置页改）。优先级决定「同一个词在别的来源里已存在时，谁的义项被保留」——' +
+            '数字越大越优先（方向可在设置页改）。**来源**优先级决定「同一个词在别的来源里已存在时，谁的义项被保留」——' +
             '所以它只在**导入那一刻**起作用：事后再改这个数字，已经合并好的义项不会重新合并。',
+        }),
+      ),
+      // —— 词级优先级（R1）——
+      h(
+        'div',
+        { class: 'card' },
+        h('p', {
+          class: 'field-label',
+          text: '词级优先级（决定背诵先抽谁）',
+        }),
+        wordPriority.el,
+        h('p', {
+          class: 'field-hint',
+          text:
+            '和上面的「来源优先级」不是一回事：这里写进每个词的 priority，背诵时会**绝对优先**抽高优先级的词' +
+            '（5 的词全部抽完才开始抽 4 的）。默认按档位给一个合理值，导入后也能在列表页逐个改。',
         }),
       ),
       opts.existing
         ? h('p', {
             class: 'note warn',
-            text: `来源「${tier.sourceName}」已经存在（当前优先级 ${opts.existing.priority}）。继续导入会复用这个来源，并按上面填的数字更新它的优先级。`,
+            text: `来源「${tier.sourceName}」已经存在（当前来源优先级 ${opts.existing.priority}）。继续导入会复用这个来源，并按上面填的数字更新它的优先级。`,
           })
         : null,
       h('p', {
@@ -97,17 +120,17 @@ export function confirmPresetImport(
           variant: 'primary',
           onClick: (close) => {
             answered = true;
-            resolve({ confirmed: true, priority: readPriority() });
+            resolve({ confirmed: true, priority: readPriority(), wordPriority: wordPriority.read() });
             close();
           },
         },
       ],
       onClose: () => {
-        if (!answered) resolve({ confirmed: false, priority: tier.priority });
+        if (!answered) resolve({ confirmed: false, priority: tier.priority, wordPriority: WORD_PRIORITY_DEFAULT });
       },
     });
 
-    // 弹窗一出来就聚焦优先级，方便直接改
+    // 弹窗一出来就聚焦来源优先级，方便直接改
     window.setTimeout(() => priorityInput.focus(), 30);
   });
 }

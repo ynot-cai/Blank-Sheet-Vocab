@@ -1,4 +1,5 @@
 import type { PriorityPreset, Settings, Word } from './types';
+import { WORD_PRIORITY_DEFAULT } from './types';
 
 /** 预设表达式与介绍 */
 export const PRESETS: Record<PriorityPreset, { name: string; desc: string; expr: string }> = {
@@ -84,6 +85,7 @@ function probeWord(): Word {
       reviewPriority: 0,
     },
     status: 'learning',
+    priority: WORD_PRIORITY_DEFAULT,
     learnOrder: 1,
     createdAt: Date.now(),
     updatedAt: Date.now(),

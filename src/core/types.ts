@@ -13,6 +13,31 @@ export type PriorityPreset = 'forgetting' | 'failFirst' | 'balanced';
 /** 来源优先级方向：desc = 数字越大越优先；asc = 数字越小越优先 */
 export type PriorityDir = 'desc' | 'asc';
 
+/**
+ * ★ 词级优先级（R1 阶段新建）——**和「来源优先级」是两回事**，别混：
+ *   · 来源优先级（`Source.priority`）：决定「同一个词在别的来源里已存在时，谁的义项被保留」，
+ *     只在**入库那一刻**起作用；
+ *   · 词级优先级（`Word.priority`，就是下面这一套）：决定「背诵环节先抽谁」，
+ *     是**绝对优先**——5 的词全部抽完才开始抽 4 的，不是概率高。
+ *
+ * 取值范围 1~5，5 为最高，默认 3（老数据迁移后也是 3）。
+ */
+export const WORD_PRIORITY_MIN = 1;
+export const WORD_PRIORITY_MAX = 5;
+export const WORD_PRIORITY_DEFAULT = 3;
+
+/** 合法的词级优先级（1~5） */
+export type WordPriority = 1 | 2 | 3 | 4 | 5;
+
+/** 优先级选项（录入页单选框、列表页筛选/编辑下拉共用同一份，避免各处写死） */
+export const WORD_PRIORITY_OPTIONS: { value: WordPriority; label: string }[] = [
+  { value: 1, label: '1 低' },
+  { value: 2, label: '2' },
+  { value: 3, label: '3 中' },
+  { value: 4, label: '4' },
+  { value: 5, label: '5 高' },
+];
+
 /** 义项 */
 export interface Sense {
   id: string;
@@ -49,6 +74,16 @@ export interface Word {
   rawSources: RawSourceRecord[]; // 低优先级来源记录，供手动采纳
   attrs: Attrs;
   status: WordStatus;
+  /**
+   * ★ 词级优先级（R1）：1~5，5 为最高，默认 3。
+   *
+   * 与 `Source.priority` **完全不同**的东西（对比见文件上方 `WORD_PRIORITY_MIN` 的注释）：
+   * 这里决定「背诵环节先抽谁」，且是**绝对优先**（高优先级没抽完不会抽低的）。
+   *
+   * 兼容性：老数据没有这个字段，读的时候一律用 `wordPriorityOf()` 兜底成 3，
+   * 所以任何地方都**不要**直接比 `w.priority`（可能是 undefined）。
+   */
+  priority: number;
   learnOrder: number | null; // 背诵顺序序号，已背词排序用
   createdAt: number;
   updatedAt: number; // 每次写回自动刷新（云同步按它做增量）
@@ -215,7 +250,9 @@ export interface WordQuery {
   minFailCount?: number;
   needSpell?: boolean;
   minPriority?: number;
-  sort?: 'learnOrder' | 'reviewPriority' | 'createdAt' | 'en';
+  /** ★ 按**词级**优先级精确筛选（R1 加的，与上面的 minPriority/复习优先度无关） */
+  priority?: number;
+  sort?: 'learnOrder' | 'reviewPriority' | 'createdAt' | 'en' | 'priority';
   order?: 'asc' | 'desc';
   page: number;
   pageSize: number;

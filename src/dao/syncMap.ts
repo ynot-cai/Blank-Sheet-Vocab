@@ -10,6 +10,7 @@
  * 同步内容里也没有密钥——它只存在浏览器设置里。
  */
 import type { Attrs, RawSourceRecord, Sense, Source, Word, WordStatus } from '../core/types';
+import { normalizeWordPriority } from '../core/model';
 
 /** 服务器上的一条单词（words 表） */
 export interface ServerWord {
@@ -22,6 +23,8 @@ export interface ServerWord {
   raw_sources: string | null;
   attrs: string;
   status: string;
+  /** R1 词级优先级。老服务器行没有这一列，转本地时兜底成默认值 */
+  priority: number | null;
   learn_order: number | null;
   created_at: number;
   updated_at: number;
@@ -49,6 +52,8 @@ export interface WordPayload {
   rawSources: RawSourceRecord[];
   attrs: Attrs;
   status: WordStatus;
+  /** R1 词级优先级（1~5，5 最高） */
+  priority: number;
   learnOrder: number | null;
   createdAt: number;
   updatedAt: number;
@@ -128,6 +133,8 @@ export function toLocalWord(row: ServerWord): Word {
     rawSources: parseArray<RawSourceRecord>(row.raw_sources),
     attrs: { ...EMPTY_ATTRS, ...attrsRaw } as Attrs,
     status,
+    // R1：老服务器行没有 priority 列（可能是别的设备还没升级）→ 归一化成默认值 3
+    priority: normalizeWordPriority(row.priority),
     learnOrder: row.learn_order === null || row.learn_order === undefined ? null : Number(row.learn_order),
     createdAt: Number(row.created_at ?? 0),
     updatedAt: Number(row.updated_at ?? 0),
@@ -165,6 +172,7 @@ export function toWordPayload(word: Word): WordPayload {
     rawSources: word.rawSources ?? [],
     attrs: word.attrs,
     status: word.status,
+    priority: normalizeWordPriority(word.priority),
     learnOrder: word.learnOrder,
     createdAt: word.createdAt,
     updatedAt: word.updatedAt,

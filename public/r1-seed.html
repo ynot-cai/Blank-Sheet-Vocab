@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>R1 测试种子页</title>
+  </head>
+  <body>
+    <!--
+      测试专用空白页（被 api/_dev/test-r1.mjs 用 headless Chrome 打开）。
+
+      存在的理由：IndexedDB 是**按源隔离**的，而 `about:blank` 的源是 opaque origin，
+      在那里访问 `indexedDB` 会直接抛 SecurityError。测试要「先造一个 v5 老库、
+      再让应用打开它触发真实迁移」，就必须有一个**同源、而且不启动应用**的页面。
+
+      这个文件本身不执行任何脚本，也不会打开数据库，所以不会占着库。
+    -->
+    <p>R1 测试种子页（同源空白页，不启动应用）。</p>
+  </body>
+</html>

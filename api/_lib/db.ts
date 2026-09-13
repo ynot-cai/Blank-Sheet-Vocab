@@ -38,6 +38,7 @@ const SCHEMA_STATEMENTS: string[] = [
     raw_sources TEXT,
     attrs TEXT NOT NULL,
     status TEXT NOT NULL,
+    priority INTEGER DEFAULT 3,
     learn_order INTEGER,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
@@ -58,6 +59,55 @@ const SCHEMA_STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS idx_words_updated ON words(space_key, updated_at)`,
   `CREATE INDEX IF NOT EXISTS idx_sources_space ON sources(space_key, updated_at)`,
 ];
+
+/**
+ * 老库**补列**清单（幂等）。
+ *
+ * 为什么需要：`CREATE TABLE IF NOT EXISTS` 对**已经存在**的表是空操作，
+ * 所以往建表语句里加一个新列，对老库**完全不起作用**——线上库是早就建好的，
+ * 不加这一段的话 `INSERT ... priority` 会直接报「no such column」，
+ * 表现成「一同步就 500」。
+ *
+ * 处理方式与 `kcSchema.ts` 里那段一致：先查 `PRAGMA table_info`，缺了才 ALTER。
+ * 老行的 `priority` 会被填成建表默认值 3（SQLite 的 ADD COLUMN 支持带 DEFAULT，
+ * 且对已有行同样生效）。
+ */
+const ADDED_COLUMNS: { table: string; column: string; ddl: string }[] = [
+  // R1 词级优先级：1~5，5 最高，默认 3
+  { table: 'words', column: 'priority', ddl: 'ALTER TABLE words ADD COLUMN priority INTEGER DEFAULT 3' },
+];
+
+/**
+ * 查一张表有哪些列。
+ * @param table 表名
+ */
+async function columnNames(table: string): Promise<Set<string>> {
+  const rs = await getDB().execute(`PRAGMA table_info(${table})`);
+  const out = new Set<string>();
+  for (const row of rs.rows) {
+    const plain = { ...(row as { name?: unknown }) };
+    if (typeof plain.name === 'string') out.add(plain.name);
+  }
+  return out;
+}
+
+/**
+ * 给老库补上缺的列（幂等，且只在缺的时候执行 ALTER）。
+ */
+async function ensureColumns(): Promise<void> {
+  const db = getDB();
+  const cache = new Map<string, Set<string>>();
+  for (const { table, column, ddl } of ADDED_COLUMNS) {
+    let cols = cache.get(table);
+    if (cols === undefined) {
+      cols = await columnNames(table);
+      cache.set(table, cols);
+    }
+    if (cols.has(column)) continue;
+    console.info(`[db] 给 ${table} 补列 ${column}`);
+    await db.execute(ddl);
+  }
+}
 
 /**
  * 查一张表的主键列（按顺序）。
@@ -124,6 +174,9 @@ export function initSchema(): Promise<void> {
     schemaPromise = (async () => {
       const db = getDB();
       for (const sql of SCHEMA_STATEMENTS) await db.execute(sql);
+      // 补列必须在 rebuildCompositeKey **之前**：重建表是 `SELECT *` 搬家，
+      // 老表缺 priority 的话搬过去的行也会缺（新表虽然有默认值，但显式补过更稳）。
+      await ensureColumns();
       await rebuildCompositeKey('words');
       await rebuildCompositeKey('sources');
     })().catch((err: unknown) => {

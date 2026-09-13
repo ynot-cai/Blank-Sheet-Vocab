@@ -185,6 +185,27 @@ export async function openSession(port, url, opts = {}) {
       ws.close();
       await fetch(`http://127.0.0.1:${port}/json/close/${target.id}`).catch(() => {});
     },
+    /**
+     * 往一个 `<input type="file">` 里**真的塞文件**（R1 的文件上传测试要用）。
+     *
+     * 为什么要走 CDP 的 `DOM.setFileInputFiles` 而不是在页面里 `new File()`：
+     * 前者走的是浏览器的真实选文件路径，`input.files` 是货真价实的 FileList，
+     * 后面 `file.arrayBuffer()` / `File.text()` 拿到的字节与用户选中时**完全一致**；
+     * 后者构造出来的 File 在部分场景下与真实文件行为有差异（size/type/流式读取）。
+     * 既然要验「docx/pdf 真的能解析」，就不能在输入这一环放水。
+     *
+     * @param selector 文件输入框的 CSS 选择器
+     * @param files 本机绝对路径数组
+     * @returns 是否成功设置
+     */
+    async setFileInput(selector, files) {
+      await send('DOM.enable');
+      const doc = await send('DOM.getDocument', { depth: -1 });
+      const found = await send('DOM.querySelector', { nodeId: doc.root.nodeId, selector });
+      if (!found?.nodeId) return false;
+      await send('DOM.setFileInputFiles', { nodeId: found.nodeId, files });
+      return true;
+    },
   };
 }
 

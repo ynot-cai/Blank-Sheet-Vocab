@@ -105,6 +105,8 @@ export function renderImportPage(): HTMLElement {
         sourceId: source.id,
         sourceName: source.name,
         priority: source.priority,
+        // 预设词库也要能选优先级（提示词 2.4 节）：确认框里选的值写进这一批词
+        wordPriority: answer.wordPriority,
         chunks,
         doneFlags: chunks.map(() => true),
         errors: chunks.map(() => null),
@@ -197,8 +199,8 @@ export function renderImportPage(): HTMLElement {
     }
 
     const source = input.sourceId
-      ? (await dao.sources.getById(input.sourceId)) ?? (await dao.sources.ensureByName(input.sourceName, input.priority))
-      : await dao.sources.ensureByName(input.sourceName, input.priority);
+      ? (await dao.sources.getById(input.sourceId)) ?? (await dao.sources.ensureByName(input.sourceName, input.sourcePriority))
+      : await dao.sources.ensureByName(input.sourceName, input.sourcePriority);
 
     const chunks = splitIntoChunks(lines, input.batchSize);
     job = {
@@ -206,6 +208,8 @@ export function renderImportPage(): HTMLElement {
       sourceId: source.id,
       sourceName: source.name,
       priority: source.priority,
+      // ★ R1：把录入页选的词级优先级记进任务，入库时写给这一批的每个词
+      wordPriority: input.priority,
       chunks,
       doneFlags: chunks.map(() => false),
       errors: chunks.map(() => null),
