@@ -14,3 +14,8 @@ tsconfig.tsbuildinfo
 *.tsbuildinfo
 .gh-login.log
 .gh-login.done
+# 个人学习资料（南科大课件 / 手册 / 校历 / 选课表…）：1.6 GB 且与代码无关，
+# 更不该进公开仓库（隐私 + GitHub 单文件 100 MB 限制）。
+# 顺带一提：它一度让 dev server 崩过一次（vite 监听整个项目根，
+# 抓到被占用的 generic.mp4 抛 EBUSY）—— 已在 vite.config.ts 里加了 ignored。
+资料/
