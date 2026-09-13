@@ -8,6 +8,7 @@ import { button, details, h, numberInput, textInput } from '../../dom';
 import { toastError, toastOk, toastWarn } from '../../components/Toast';
 import { renderPrioritySelect, type PrioritySelectHandle } from '../../components/PrioritySelect';
 import { renderPresetPanel } from './PresetPanel';
+import { renderReparsePanel } from './ReparsePanel';
 
 /** 录入页各分区收集到的输入 */
 export interface InputState {
@@ -424,6 +425,9 @@ export function renderInputPanel(opts: {
   wrap.appendChild(sourceBox);
   wrap.appendChild(inputBox);
   wrap.appendChild(details('3. 解析设置（分隔符 / 解析方式 / 每批词数）', [settingsBox], false));
+  // R2：「已有词库整理」放在最后——它处理的是**已经入库**的词，
+  // 和上面「录入新词」是两条独立的路径，放最后不会打断录入的动线。
+  wrap.appendChild(renderReparsePanel());
 
   return {
     el: wrap,

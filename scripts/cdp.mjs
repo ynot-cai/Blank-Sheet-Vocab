@@ -180,6 +180,57 @@ export async function openSession(port, url, opts = {}) {
     clearRequests() {
       network.length = 0;
     },
+    /**
+     * 在每个新文档**执行任何页面脚本之前**注入一段脚本（返回本次注入的 identifier）。
+     *
+     * 用途：给测试打桩。典型场景是 R2/R3 的 AI 调用——用 `window.fetch` 的替身
+     * 返回固定 JSON，就能在不联网、不花钱的前提下把「AI 整理」的整条链路跑通，
+     * 而且**响应内容完全可控**，能精确构造出要验的输入形态
+     * （比如「高兴/快乐/愉快 平铺成 3 个义项」这种要被合并的样子）。
+     *
+     * 必须在 `Page.navigate` 之前调用才生效（所以这个 API 返回后要重新导航一次）。
+     * @param source 要注入的 JS 源码
+     */
+    async addInitScript(source) {
+      const res = await send('Page.addScriptToEvaluateOnNewDocument', { source });
+      return res?.identifier ?? null;
+    },
+    /**
+     * 撤销一次 addInitScript 注入。
+     * @param identifier addInitScript 返回的 identifier
+     */
+    async removeInitScript(identifier) {
+      if (!identifier) return;
+      await send('Page.removeScriptToEvaluateOnNewDocument', { identifier });
+    },
+    /**
+     * 重新导航到某个地址（等 load 事件 + 额外等待）。
+     * @param url 目标地址
+     * @param waitMs 额外等待毫秒
+     */
+    async goto(url, waitMs = 1200) {
+      loadFired = false;
+      await send('Page.navigate', { url });
+      for (let i = 0; i < 120 && !loadFired; i += 1) await new Promise((r) => setTimeout(r, 100));
+      await new Promise((r) => setTimeout(r, waitMs));
+    },
+    /**
+     * **真正重新加载**当前页面（等 load 事件 + 额外等待）。
+     *
+     * ★ 为什么必须单独有一个：本应用是 hash 路由，`Page.navigate` 到
+     *   「同路径、只换 hash」的地址属于**同文档导航**——不重新加载页面，
+     *   于是 `main.ts` 的 boot() 不会再跑一遍，内存里的设置缓存还是旧的。
+     *   测试里「写数据 → 重新导航 → 期望应用看到新数据」的写法会因此静默失效
+     *   （实测：AI 密钥写进了库，但页面读到的还是空 key，排查了很久）。
+     *   需要应用真的重读数据时，用这个而不是 goto。
+     * @param waitMs 额外等待毫秒
+     */
+    async reload(waitMs = 2000) {
+      loadFired = false;
+      await send('Page.reload', { ignoreCache: true });
+      for (let i = 0; i < 120 && !loadFired; i += 1) await new Promise((r) => setTimeout(r, 100));
+      await new Promise((r) => setTimeout(r, waitMs));
+    },
     /** 关掉这个标签页 */
     async close() {
       ws.close();
