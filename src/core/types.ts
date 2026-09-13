@@ -1,7 +1,8 @@
 /**
- * 全局类型定义。
- * 这个文件不许 import 任何东西（否则容易产生循环依赖），只放类型。
+ * 全局类型定义（一期：单词）。
+ * 这个文件除了二期设置的类型之外不 import 任何东西（否则容易产生循环依赖），只放类型。
  */
+import type { KcSettings } from './kcTypes';
 
 /** 单词状态：未背 / 学习中 / 已背 / 已斩 */
 export type WordStatus = 'unlearned' | 'learning' | 'learned' | 'chopped';
@@ -192,6 +193,12 @@ export interface Settings {
   practice: PracticeSettings;
   backup: BackupSettings;
   cloud: CloudSettings;
+  /**
+   * 二期（知识点精学）设置。
+   * 说明：和一期共用同一份 `Settings` 存储，但字段互不干扰——
+   * 二期读 `settings.kc.*`，一期读其余字段，谁都不会覆盖谁。
+   */
+  kc: KcSettings;
 }
 
 /**

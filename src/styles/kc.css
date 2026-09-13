@@ -1,0 +1,1809 @@
+/**
+ * 二期（知识点精学）样式。
+ *
+ * 两块内容：
+ * 1. **块渲染**（class 名与 `src/core/blockRender.ts` 一一对应）：
+ *    `.kc-block--heading / --text / --example / --list / --table / --code / --quote / --tip / --unknown`
+ * 2. **二期页面**：首页（`.kc-home`）、聊天式录入（`.kc-import`）、卡片预览（`.kc-preview`）
+ *
+ * 卡片列表 / 学习流程 / 答题界面的样式在各阶段做 UI 时继续往这里加。
+ */
+
+/* 二期自己的尺寸令牌（一期的 --radius/--line 等沿用 global.css） */
+:root {
+  /* 触摸目标最小尺寸：手机上所有可点元素都不小于它（与一期 DEVICE.minTapSize 同口径） */
+  --kc-tap: 44px;
+}
+
+/* ── 块容器 ── */
+.kc-block {
+  margin: 0 0 12px;
+}
+
+.kc-block:last-child {
+  margin-bottom: 0;
+}
+
+/* 保留换行：渲染层用 textContent，`\n` 靠 CSS 显示成换行
+   （这样就不需要把 \n 拼成 <br>，见 blockRender 的安全铁律） */
+.kc-preserve-lines {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* ── 小标题 ── */
+.kc-block--heading .kc-heading {
+  margin: 18px 0 8px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--fg);
+}
+
+.kc-block--heading:first-child .kc-heading {
+  margin-top: 0;
+}
+
+/* ── 正文 / 引用 / 提示 ── */
+.kc-block--text .kc-text,
+.kc-block--quote .kc-quote,
+.kc-block--tip .kc-tip {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+/* 引用：左侧竖线 + 灰底 */
+.kc-block--quote {
+  padding: 8px 12px;
+  border-left: 3px solid var(--line);
+  background: #fafbfc;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  color: var(--fg-dim);
+}
+
+/* 提示 / 易错点：黄色左边框（主提示词里点名的样式） */
+.kc-block--tip {
+  padding: 8px 12px;
+  border-left: 3px solid var(--warn);
+  background: #fffaf0;
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+.kc-block--tip .kc-tip {
+  color: #7a5310;
+}
+
+/* ── 例句 ── */
+.kc-block--example {
+  padding: 10px 12px;
+  background: #f7f9fc;
+  border-radius: var(--radius);
+}
+
+.kc-block--example .kc-example-sentence {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--fg);
+}
+
+.kc-block--example .kc-example-translation {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--fg-dim);
+}
+
+.kc-block--example .kc-example-note {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--warn);
+}
+
+/* ── 列表 ── */
+.kc-list {
+  margin: 0;
+  padding-left: 22px;
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+.kc-list-item {
+  margin: 2px 0;
+}
+
+/* ── 表格 ── */
+.kc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  /* 手机上表格容易撑破布局：允许横向滚动的是外层容器，这里只管画线 */
+  table-layout: auto;
+}
+
+/* ── 卡片表格：没有表头行，所有行都是 .kc-td（见 blockRender.renderTable） ──
+   `.kc-th` 只留给设置页自己画的统计表（kcSettings/ 下的两个分区）。 */
+.kc-th,
+.kc-td {
+  border: 1px solid var(--line);
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.kc-th {
+  background: #f5f6f8;
+  font-weight: 600;
+}
+
+.kc-table tbody tr:nth-child(even) .kc-td {
+  background: #fafbfc;
+}
+
+/* ── 代码 ── */
+.kc-pre {
+  margin: 0;
+  padding: 10px 12px;
+  background: #f2f3f5;
+  border-radius: var(--radius);
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.kc-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Courier New', monospace;
+  white-space: pre;
+}
+
+/* ── 未知 / 损坏的块：朴素显示，绝不白屏 ── */
+.kc-block--unknown .kc-text {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+/* ── 卡片正文容器（块渲染的宿主，页面用得上） ── */
+.kc-blocks {
+  display: block;
+}
+
+/* 窄屏：表格用横向滚动兜底，避免把整页挤歪 */
+@media (max-width: 767px) {
+  .kc-block--table {
+    overflow-x: auto;
+  }
+  .kc-table {
+    min-width: 320px;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
+   二期首页（#/kc）—— 六个入口
+   ══════════════════════════════════════════════════════════ */
+.kc-home {
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+.kc-home-head {
+  margin-bottom: 14px;
+}
+
+.kc-home-title {
+  margin: 0 0 4px;
+  font-size: 22px;
+}
+
+.kc-home-sub {
+  margin: 0;
+  color: var(--fg-dim);
+  font-size: 13.5px;
+  line-height: 1.7;
+}
+
+.kc-home-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  background: var(--paper-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: 13px;
+}
+
+.kc-stat--dim {
+  color: var(--fg-dim);
+}
+
+.kc-home-stats-loading {
+  color: var(--fg-dim);
+}
+
+.kc-home-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.kc-entry {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 14px;
+  min-height: var(--kc-tap);
+  text-align: left;
+  background: var(--paper-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.kc-entry:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow);
+}
+
+/* 未实现的入口：灰一点，但仍然可点（点了给明确提示） */
+.kc-entry--todo {
+  background: #fafbfc;
+  color: var(--fg-dim);
+}
+
+.kc-entry-label {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.kc-entry--todo .kc-entry-label {
+  color: var(--fg-dim);
+}
+
+.kc-entry-desc {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--fg-dim);
+}
+
+.kc-entry-todo {
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--warn);
+}
+
+/* ══════════════════════════════════════════════════════════
+   聊天式录入（#/kc/import）
+   ══════════════════════════════════════════════════════════ */
+.kc-import {
+  display: flex;
+  flex-direction: column;
+  max-width: 860px;
+  margin: 0 auto;
+  /* 顶栏 + 输入区之外全给对话区滚动 */
+  min-height: calc(100dvh - 220px);
+}
+
+.kc-import-head {
+  margin-bottom: 10px;
+}
+
+.kc-import-title {
+  margin: 0 0 4px;
+  font-size: 20px;
+}
+
+.kc-import-sub {
+  margin: 0;
+  color: var(--fg-dim);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.kc-chat {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  background: var(--paper-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  min-height: 240px;
+}
+
+.kc-bubble {
+  margin-bottom: 14px;
+  max-width: 100%;
+}
+
+.kc-bubble-text {
+  padding: 9px 12px;
+  border-radius: var(--radius);
+  font-size: 14.5px;
+  line-height: 1.7;
+  /* 用户原话/AI 文本都可能带换行：用 pre-wrap 保留，不拼 <br> */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.kc-bubble--user {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.kc-bubble--user .kc-bubble-text {
+  background: var(--accent);
+  color: #fff;
+  border-bottom-right-radius: 3px;
+}
+
+.kc-bubble--ai .kc-bubble-text {
+  background: #f5f6f8;
+  color: var(--fg);
+  border-bottom-left-radius: 3px;
+}
+
+.kc-bubble-error {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--danger);
+  background: #fdf3f3;
+  border-radius: var(--radius);
+  white-space: pre-wrap;
+}
+
+.kc-bubble-actions {
+  margin-top: 6px;
+}
+
+.kc-typing {
+  display: inline-block;
+  margin-top: 4px;
+  color: var(--fg-dim);
+  letter-spacing: 2px;
+}
+
+.kc-chat-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.kc-chat-note {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--fg-dim);
+}
+
+/* 历史被截断时的一行灰字（不做弹窗：这不是错误，只是"AI 只记得最近几轮"） */
+.kc-history-note {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  color: var(--fg-dim);
+}
+
+.kc-raw {
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: var(--fg-dim);
+}
+
+.kc-raw summary {
+  cursor: pointer;
+}
+
+/* ── 空状态 ── */
+.kc-empty {
+  padding: 18px 6px;
+  text-align: center;
+}
+
+.kc-empty-title {
+  margin: 0 0 10px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.kc-empty-list {
+  display: inline-block;
+  margin: 0 0 10px;
+  padding-left: 20px;
+  text-align: left;
+  color: var(--fg-dim);
+  font-size: 13.5px;
+  line-height: 1.9;
+}
+
+.kc-empty-note {
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  color: var(--fg-dim);
+}
+
+/* ── 底部：待入库区 + 输入框 ── */
+.kc-import-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  margin-top: 8px;
+  background: var(--paper-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.kc-import-count {
+  flex: 1;
+  min-width: 120px;
+  font-size: 13px;
+  color: var(--fg-dim);
+}
+
+.kc-composer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.kc-composer .kc-chat-input {
+  flex: 1;
+  /* iOS 上输入框小于 16px 会触发页面自动放大 */
+  font-size: 16px;
+}
+
+.kc-composer-btns {
+  display: flex;
+  gap: 6px;
+}
+
+.kc-import-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+
+/* ── 卡片预览 ── */
+.kc-preview {
+  padding: 12px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+}
+
+.kc-preview--adopted {
+  border-left-color: var(--ok);
+  background: #f7fdfa;
+}
+
+.kc-preview--discarded {
+  border-left-color: var(--line);
+  opacity: 0.55;
+}
+
+.kc-preview-title {
+  margin: 0 0 4px;
+  font-size: 15.5px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.kc-preview-summary {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--fg-dim);
+  line-height: 1.6;
+}
+
+.kc-preview-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+
+.kc-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.kc-chip {
+  padding: 1px 8px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--accent-dark);
+  background: #eef3ff;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.kc-chip--empty {
+  color: var(--warn);
+  background: #fff7e6;
+}
+
+.kc-chip--editable {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.kc-chip-x {
+  padding: 0 4px;
+  min-height: 0;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.kc-chip-add {
+  padding: 1px 8px;
+  min-height: 0;
+  font-size: 12px;
+  border-radius: 999px;
+}
+
+.kc-chip-edit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.kc-state {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+}
+
+.kc-state--adopted {
+  color: var(--ok);
+  background: #e8f7ef;
+}
+
+.kc-state--discarded {
+  color: var(--fg-dim);
+  background: #f0f1f3;
+}
+
+.kc-preview-body {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  background: #fafbfc;
+  border-radius: var(--radius);
+}
+
+.kc-preview-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+/* ── 移动端加大热区（触摸目标 ≥44px） ── */
+@media (max-width: 767px) {
+  .kc-preview-actions .btn,
+  .kc-import-bar .btn,
+  .kc-composer .btn {
+    min-height: var(--kc-tap);
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+  .kc-import-bar {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+  }
+}
+
+
+/* ══════════════════════════════════════════════════════════
+   块编辑器（阶段 03）
+   ══════════════════════════════════════════════════════════ */
+.kc-editor-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.kc-editor-count {
+  font-size: 12.5px;
+  color: var(--fg-dim);
+}
+
+.kc-editor-preview {
+  padding: 12px;
+  background: #fafbfc;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+}
+
+.kc-editor-block {
+  margin-bottom: 10px;
+  padding: 10px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.kc-editor-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.kc-editor-block-tools {
+  display: flex;
+  gap: 4px;
+}
+
+.kc-type-tag {
+  padding: 1px 8px;
+  font-size: 11.5px;
+  border-radius: 999px;
+  background: #eef1f5;
+  color: var(--fg-dim);
+}
+
+.kc-type-tag--tip {
+  background: #fff7e6;
+  color: var(--warn);
+}
+
+.kc-type-tag--table,
+.kc-type-tag--list {
+  background: #eef3ff;
+  color: var(--accent-dark);
+}
+
+.kc-type-tag--example {
+  background: #e8f7ef;
+  color: var(--ok);
+}
+
+.kc-mini-btn {
+  min-height: 0;
+  padding: 2px 8px;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.kc-mini-btn--danger {
+  color: var(--danger);
+}
+
+.kc-block-input {
+  width: 100%;
+  /* iOS 上小于 16px 会触发页面自动放大 */
+  font-size: 16px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.kc-block-edit-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.kc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.kc-field-label {
+  font-size: 12.5px;
+  color: var(--fg-dim);
+}
+
+.kc-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.kc-insert-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
+}
+
+.kc-insert-label {
+  font-size: 12.5px;
+  color: var(--fg-dim);
+}
+
+.kc-insert-btn {
+  min-height: 0;
+  padding: 3px 10px;
+  font-size: 13px;
+}
+
+.kc-table-edit {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+/* 表格编辑器：所有格子都是数据格（表头行已按用户要求去掉，见 blockRender.renderTable） */
+.kc-table-edit td {
+  border: 1px solid var(--line);
+  padding: 3px;
+  vertical-align: middle;
+}
+
+.kc-table-edit-ops {
+  width: 60px;
+  text-align: center;
+}
+
+.kc-table-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.kc-hint-dim {
+  font-size: 12.5px;
+  color: var(--fg-dim);
+}
+
+/* ══════════════════════════════════════════════════════════
+   卡片编辑页（#/kc/edit）
+   ══════════════════════════════════════════════════════════ */
+.kc-edit-page,
+.kc-list-page,
+.kc-view-page {
+  max-width: 980px;
+  margin: 0 auto;
+}
+
+.kc-edit-head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.kc-title-input {
+  font-size: 18px;
+  font-weight: 600;
+  min-height: var(--kc-tap);
+}
+
+.kc-summary-input {
+  min-height: var(--kc-tap);
+}
+
+.kc-edit-meta {
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  background: var(--paper-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.kc-load-box {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.kc-minutes-input {
+  width: 76px;
+  min-height: var(--kc-tap);
+}
+
+.kc-edit-subtitle {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.kc-edit-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.kc-edit-status {
+  flex: 1;
+  min-width: 140px;
+  font-size: 12.5px;
+  color: var(--fg-dim);
+}
+
+/* ══════════════════════════════════════════════════════════
+   卡片列表页（#/kc/list）
+   ══════════════════════════════════════════════════════════ */
+.kc-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.kc-list-title {
+  margin: 0;
+  font-size: 20px;
+}
+
+.kc-list-headbtns {
+  display: flex;
+  gap: 6px;
+}
+
+.kc-statsbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.kc-statcell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  min-width: 76px;
+  padding: 8px 12px;
+  background: var(--paper-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.kc-statcell--active {
+  border-color: var(--accent);
+  background: #eef3ff;
+}
+
+.kc-statcell-num {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.kc-statcell-label {
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+
+.kc-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  background: var(--paper-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.kc-search {
+  min-height: var(--kc-tap);
+  font-size: 16px;
+}
+
+.kc-filter-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.kc-filter-label {
+  font-size: 12.5px;
+  color: var(--fg-dim);
+  min-width: 34px;
+}
+
+.kc-filter-btn,
+.kc-batch-btn {
+  min-height: 34px;
+  padding: 2px 10px;
+  font-size: 13px;
+}
+
+.kc-filter-select,
+.kc-batch-select {
+  min-height: 34px;
+  width: auto;
+}
+
+.kc-table-wrap {
+  overflow-x: auto;
+}
+
+.kc-list-table {
+  background: var(--paper-bg);
+}
+
+.kc-list-table th {
+  text-align: left;
+  font-size: 12.5px;
+  color: var(--fg-dim);
+  font-weight: 500;
+}
+
+.kc-row-title {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--accent-dark);
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.kc-row-title:hover {
+  text-decoration: underline;
+}
+
+.kc-row-summary {
+  display: block;
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  color: var(--fg-dim);
+}
+
+.kc-row-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.kc-row-sub {
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+
+.kc-row--selected {
+  background: #f4f8ff;
+}
+
+.kc-cell-check {
+  width: 34px;
+  text-align: center;
+}
+
+.kc-cell-actions {
+  width: 260px;
+}
+
+.kc-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.kc-mastery {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.kc-mastery-dots {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.kc-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--line);
+  display: inline-block;
+}
+
+.kc-mastery--low .kc-dot--on {
+  background: var(--danger);
+}
+
+.kc-mastery--mid .kc-dot--on {
+  background: var(--warn);
+}
+
+.kc-mastery--high .kc-dot--on {
+  background: var(--ok);
+}
+
+.kc-mastery-pct {
+  font-size: 12.5px;
+  color: var(--fg-dim);
+}
+
+.kc-blindflag {
+  cursor: help;
+}
+
+.kc-cardflow {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.kc-list-card {
+  padding: 12px;
+  background: var(--paper-bg);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+}
+
+.kc-list-card--selected {
+  border-left-color: var(--ok);
+  background: #f7fdfa;
+}
+
+.kc-list-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.kc-pager {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.kc-pager-info {
+  flex: 1;
+  min-width: 140px;
+  font-size: 12.5px;
+  color: var(--fg-dim);
+}
+
+.kc-batch-host:not(:empty) {
+  position: sticky;
+  bottom: 0;
+  z-index: 6;
+}
+
+.kc-batchbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-top: 10px;
+  background: #fffdf5;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+}
+
+.kc-batch-count {
+  flex: 1;
+  min-width: 100px;
+  font-size: 13px;
+  color: var(--warn);
+}
+
+/* ══════════════════════════════════════════════════════════
+   卡片详情页（#/kc/view）
+   ══════════════════════════════════════════════════════════ */
+.kc-view-head {
+  margin-bottom: 14px;
+}
+
+.kc-view-title {
+  margin: 0 0 6px;
+  font-size: 22px;
+  line-height: 1.4;
+}
+
+.kc-view-summary {
+  margin: 0 0 8px;
+  color: var(--fg-dim);
+  font-size: 14px;
+}
+
+.kc-view-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.kc-attrs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  background: var(--paper-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: 13px;
+}
+
+.kc-attr {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.kc-attr-label {
+  color: var(--fg-dim);
+  font-size: 12px;
+}
+
+.kc-status {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: #eef1f5;
+  color: var(--fg-dim);
+}
+
+.kc-status--learning {
+  background: #fff7e6;
+  color: var(--warn);
+}
+
+.kc-status--learned {
+  background: #e8f7ef;
+  color: var(--ok);
+}
+
+.kc-status--chopped {
+  background: #f0f1f3;
+  color: var(--fg-dim);
+}
+
+.kc-blindnote {
+  flex-basis: 100%;
+  margin: 4px 0 0;
+  padding: 6px 10px;
+  font-size: 12.5px;
+  color: var(--warn);
+  background: #fffaf0;
+  border-radius: var(--radius);
+}
+
+.kc-view-content {
+  padding: 14px;
+  background: var(--paper-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.kc-chip--plain {
+  color: var(--fg-dim);
+  background: #f0f1f3;
+}
+
+@media (max-width: 767px) {
+  .kc-cell-actions {
+    width: auto;
+  }
+  .kc-editor-block-tools .kc-mini-btn,
+  .kc-row-actions .kc-mini-btn,
+  .kc-insert-btn {
+    min-height: var(--kc-tap);
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
+   学习流程（#/kc/study，阶段 04）
+   ══════════════════════════════════════════════════════════ */
+.kc-study-page {
+  display: flex;
+  flex-direction: column;
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+.kc-study-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.kc-study-title-main {
+  margin: 0;
+  font-size: 20px;
+}
+
+.kc-study-progress {
+  flex: 1;
+  min-width: 90px;
+  font-size: 13px;
+  color: var(--fg-dim);
+}
+
+.kc-picker {
+  padding: 20px;
+  text-align: center;
+  background: var(--paper-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.kc-picker-title {
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.kc-picker-input {
+  width: 100px;
+  margin-bottom: 8px;
+  text-align: center;
+  /* iOS 上小于 16px 会触发页面自动放大 */
+  font-size: 16px;
+  min-height: var(--kc-tap);
+}
+
+.kc-picker-start {
+  display: block;
+  margin: 12px auto 0;
+  min-height: var(--kc-tap);
+  padding-left: 28px;
+  padding-right: 28px;
+}
+
+.kc-study-cardwrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.kc-study-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--paper-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.kc-study-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 16px 8px;
+}
+
+.kc-study-title {
+  margin: 0;
+  font-size: 19px;
+  line-height: 1.45;
+}
+
+.kc-study-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.kc-study-summary {
+  margin: 0;
+  padding: 0 16px 8px;
+  color: var(--fg-dim);
+  font-size: 13.5px;
+}
+
+.kc-study-content {
+  padding: 4px 16px 16px;
+  /* 内容长时可滚动，但不要把整页撑破 */
+  max-height: 58vh;
+  overflow-y: auto;
+}
+
+.kc-study-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--line);
+  background: #fafbfc;
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+
+.kc-rating-group {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+}
+
+.kc-rating {
+  flex: 1;
+  min-height: var(--kc-tap);
+  font-size: 15px;
+}
+
+/* 三档配色：红 / 黄 / 绿（「会了」用主色按钮，这里只给边框色） */
+.kc-rating--danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.kc-rating--warn {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.kc-rating--ok {
+  border-color: var(--ok);
+}
+
+.kc-chop-btn {
+  flex-shrink: 0;
+  min-height: var(--kc-tap);
+  color: var(--fg-dim);
+}
+
+.kc-finished {
+  padding: 24px;
+  text-align: center;
+  background: var(--paper-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.kc-finished .btn {
+  margin: 6px 4px 0;
+  min-height: var(--kc-tap);
+}
+
+@media (max-width: 767px) {
+  .kc-study-content {
+    max-height: none;
+  }
+  .kc-study-card-head {
+    flex-direction: column;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
+   语境词 / 题库 / 做题（阶段 05）
+   ══════════════════════════════════════════════════════════ */
+.kc-home-context {
+  margin-bottom: 12px;
+}
+
+.kc-contextbar {
+  padding: 10px 12px;
+  background: var(--paper-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.kc-contextbar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.kc-contextbar-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.kc-contextbar-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.kc-ctx-btn {
+  min-height: 0;
+  padding: 3px 10px;
+  font-size: 12.5px;
+}
+
+.kc-ctx-hint,
+.kc-ctx-note {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  color: var(--fg-dim);
+}
+
+.kc-ctx-note--warn {
+  color: var(--warn);
+}
+
+.kc-ctx-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.kc-ctx-input {
+  min-height: var(--kc-tap);
+  font-size: 16px;
+}
+
+.kc-home-bankrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+/* ── 做题 ── */
+.kc-exam-page {
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+.kc-exam-pagehead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.kc-exam-title {
+  margin: 0;
+  font-size: 20px;
+}
+
+.kc-exam-progress {
+  flex: 1;
+  min-width: 90px;
+  font-size: 13px;
+  color: var(--fg-dim);
+}
+
+.kc-exam-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.kc-exam-cardname {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--fg-dim);
+}
+
+.kc-exam {
+  padding: 14px 16px;
+  background: var(--paper-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.kc-exam-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.kc-exam-context {
+  font-size: 12.5px;
+  color: var(--accent-dark);
+  background: #eef3ff;
+  padding: 1px 8px;
+  border-radius: 999px;
+}
+
+.kc-exam-question {
+  margin: 0 0 12px;
+  font-size: 15.5px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.kc-exam-input {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.kc-answer-input {
+  width: 100%;
+  font-size: 16px;
+  font-family: inherit;
+  min-height: var(--kc-tap);
+  resize: vertical;
+}
+
+.kc-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.kc-option-btn {
+  min-height: var(--kc-tap);
+  text-align: left;
+  justify-content: flex-start;
+  font-size: 15px;
+  line-height: 1.6;
+  white-space: normal;
+}
+
+.kc-exam-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.kc-exam-actions .btn {
+  min-height: var(--kc-tap);
+}
+
+.kc-exam-loading {
+  margin: 8px 0 0;
+  color: var(--fg-dim);
+  font-size: 13.5px;
+}
+
+.kc-exam-answerbox {
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  background: #fafbfc;
+  border-radius: var(--radius);
+}
+
+.kc-exam-answer {
+  margin: 2px 0 0;
+  font-size: 14.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.kc-grade {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border-left: 3px solid var(--line);
+  background: #fafbfc;
+}
+
+.kc-grade--3 {
+  border-left-color: var(--ok);
+  background: #f7fdfa;
+}
+
+.kc-grade--2 {
+  border-left-color: var(--warn);
+  background: #fffdf5;
+}
+
+.kc-grade--1 {
+  border-left-color: var(--danger);
+  background: #fdf6f6;
+}
+
+.kc-grade-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.kc-grade-label {
+  font-size: 13px;
+  color: var(--fg-dim);
+}
+
+.kc-grade-dots {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.kc-grade-score {
+  font-weight: 600;
+}
+
+.kc-regrade {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.kc-regrade-btn {
+  min-height: 0;
+  padding: 1px 8px;
+  font-size: 12.5px;
+}
+
+.kc-grade-reason {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+}
+
+.kc-grade-expected {
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+/* ── 题库页 ── */
+.kc-bank-page {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.kc-bank-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.kc-bank-title {
+  margin: 0;
+  font-size: 20px;
+}
+
+.kc-bank-count {
+  flex: 1;
+  min-width: 90px;
+  font-size: 13px;
+  color: var(--fg-dim);
+}
+
+.kc-bank-danger {
+  color: var(--danger);
+}
+
+.kc-bank-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.kc-bank-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.kc-bank-item {
+  padding: 10px 12px;
+  background: var(--paper-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.kc-bank-itemhead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.kc-bank-source,
+.kc-bank-date {
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+
+.kc-bank-details summary {
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.kc-bank-content {
+  max-height: 40vh;
+}
+
+.kc-bank-content-area {
+  width: 100%;
+  font-size: 16px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   做题流程 · 键盘高亮 + 批量出题进度
+   （Enter 全程可用 / 出题时间全部挪到第一题之前，两条都是用户明确要求）
+   ══════════════════════════════════════════════════════════════ */
+
+/*
+ * 键盘高亮的那一项（↑↓ 换项，Enter 确认）。
+ * 用 outline 而不是 border：边框会改变按钮尺寸，换项时整行会抖。
+ */
+.kc-option-btn--active {
+  outline: 2px solid var(--accent, #2f6fed);
+  outline-offset: 2px;
+  background: #f0f5ff;
+}
+
+.kc-options-hint {
+  font-size: 12.5px;
+  margin-top: 2px;
+}
+
+/*
+ * 「正在一口气出完所有题」界面。
+ * 进度条是必须的：一次要等十几秒到几十秒，没有进度用户会以为卡死了。
+ */
+.kc-preparing {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 22px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fafbfc;
+}
+
+.kc-prepbar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.kc-prepbar-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: var(--accent, #2f6fed);
+  transition: width 0.25s ease;
+}
+
+/* 设置页某个分区自己炸了时的那一块（不让整页变空白，见 KcSettingsPage.section） */
+.kc-set-section--bad {
+  border-left: 3px solid var(--danger, #d93025);
+}
+

@@ -44,6 +44,19 @@ export const DEVICE = {
 };
 
 /**
+ * IndexedDB 相关的固定参数。
+ *
+ * `openTimeoutMs` 是**踩过坑才加的**：老版本的标签页占着同一个库时，
+ * 版本升级会被阻塞（onblocked），而**重试打开会一直挂着不返回**——
+ * 用户看到的是「点了没反应 / 一直转圈」，比报错还难查。
+ * 有超时兜底之后，最坏情况是给一句「关掉其它标签页」的提示。
+ */
+export const DB = {
+  /** 打开/升级数据库的超时（毫秒）。超时按「多半是老标签页占着」处理 */
+  openTimeoutMs: 8_000,
+};
+
+/**
  * 云同步相关的固定参数（同样不许散落在代码里）。
  * 说明：`pushBatchSize` 必须 ≤ 后端 `api/_lib/limits.ts` 里的 MAX_PUSH_BATCH（500），
  * 改这里的时候两边要一起改——后端超限会直接返回 400。
@@ -60,6 +73,77 @@ export const SYNC = {
   healthTimeoutMs: 10_000, // 「测试连接」的超时（比同步短，别让用户干等）
 };
 
+/**
+ * 二期（知识点）的固定参数。
+ *
+ * 和 `DEFAULT_KC` 的分工：能调的（用户会想改的）放 `DEFAULT_KC`（进设置页），
+ * 不能调的（安全/格式/上限）放这里。**两边都不许在业务代码里写死字面量。**
+ */
+export const KC = {
+  /** 单个块的最大字符数：超长就截断（AI 偶尔会吐一整篇，别把页面撑爆） */
+  maxBlockTextLength: 5_000,
+  /** 摘要最大长度 */
+  maxSummaryLength: 200,
+  /** 标题最大长度 */
+  maxTitleLength: 120,
+  /**
+   * 标题缺失时的兜底文案。
+   * 为什么要有：`validateCard` 对用户输入是严格的（必须填标题），
+   * 但从云端/老备份拉回来的数据可能真的没有标题——那种情况下
+   * 「拒绝这张卡」比「显示成未命名」更糟（用户会以为卡片丢了）。
+   */
+  untitledName: '未命名知识点',
+  /** 一次复习/学习最少选几张卡 */
+  minStudyCount: 1,
+  /** 一次复习/学习最多选几张卡 */
+  maxStudyCount: 50,
+  /** 卡片列表默认每页条数 */
+  defaultPageSize: 20,
+  /** 卡片列表每页条数可选项 */
+  pageSizeOptions: [10, 20, 50, 100] as const,
+  /** 自评/考核的分制：1=不会 / 2=模糊 / 3=会了（归一化时除以它） */
+  maxScore: 3,
+  /** 掌握度小数位（保留 3 位，界面显示不抖） */
+  masteryDigits: 3,
+  /** `attrs.mastery` 还没算过时的初值 */
+  masteryInitial: 0,
+  /** 没学过时给复习优先度的「很久没看」天数（与一期 NO_RECORD_DAYS 同口径） */
+  noRecordDays: 999,
+  /** 「自评 vs 考核」差距超过它才提醒用户（抓盲目自信） */
+  blindSpotGap: 0.34,
+  /**
+   * 只有单边分数（比如还没考过）时，差距计算的折扣系数。
+   * 理由：「还没考过」不等于「考砸了」，不能和真正的盲目自信同等看待。
+   */
+  missingSideGapDiscount: 0.5,
+  /**
+   * 录入对话带多少条历史消息（一条 user + 一条 assistant = 一轮，默认 6 = 最近 3 轮）。
+   *
+   * 为什么必须有上限（两条都是硬理由）：
+   * 1. **token 成本**：历史里 assistant 那条是上一轮完整的卡片 JSON（一张卡几百字），
+   *    不设上限的话第 10 轮请求要付 10 倍的输入费，用户完全无感；
+   * 2. **超上下文会直接报错**：模型服务的上下文窗口有限，超了不是「效果差一点」，
+   *    而是**整个请求 400 失败**——录入功能当场不可用。
+   */
+  maxChatHistoryMessages: 6,
+  /**
+   * 历史消息的字符总预算（UTF-16 码元，中文按 1 算）。
+   *
+   * 为什么在条数之外还要卡字符数：条数管不住**单条特别长**的情况——
+   * 用户粘贴一大段课文、或模型一次回了 12 张卡，一条消息就能顶掉好几轮的预算。
+   * 两个上限取更严的那个，并且**从最旧的一端开始丢**（最近一轮永远保留）。
+   */
+  maxChatHistoryChars: 4000,
+  /**
+   * 批量出题时的并发数（用户明确要求「开始第一题前一口气把所有题都出完」）。
+   *
+   * 为什么是 3：串行出 7 道题要等 7 个来回（用户就在出题页干等），
+   * 全并发又容易撞上模型服务的速率限制（一道题失败就要用户手动重试）。
+   * 3 是「总耗时压在 2~3 个来回」与「不触发限流」之间的折中值。
+   */
+  examGenConcurrency: 3,
+};
+
 /** 云同步的默认值（默认关闭：不填也能正常用，纯本地） */
 const DEFAULT_CLOUD: Settings['cloud'] = {
   enabled: false,
@@ -70,6 +154,52 @@ const DEFAULT_CLOUD: Settings['cloud'] = {
   lastPushAt: 0,
   introShown: false,
   lastError: '',
+};
+
+/**
+ * 二期（知识点精学）的默认值。
+ *
+ * 这些数字原来散落在公式和界面里，集中到这里以后：
+ * - 用户能在设置页改（阶段 07 会做界面）；
+ * - 代码里不再出现魔法数字（`kcModel.calcMastery` 只认参数，不认字面量）。
+ */
+const DEFAULT_KC: Settings['kc'] = {
+  /**
+   * 综合掌握度公式参数：自评权重 0.6 > 考核权重 0.4（原因见 kcModel.calcMastery 注释）。
+   *
+   * `asymmetry` 是**惩罚项的方向系数**：自评高于考核（盲目自信）时惩罚 ×2，
+   * 自评低于考核（低估自己）时惩罚 ÷2。为什么必须有它：
+   * 对称的惩罚项在 0.6/0.4 的权重下会算出「盲目自信(0.2) 比 低估(0.067) 还高」，
+   * 与「盲目自信是最危险状态、必须被自动提上来复习」的要求正好相反（阶段 01 验收项 3）。
+   */
+  mastery: { w1: 0.6, w2: 0.4, penalty: 0.8, asymmetry: 2 },
+  /** 每日语境词数量：用户明确要求每天 5 个，且互不相关 */
+  contextWordCount: 5,
+  /** 生成语境词时回看多少天的历史（防重复） */
+  contextGenLookbackDays: 30,
+  /** 出题时回看多少天的历史题目（防重复） */
+  examDedupeLookbackDays: 3,
+  /** 复习流程里桥接「一期背单词」的词数上限 */
+  reviewWordLimit: 5,
+  /** 出题量没给建议时的默认耗时（分钟） */
+  examLoadDefaultMinutes: 4,
+  /** 出题量允许的耗时区间（分钟）：AI 不一定会听话，解析后统一钳到这里 */
+  examLoadMinMinutes: 3,
+  examLoadMaxMinutes: 5,
+  /** 二期云同步的游标（沿用一期 cloud 的思路，但互不影响） */
+  cloud: { lastSyncAt: 0, lastPushAt: 0, lastError: '' },
+  /**
+   * 复习优先度（阶段 07）：**表达式机制**（与一期 priority.ts 同款），
+   * 预设三档见 `kcPriorityExpr.KC_PRIORITY_PRESETS`；customExpr 非空且合法时优先。
+   * 三个权重是「表达式为空/非法时的兜底」用的老公式参数，保留以兼容阶段 01 的数据。
+   */
+  priority: {
+    preset: 'balanced',
+    customExpr: '',
+    masteryWeight: 1,
+    staleWeight: 0.02,
+    gapWeight: 0.5,
+  },
 };
 
 /** 默认设置（缺字段时用它补齐；AI 三项只是预填，用户可随意改） */
@@ -96,6 +226,7 @@ export const DEFAULT_SETTINGS: Settings = {
   practice: { autoSpeak: true, speakRate: 1, speakLang: 'en-US' },
   backup: { remindOnClose: true, lastManualExportAt: null },
   cloud: DEFAULT_CLOUD,
+  kc: DEFAULT_KC,
 };
 
 /**

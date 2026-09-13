@@ -51,6 +51,15 @@ export async function resolve(specifier, context, nextResolve) {
         result = await tryResolve(`${specifier}${ext}`, context, nextResolve);
         if (result !== null) break;
       }
+      // 情况三：**目录导入**（如 `import * as dao from '../../../dao'` → dao/index.ts）。
+      // Vite 会自动找 index，Node 的 ESM 不认目录（ERR_UNSUPPORTED_DIR_IMPORT）。
+      // 源码里这么写在构建时没问题，但直接用 node 跑 TS 源码测试会炸，所以这里补一层。
+      if (result === null) {
+        for (const ext of EXTENSIONS) {
+          result = await tryResolve(`${specifier}/index${ext}`, context, nextResolve);
+          if (result !== null) break;
+        }
+      }
     }
   }
 

@@ -102,20 +102,56 @@ export function qs<T extends Element = HTMLElement>(selector: string, root: Pare
   return el;
 }
 
+/** 防抖函数（带 `cancel()`，用于「离开页面时别让定时器把已卸载的页面写回去」） */
+export interface Debounced<A extends unknown[]> {
+  (...args: A): void;
+  /** 取消还没执行的那次调用 */
+  cancel: () => void;
+  /** 立即执行（如果有待执行的调用） */
+  flush: () => void;
+}
+
 /**
- * 防抖。
+ * 防抖（带 `cancel` / `flush`）。
+ *
+ * 为什么需要 `cancel`：二期卡片编辑页用防抖自动保存，
+ * 用户可能在 1 秒内切走页面 —— 这时候必须能**取消**那次待执行的保存
+ * （或者反过来 `flush` 立刻存），否则定时器会在页面已经卸载后再去写库。
+ *
  * @param fn 原函数
  * @param ms 等待毫秒
  */
-export function debounce<A extends unknown[]>(fn: (...args: A) => void, ms: number): (...args: A) => void {
+export function debounce<A extends unknown[]>(fn: (...args: A) => void, ms: number): Debounced<A> {
   let timer: number | null = null;
-  return (...args: A): void => {
+  let lastArgs: A | null = null;
+
+  const wrapped = (...args: A): void => {
+    lastArgs = args;
     if (timer !== null) window.clearTimeout(timer);
     timer = window.setTimeout(() => {
       timer = null;
-      fn(...args);
+      const callArgs = lastArgs;
+      lastArgs = null;
+      if (callArgs !== null) fn(...callArgs);
     }, ms);
   };
+
+  wrapped.cancel = (): void => {
+    if (timer !== null) window.clearTimeout(timer);
+    timer = null;
+    lastArgs = null;
+  };
+
+  wrapped.flush = (): void => {
+    if (timer === null) return;
+    window.clearTimeout(timer);
+    timer = null;
+    const callArgs = lastArgs;
+    lastArgs = null;
+    if (callArgs !== null) fn(...callArgs);
+  };
+
+  return wrapped;
 }
 
 /**

@@ -49,8 +49,11 @@ export function serveStatic(opts) {
  * 起一个带远程调试的无头浏览器，返回操作句柄。
  * @param {string} browser 浏览器可执行文件
  * @param {number} port 调试端口
+ * @param {{ windowSize?: string }} [opts] `windowSize` 形如 '1280,900'。
+ *   **无头窗口默认宽度不到 768px**，响应式页面会走手机布局（表格不渲染）——
+ *   要验桌面布局就必须显式指定，这个坑踩过。
  */
-export async function launch(browser, port) {
+export async function launch(browser, port, opts = {}) {
   const proc = spawn(
     browser,
     [
@@ -59,6 +62,7 @@ export async function launch(browser, port) {
       '--no-sandbox',
       '--no-first-run',
       '--disable-extensions',
+      ...(opts.windowSize ? [`--window-size=${opts.windowSize}`] : []),
       // 用临时 profile，避免复用真实用户数据、也避免被已开着的浏览器实例接管
       `--user-data-dir=${process.env.TEMP ?? '.'}\\dsh-cdp-${port}-${Date.now()}`,
       `--remote-debugging-port=${port}`,

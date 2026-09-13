@@ -133,7 +133,9 @@ const NEW_DB = 'blank-sheet-vocab';
 
 /** 文件内容必须包含某个字符串 */
 const mustContain = [
-  ['IndexedDB 库名', 'src/core/db.ts', `DB_NAME = '${NEW_DB}'`],
+  // ⚠️ 库名住在 `src/core/dbSchema.ts`（`db.ts` 只发事务，见 HANDOVER §0.12 的分层）。
+  // 这条护栏查的是「库名有没有改回来」，落在哪个文件不重要，改结构时跟着挪即可。
+  ['IndexedDB 库名', 'src/core/dbSchema.ts', `DB_NAME = '${NEW_DB}'`],
   ['错误边界的救火读取也指向新库名', 'src/ui/components/ErrorBoundary.ts', `indexedDB.open('${NEW_DB}')`],
   ['设置镜像键', 'src/dao/settings.ts', `${NEW_SLUG}.settings`],
   ['导入任务存档键', 'src/services/importJob.ts', `${NEW_SLUG}.importJob`],

@@ -1,4 +1,4 @@
-﻿# 项目交接文档（白纸单词 / blank-sheet-vocab）
+# 项目交接文档（白纸单词 / blank-sheet-vocab）
 
 > 面向接替开发的人。**读完这份 + `README.md` 就能上手改代码。**
 > 最后更新：改名 + 预设词库完成。
@@ -191,6 +191,404 @@ access → ["v. 获取 n. 接近，入口"]
 
 ---
 
+### 0.7 二期阶段 01：知识点数据层 + 安全块渲染（★ 当前最新改动）
+
+一期是**泛背**（单词量大、浅层），二期是**精学**（知识点少、深层）。
+二期阶段 01 只打地基（类型 / 数据库 / DAO / 同步 / 渲染），**没有任何界面**，
+所以一期界面完全没动。新增文件：
+
+| 文件 | 作用 |
+|---|---|
+| `src/core/kcTypes.ts` | 二期类型：`Block` / `KnowledgeCard` / `EXAM_TYPES` / `DailyContextWords` / `ExamRecord` / `BankQuestion` |
+| `src/core/kcModel.ts` | **统一出口**（32 行门面），实现拆在下面 5 个文件里 |
+| `src/core/kcText.ts` | id 生成、文本清洗、分数归一化、钳制取整、`unknown` 安全取值器 |
+| `src/core/kcBlock.ts` | 块的创建 / 校验 / 脏数据归一化 |
+| `src/core/kcCard.ts` | 卡片的创建 / 校验 / 脏数据归一化 |
+| `src/core/kcMastery.ts` | **掌握度公式**（含 16 格完整对照表与「为什么加方向系数」的推导） |
+| `src/core/kcExamTypes.ts` | 考核方式标签的小工具 |
+| `src/core/kcClock.ts` | **单调写入时钟**（防设备时钟倒退导致静默漏推） |
+| `src/core/kcPriority.ts` | 复习优先度、掌握度重算、`isBlindSpot`（识别盲目自信） |
+| `src/core/blockRender.ts` | **安全块渲染**（只走 textContent，绝不拼 HTML） |
+| `src/styles/kc.css` | 块样式（class 与 blockRender 一一对应） |
+| `src/dao/kc.ts` | 卡片本地 DAO（读写） |
+| `src/dao/kcQuery.ts` | 卡片查询：过滤 / 排序 / 分页（**纯函数，可单测**） |
+| `src/dao/kcCloud.ts` | 云同步**编排**：先拉后推、游标、墓碑 |
+| `src/dao/kcCloudHttp.ts` | 云同步**传输**：请求 / 超时 / 重试 / 字段映射 |
+| `src/dao/kcScheduler.ts` | 二期同步调度（实现由 main.ts 注入，避开循环依赖） |
+| `src/dao/contextWords.ts` / `examBank.ts` | 语境词、题目历史、题库 DAO（界面在阶段 05/07） |
+| `api/_lib/kcSchema.ts` / `kcInventory.ts` / `kcValidate.ts` | 二期建表 / SQL DAO / 请求体校验 |
+| `api/kc-list.ts` / `api/kc-push.ts` | 二期同步接口 |
+| `src/dev/kcSelftest.ts` / `kcXssSelftest.ts` / `kcSelftestTypes.ts` | 浏览器自测：`__kcselftest.run()`（**不自动执行**） |
+| `api/_dev/test-kc.mjs` / `test-kc-ui.mjs` | 二期验收：`npm run test:kc`（106 项）/ `npm run test:kc-ui`（真 Chrome，15 项） |
+| `二期阶段01_验收单.md` | **验收单**：逐条自查命令、3 个待你拍板的决定、5 条与提示词的差异 |
+
+**改动的既有文件（都在为二期腾位置，一期行为不变）**：
+
+| 文件 | 改动 | 风险 |
+|---|---|---|
+| `src/core/db.ts` | 库版本 v2 → **v3**，新增 4 张表 | IndexedDB 升级是**加法**（`contains()` 判断），一期 4 张表原样保留 |
+| `src/core/config.ts` | 加 `DEFAULT_SETTINGS.kc` + `KC` 常量表 | `deepMergeSettings` 会自动给老设置补 `kc`（缺字段补默认），老备份照样能导 |
+| `src/core/types.ts` | `Settings` 加 `kc` 字段 | 同上 |
+| `src/dao/syncScheduler.ts` | 逻辑抽到 `syncSchedulerFactory`，本文件变成薄封装 | **对外 API 一字未改**，一期的 SyncBanner / CloudSection / App / main 全不用动 |
+| `src/dao/syncServer.ts` | `API_ROUTES` 加 `kcList` / `kcPush` | `test:build` 有护栏校验路由表与 `api/` 文件一一对应 |
+| `src/dao/index.ts` | 导出二期 5 个 DAO 模块 | — |
+| `src/main.ts` | 注入二期同步实现 + 挂 `__kcselftest` + 引入 kc.css | 启动顺序不变 |
+| `api/_dev/harness.mjs` | 本地路由分发表加两条 | — |
+
+**★ 三个必须知道的设计决定**（都在代码注释里有完整推导）：
+
+1. **掌握度公式加了方向系数**。主提示词给的公式 `penalty * |selfNorm - examNorm|` 是**对称**的，
+   但在 `w1=0.6 > w2=0.4` 的权重下会算出「盲目自信(3/1)=0.2 **高于** 低估自己(1/3)=0.067」，
+   与主提示词自己的表述（盲目自信最危险）和阶段 01 验收项 3（要求明显低于）**正好相反**。
+   所以惩罚项加了 `asymmetry`（默认 2）：高估时惩罚 ×2、低估时 ÷2。
+   `w1/w2/penalty` 三个用户指定的数字一个没改，`asymmetry=1` 就退回原公式。
+   完整对照表在 `kcModel.calcMastery` 的注释里（16 个格子全部实算过）。
+2. **二期同步用独立的调度器实例与游标**（`settings.kc.cloud`）。同一个库、同一套 spaceKey、
+   同样的分批 ≤500，但失败计数与游标独立——二期后端抽风不会让一期也进「连续失败 3 次」常驻提示。
+3. **`kc.ts` ⇄ `kcCloud.ts` 是真循环依赖**，靠「import 写在文件末尾」解决不了（ESM 会提升）。
+   做法是调度器不 import 同步实现，改由 `main.ts` 注入（`registerKcSyncRunner`）。
+   没注入时（Node 测试里直接调 DAO）`scheduleKcSync()` 静默什么都不做，本地功能不受影响。
+
+**二期表的主键是 `(space_key, id)` 复合主键**，不是主提示词里写的 `id TEXT PRIMARY KEY`——
+理由与一期完全相同：主键只有 id 时，`ON CONFLICT(id) DO UPDATE` 会把 `space_key` 一起改掉，
+**跨空间覆盖**（隔离直接失效）。`test-kc.mjs` 第 8 组有护栏检查四张表都是复合主键。
+
+**验收结果**：`npm run test:kc` 106 项全过；`npm run test:kc-ui` 15 项全过（真 Chrome）；`npm test` 全量回归通过（一期功能未损坏）。
+
+---
+
+### 0.8 二期阶段 02：聊天式录入（★ 当前最新改动）
+
+`#/kc/import`：用户说一句「我在定语从句这块不行」，AI 拆成若干张结构化知识点卡片，
+逐张**预览 / 采纳 / 编辑 / 丢弃**，最后「确认入库」一次性写库。
+
+| 文件 | 作用 |
+|---|---|
+| `src/services/kcPrompts.ts` | **三套提示词的集中管理处**（改 AI 行为只改这里）。录入提示词完整；出题/评分留 `TODO`（阶段 05） |
+| `src/services/kcImportParse.ts` | **解析层**：JSON 抽取 + 三级降级、逐块校验清洗、题型白名单、`estMinutes` 钳到 3~5 |
+| `src/services/kcAi.ts` | **调用层**：`analyzeWeakPoint()`，复用一期 `chatComplete`（继承直连⇄代理切换、JSON 模式降级） |
+| `src/ui/components/KcChatPanel.ts` | 聊天面板：会话状态机 + 渲染 |
+| `src/ui/components/KcCardPreview.ts` | 卡片预览（8 种块的安全渲染 + 操作按钮） |
+| `src/ui/components/KcMetaEditor.ts` | 改标题/摘要/考法标签的弹窗 |
+| `src/ui/pages/KcImportPage.ts` | 录入页：布局 + 发起请求 + 入库 + 手动新建兜底 |
+| `src/ui/pages/KcHomePage.ts` | 二期首页（6 个入口；本期只有「录入」可用，其余点了给阶段提示） |
+| `api/_dev/kcImportFixture.mjs` | 假 AI 返回（Node 与浏览器测试共用） |
+| `api/_dev/test-kc-import.mjs`（58 项）/ `test-kc-import-ui.mjs`（36 项，真 Chrome + 本地假 AI 服务） | 阶段 02 验收 |
+
+**改动**：`src/App.ts`（加 `/kc`、`/kc/import` 两条路由 + 顶栏「知识点」入口，该入口在 `/kc/*` 全部子路由下都点亮）、
+`src/styles/kc.css`（二期页面样式）、`src/core/config.ts` + `kcTypes.ts`（`examLoadMin/MaxMinutes`、`ParsedKcCard`）、
+`api/_dev/test-build.mjs`（**新增 BOM 护栏**，见下）、`package.json`。
+
+**★ 本阶段排掉的一个高危事故（值得记住）**
+
+用 PowerShell 的 `Set-Content -Encoding UTF8` 改文件会**写入 UTF-8 BOM**。
+后果极其阴险：`node` 与 `tsc` 都容忍 BOM，所以 `npm test`、`npm run build` **全绿**；
+但 **Vite dev 的 PostCSS 配置加载器用严格 `JSON.parse` 读 `package.json`**，
+遇 BOM 直接抛错 → **所有 CSS 请求 500** → `main.ts` 的 `import './styles/global.css'` 挂掉 →
+`boot()` 根本不执行 → **整页白屏**（控制台只有几条看不清的 CSS 500）。
+
+已修：剥掉 5 个自己造成的 + 2 个仓库里本来就带的（`CloudSection.ts` / `DataSection.ts`），
+并在 `test:build` 加了 `[9] UTF-8 BOM 护栏`（扫 src/api/配置文件 + 要求 package.json 能被严格 JSON.parse）。
+**用 PowerShell 改文件请用 `-Encoding utf8NoBOM`。**
+
+**验收结果**：`npm run test:kc-import` 58 项、`npm run test:kc-import-ui` 36 项全过；`npm test` 全量回归通过。
+⚠️ 验收标准 2/8（真实模型产出的质量与去重）**需要你在浏览器里真跑一次**，见 `二期阶段02_验收单.md` §3。
+
+---
+
+### 0.9 二期阶段 03~05：卡片编辑/列表、学习流程、出题与评分（★ 当前最新改动）
+
+按用户的「一口气做完」要求连续推进了三段，**每段都有独立验收脚本**且全部通过。
+
+#### 阶段 03：块编辑器 + 卡片列表
+
+| 文件 | 作用 |
+|---|---|
+| `src/ui/components/BlockEditor.ts` | 块编辑器（8 种块的新建/编辑/上下移/复制/删除 + 预览切换） |
+| `src/ui/components/KcBlockFields.ts` | 按块类型的编辑控件（列表项增删、表格增删行列） |
+| `src/ui/components/kcBlockTypes.ts` | 块类型中文名与「新增块」工具条（**名字只写一份**） |
+| `src/ui/pages/KcCardEditPage.ts` | 卡片编辑页（防抖 1 秒自动保存 + 显式保存） |
+| `src/ui/pages/KcCardListPage.ts` + `kcList/` | 列表页（统计条/筛选/搜索/排序/分页/批量/斩复活） |
+| `src/ui/pages/KcCardViewPage.ts` | 卡片详情（只读，带属性面板） |
+| `src/dao/kcQuery.ts` | 查询纯函数（过滤/排序/分页，**已单测**） |
+| `src/dao/kcBatch.ts` | 删除语义与批量操作（斩/复活/永久删除/批量版） |
+
+#### 阶段 04：学习流程
+
+| 文件 | 作用 |
+|---|---|
+| `src/dao/kcSession.ts` | 会话 DAO（**IndexedDB 升到 v4**，新增 `kcSessions` 表） |
+| `src/ui/pages/KcStudyPage.ts` | 学习流程（选数量 → 逐张自评 → 保存退出 → 续跑） |
+| `src/ui/components/KcStudyCardView.ts` | 学习态卡片（进度/标签/三档自评/斩） |
+| `src/ui/components/KcCountPicker.ts` / `KcFinishPanel.ts` / `kcStudyDialogs.ts` | 学与复习共用的小组件 |
+
+**会话不上云**：`kcSessions` 是「这台设备进行到哪儿了」的临时状态，推到别的设备只会造成困惑。
+
+#### 阶段 05：出题与评分
+
+| 文件 | 作用 |
+|---|---|
+| `src/services/kcExamPrompts.ts` | 三套提示词：每日语境词 / 出题 / rubric 评分 |
+| `src/services/kcExamParse.ts` | 解析层（不可信输入的清洗，**可离线测**） |
+| `src/services/kcExamAi.ts` | 调用层（语境词生成 / 出题 / 评分） |
+| `src/ui/components/ExamTaker.ts` | 答题组件（四种题型各自作答 + 评分卡 + **改分**） |
+| `src/ui/components/KcContextBar.ts` / `KcContextManager.ts` | 每日语境词（生成 → 编辑 → 确认） |
+| `src/ui/pages/KcExamPage.ts` + `kcExam/` | 做题流程（状态机 / 出题材料 / 续跑） |
+| `src/ui/pages/KcBankPage.ts` | 题库页（增删查、按题型筛） |
+| `src/dao/kcSmallCloud.ts` | 三张小表的云同步 |
+| `api/context-words.ts` / `exam-history.ts` / `bank-questions.ts` + `_lib/kcSmall*.ts` | 三个新接口 + SQL/校验层 |
+
+**阶段 05 的一个必要改动**：`daily_context_words` / `exam_records` / `bank_questions`
+在阶段 01 建表时**没有 `updated_at` 与 `deleted`**（主提示词的建表语句里就没有），
+而云同步必须靠它们做后写覆盖与墓碑。`api/_lib/kcSchema.ts` 现在**幂等补列**
+（先 `PRAGMA table_info` 查，缺了才 `ALTER TABLE ADD COLUMN`），老库自动升级、数据不动。
+
+**三个新接口的路由**已登记在 `src/dao/syncServer.ts` 的 `API_ROUTES` 与
+`api/_dev/harness.mjs`（`test:build` 有护栏盯着两边一致）。
+
+**验收结果**：
+
+| 套件 | 项数 | 内容 |
+|---|---|---|
+| `test:kc-edit` | 66 | 8 种块渲染、表格增删行列、搜索命中块内容、斩复活、批量、XSS |
+| `test:kc-edit-ui` | 39 | 真 Chrome：打字改标题、加块、上移、删块、预览 XSS、重新打开改动都在 |
+| `test:kc-session` | 38 | 会话结构、抽卡顺序、自评落库、保存恢复、斩的清理 |
+| `test:kc-session-ui` | 40 | 真 Chrome：逐张展示、点/键盘自评、斩、退出重进、移动端热区 |
+| `test:kc-exam` | 95 | 三套提示词、三种解析、出题量/防重复/题库、mastery 重算、改分、语境词、三个接口 |
+| `npm test` | — | 全量回归通过 |
+
+**★ 三个真 bug（都是测试抓出来的，值得记住）**
+1. **表格/列表的「加行加列」页面不动**：块编辑器重画整棵 DOM 后，内层控件的 `repaint()`
+   还在往**已脱离文档**的旧节点里画。修法：每次从当前 DOM 重新取宿主节点
+   （见 `KcBlockFields.ts` 的 `host()`）。
+2. **`createBlock('example')` 造出的块不合法**：`validateBlock` 原来要求例句块「内容非空」，
+   但**空块是合法的**（编辑器刚造出来就是空的）。已改为只校验结构。
+3. **没配题型的卡片一道题都出不了**：`questionTypesFor` 原来返回空数组，已加兜底 `['fill']`。
+
+**★ 两个测试脚手架的坑**
+1. 无头 Chrome 默认窗口**不到 768px**，响应式页面会走手机布局（列表不渲染表格）。
+   要验桌面布局必须给 `launch()` 传 `windowSize`（已加到 `scripts/cdp.mjs`）。
+2. `test:build` 的「坏导入」扫描器会把**注释里**提到的路径当成真导入。
+   已改为先剥注释再扫（同一次改动里还补了「目录导入 → index.ts」的解析，
+   否则用 node 直接跑源码测试会 `ERR_UNSUPPORTED_DIR_IMPORT`）。
+
+---
+
+### 0.10 二期阶段 06~07：复习流程与桥接、设置页与题库管理（★ 二期全部完成）
+
+#### 阶段 06：复习流程 + 一期背单词桥接
+
+`#/kc/review`：选数量 → 看卡片（自评）→ **【桥接】一期背 5 个单词** → 做题 → 收尾。
+
+| 文件 | 作用 |
+|---|---|
+| `src/ui/pages/KcReviewPage.ts` | 复习流程（四个 stage 由 `KcSession.stage` 串起来） |
+| `src/ui/pages/kcReview/kcReviewFlow.ts` | 抽卡规则（优先度降序 + 同分看 lastReviewAt）、推荐数量、桥接词源、收尾更新 |
+| `src/ui/pages/kcReview/kcReviewPicker.ts` | 复习的「选数量」界面（带推荐数字说明） |
+| `src/ui/pages/KcWordBridge.ts` | **一二期唯一桥接点**：复用一期 `createPaperFlow` 背 5 个词 |
+
+**桥接的三条纪律**（都在代码注释里）：复用一期页面（不复制）、不改一期核心逻辑（只在外层调用）、
+用**一期自己的 `sessions` 表**存桥接会话（与二期 `kcSessions` 分开，互不覆盖）。
+
+#### 阶段 07：设置页 + 题库管理
+
+| 文件 | 作用 |
+|---|---|
+| `src/core/kcPriorityExpr.ts` | **二期自己的优先度表达式引擎**（白名单校验 + 试算，与一期同机制不同变量表） |
+| `src/ui/pages/KcSettingsPage.ts` | 设置页（掌握度 / 优先度 / 参数 / 数据说明四区） |
+| `src/ui/pages/kcSettings/KcMasterySection.ts` | 掌握度公式（4 参数 + 3 预设 + 试算最近 5 条） |
+| `src/ui/pages/kcSettings/KcPrioritySection.ts` | 优先度（3 预设 + 自定义表达式 + 变量 chip + 实时校验 + 重算） |
+| `src/ui/pages/kcSettings/kcSettingsCtx.ts` | 写设置 + **重算全部卡片**（改公式后列表页立刻跟着变） |
+| `src/ui/pages/kcBank/kcBankImport.ts` | 题库批量导入（规则分类 + 三种切分方式）/ 导出 |
+
+**优先度从「固定权重」升级成「表达式」**：阶段 01 的固定加权公式仍保留为兜底
+（表达式为空或非法时用它），两条路都留着，切换是显式的。
+
+**★ 「重算全部」的必要性**：用户改了公式参数后，库里存的 `attrs.mastery` 还是旧公式算的，
+列表页的掌握度与排序会停在旧值上。所以 `patchKcSettings` 每次写完设置都会
+**逐张重算并写回**（只写数值真变了的，避免无意义的 `updatedAt` 刷新与同步推送）。
+
+**验收结果**：
+
+| 套件 | 项数 | 内容 |
+|---|---|---|
+| `test:kc-review` | 49 | 抽卡规则、桥接词源（新→旧→空库）、四阶段流转、收尾属性、桥接不改一期 |
+| `test:kc-review-ui` | 33 | 真 Chrome：三环节走通、words 阶段退出重进仍在背单词、词源退化、完成属性更新 |
+| `test:kc-settings` | 58 | 表达式白名单/求值、改参数→掌握度变、预设→排序变、非法表达式被拦、题库分类与导入导出 |
+| `test:kc-e2e` | 30 | **完整冒烟**：录入→列表→学习→编辑→复习(含桥接)→设置改参数→题库（真 Chrome + 假 AI） |
+| `npm test` | — | 全量回归通过 |
+
+**测试抓出来的 1 个真 bug**：题库的「选择题」判定原来只认「一行一个选项」，
+一行内联写法（`A. who B. which`）会被判成填空 —— 真题排版里很常见，已补强规则。
+
+**★ 一个测试脚手架的坑（第二次踩）**：`location.hash = 相同的值` **不会触发 hashchange**，
+页面不会重渲染。测试里「造完数据再回同一页」必须**先绕到别的路由再切回去**
+（见 `test-kc-review-ui.mjs` 的 `goto()`）。
+
+---
+
+### 0.11 修复：IndexedDB「object stores was not found」（★ 用户实测报错，两轮才查透）
+
+**用户报错**（先是这一句，修完第一轮后变成第二句）：
+```
+Failed to execute 'transaction' on 'IDBDatabase': One of the specified object stores was not found.
+数据库连接里没有表「kcSessions」（可能是版本升级还没完成或被其他标签页占用）
+```
+
+**根因（两轮探针查出来的）**
+
+第一轮确认：**数据从来没坏，坏的是「连接」**。页面可能持有旧版本的连接
+（`DB_VERSION` 升到 4 时，老标签页/热更新前的老页面手里还是 v3，里边没有 `kcSessions`）。
+
+第二轮发现**更关键的一层**（这才是那句错误反复出现的真正原因）：
+
+> **页面自己的旧连接会阻塞自己的升级。**
+> IndexedDB 的规则是「只要还有连接开着且版本更旧，更高版本的 `open` 就进不去」。
+> 旧代码在 `onversionchange` 里只做了 `close()`，**没清 `dbPromise` 缓存** ——
+> 于是本页后面拿到的还是那个已经关掉的旧连接，用它开事务就报「表不存在」。
+> 更糟的是，被阻塞的 `open` 请求**不会被取消也永远不会返回**（探针因此 10 分钟超时），
+> 表现是「点了没反应」。
+
+还有两个放大器：`db.transaction()` 抛在 `new Promise` 构造器里 → **不会被 reject 接住**；
+`main.ts` 启动时**没有 await `openDB()`** → 「数据库打不开」根本不显示给用户。
+
+**修复（`src/core/db.ts` / `config.ts` / `main.ts`）**
+
+| 改动 | 作用 |
+|---|---|
+| **`DB_VERSION` 4 → 5**（**不是新功能，是修复**） | 库版本号已经是 4 但缺表的库，版本相同就**永远不再触发 `onupgradeneeded`**，那张表永远补不上。抬到 5 给所有这类库一次重跑建表的机会（对正常库是空操作） |
+| `tx()` / `txRun()` 走 `withStore()`，三级处理 | ① 缺表 → 丢掉本页连接重开；② 重开仍缺 → **`repairUpgrade()` 抬版本号重跑建表**（只补缺的表，数据一条不动）；③ 还不行 → 抛 `StaleDbError`（说人话） |
+| 记住本页连接 + `releaseConnections()` | 修复前先放开自己的连接，否则会被自己挡住 |
+| `onversionchange` 里同时清 `dbPromise` | 别人升级时主动让位，且不再把已关闭的旧连接发给后续调用（**这是原来最致命的一处**） |
+| `DB.openTimeoutMs`（8 秒） | 被占用时不再无限挂起 |
+| 打开失败/超时**不缓存** `dbPromise` | 关掉老标签页后**本页不用刷新就自愈** |
+| `main.ts` 启动阶段渲染「数据库打不开 + 重试」 | 不再白屏 |
+
+**验证（Node + 真浏览器，全过）**
+
+| 场景 | 结果 |
+|---|---|
+| 全新库 | ✓ v5、9 张表 |
+| 老库 v3 → 新代码 | ✓ 升级成功、一期数据保住、会话 DAO 全流程可用 |
+| **库已是 v5 但缺 kcSessions**（最难修） | ✓ 自动抬到 v6 补表、**数据一条不丢**、DAO 立刻可用 |
+| 老连接占着（升级 blocked） | ✓ 不再抛 IndexedDB 原文，给的是「关掉其它标签页后点重试」 |
+| 关掉老连接后 | ✓ **不刷新就自愈**（v5、kcSessions 就位），卡片增删改查/斩/已斩全部照常 |
+| `npm test` + 7 套二期专项 + 4 套真浏览器冒烟 | ✓ 全过 |
+
+**给用户的建议**：关掉所有打开着这个应用的标签页，再刷新一次。
+以后再遇到「点了没反应」或这类 IndexedDB 报错，先看这一条。
+
+---
+
+### 0.12 用户实测反馈后的六项改动（★ 当前最新改动）
+
+用户报了一条 bug + 提了五条要求，逐条落地。**这一节的东西都是用户亲口要的，改回去会直接挨骂。**
+
+**① 二期的设置界面渲染失败（bug）**
+
+三层原因，全修了：
+
+| 层 | 问题 | 修法 |
+|---|---|---|
+| 连接 | 陈旧连接去开事务时报「表不存在」，而 `db.transaction()` 抛在 `new Promise` 构造器里**不会被 reject 接住** → 变成未捕获异常 | `tx()` / `txRun()` 里把 `db.transaction()` / `objectStore()` 包进 `try`，转成正常 reject（`src/core/db.ts`） |
+| 调用方 | 设置页有 ~10 处 `void (async () => {…})()` 的「fire and forget」，任何异步失败都会变成未捕获拒绝 → 错误边界把**整页**换成「页面渲染失败」 | 全部改走 `runSafely(label, fn)`：catch 一切、区分 `StaleDbError`、只弹 toast 不抛（`kcSettings/kcSettingsCtx.ts`） |
+| 渲染 | 三个分区在 `renderKcSettingsPage` 里顺序构造，任一抛异常整页就白 | `section(name, build)` 逐块 try/catch，坏掉的那块自己显示原因，其它分区照常可用（`KcSettingsPage.ts`） |
+
+**顺带做的结构整理（为了 ≤300 行 + 职责单一）**：`db.ts` 504 行拆成四个文件——
+`dbSchema.ts`（库名/版本/表名/建表迁移）、`dbOpen.ts`（打开、让位、抬版本号修复）、
+`dbStale.ts`（`StaleDbError` + `withStore` + `withDbRetry`）、`db.ts`（只发事务，106 行）。
+`db.ts` 仍然**再导出** `STORE` / `openDB` / `StaleDbError` 等，几十个 DAO 的 import 一行没动。
+
+**② 出题改成「一口气出完」**（用户原话：「把所有 AI 出题时间放在开始第一题之前」）
+
+- 新模块 `ui/pages/kcExam/kcExamPrepare.ts`：`buildSlots()` 先把「卡片 × 题型」的槽位表铺好，
+  `prepareQuestions()` 用**并发 3**（`KC.examGenConcurrency`）一次出完，逐题报告进度。
+- 控制器新增 `preparing` 阶段 + `start()`：先出完所有题再显示第一题；
+  `load()` **不再调用 AI**（只从内存槽位取题），所以「评分完 → 下一题」是瞬时的。
+- 出题失败**只影响那一道**（进 error 槽位，单独「重试」），不会让整轮停住。
+- 续跑时只补出「还没答过的题」（`pendingIndices()`），省时间也省 token。
+- 界面：`renderPreparing()` 显示「正在一口气出完这一轮的题 已出好 3/7 道」+ 进度条
+  （不谈进度用户会以为卡死）。
+
+**③ 录入输出更简洁 + 表格不带表头**（用户原话：「抓住记忆的痛点…表格就不要写表头了」）
+
+- `services/kcPrompts.ts`：删掉「内容完整 / 讲透」导向，改成**一张卡 2~4 个块、每块一句话**，
+  要求用「有 the 时…／无 the 时…」这种**二分对照**抓痛点，明确禁止复述常识与废话；
+  schema 示例也换成了无表头的对照表（**示例比规则管用**，示例带表头规则会被无视）。
+- `core/blockRender.ts`：表格**所有行都按数据行渲染**，不再把 `rows[0]` 当 `<thead>`。
+  ⚠️ 渲染端**不假设**数据里没有表头行——库里早就有旧格式的卡，猜错一行等于悄悄吃掉用户数据。
+- 配套测试断言：`test:kc-session-ui` 改成「2 行 → 4 个 td、0 个 th」。
+
+**④ 录入模块 AI 有上下文记忆**（用户原话：「录入模块中，AI 应该具有上下文记忆」）
+
+- `services/kcAi.ts`：新增 `buildKcMessages()`（纯函数，可直接单测）+ `ChatTurn`，
+  `analyzeWeakPoint(userMessage, existingTitles, cfg, history)` 多了一个可选参数。
+  历史**按真实角色逐条发**（system 在最前、本轮 user 在最后），不塞进一条 user 消息里——
+  否则模型会把「历史里自己写的卡片」当成要重新生成的内容。
+- 截断**双上限**（都在 `config.ts` 里，不许写死）：条数 `KC.maxChatHistoryMessages`、
+  字符预算 `KC.maxChatHistoryChars`，从最旧的一端丢，最近一轮永远保留。
+  没有上限的后果是实打实的：assistant 那条是整段卡片 JSON，第 10 轮要付 10 倍输入费，
+  超上下文还会**整个请求 400**。
+- 被丢掉的轮数会回传到界面（`ImportResult.omittedTurns` → 聊天区一行灰字），
+  **不能悄悄丢**：用户以为自己说的前文 AI 还记得，界面却毫无线索。
+- assistant 那侧优先用上一轮的**原始 JSON 返回**（`entry.raw`），取不到才退化成 `cardsBrief()`。
+
+**⑤ 删掉独立「做题」入口，学习自动续到那道题**
+
+- `KcHomePage.ts`：入口从 7 个减到 6 个（录入/卡片列表/学习/复习/题库/设置），
+  `exam` 那条**故意不存在**（注释里写明了原因）。
+- `KcStudyPage.ts` 启动逻辑：取到 `loadLatestOpen('study')` 后，若 `stage === 'exam'`
+  就**直接** `navigate('/kc/exam?resume=1')`，不再弹「继续上次 / 重新开始」——
+  用户原话是「在点学习就自然而然跳转进做到的那道题」。
+
+**⑥ Enter 键全程可用**（用户原话：「不要一会可以用一会又不行」）
+
+以前 Enter 是散在各处的：填空题输入框自己监听、选择题按钮不认、评分页「继续」也不认。
+现在**只有一个出口**（`ui/components/examKeys.ts`，纯函数 `resolveEnterAction()` 可单测）：
+
+| 阶段 | Enter |
+|---|---|
+| 出题中 / 评分中 | 不响应（评分中**故意**不响应：重复提交会重复落库、重复扣分，控制器里也有 `phase === 'grading'` 守卫） |
+| 作答中 · 填空/造句 | 提交（造句题 Shift+Enter 换行） |
+| 作答中 · 选择/判断 | 提交**高亮那一项**（↑↓←→ 或数字键换项，默认高亮第一项，鼠标移上去也跟着高亮） |
+| 已评分 | 下一题（最后一题 = 收尾） |
+| 出错 | 重试当前题 |
+| 做完了 | 回二期首页 |
+
+两条容易漏的细节：**焦点在按钮上时让给浏览器原生**（否则选择题会「原生点击 + 我们提交」
+各一次、落两条记录）；监听挂在 `page` **和** `window` 两处（答题卡整块重画会把焦点丢到 body，
+只挂一处就会出现「时灵时不灵」）。
+
+**验证（全过）**
+
+| 套件 | 结果 |
+|---|---|
+| `npm run test:kc-exam-ui`（**新增**，真浏览器 + 假 AI 请求日志） | ✓ 26 项 |
+| `test:kc-exam`（新增第 8 节：槽位表/题号换算/Enter 规则表） | ✓ 123 项 |
+| `test:kc-import`（新增历史截断 + `entriesToHistory`） | ✓ 95 项 |
+| `test:kc-ui`（新增设置页渲染 + 单分区失败隔离） | ✓ 23 项 |
+| `test:kc` / `test:kc-edit` / `test:kc-session` / `test:kc-review` / `test:kc-settings` | ✓ 106 / 69 / 38 / 49 / 58 |
+| `test:kc-import-ui` / `test:kc-edit-ui` / `test:kc-session-ui` / `test:kc-review-ui` / `test:kc-e2e` | ✓ 48 / 42 / 40 / 33 / 30 |
+| `npm test`（含 build + 一期全部回归） | ✓ 全过 |
+
+`test:kc-exam-ui` 值得单独说：它的假 AI 会**记录每一次请求**，
+所以「答题过程中零出题请求」（= 用户要的「一口气出完」）是**数出来的**，不是感觉出来的。
+
+**顺带修掉的两条过期护栏**（改了结构就得跟着改，否则测试会假红）：
+`test-rename.mjs` 与 `test-about.mjs` 里查 `DB_NAME` 的位置从 `src/core/db.ts`
+改到 `src/core/dbSchema.ts`；`test-kc-import-ui.mjs` 里「未实现的入口标了待做」
+是阶段 02 的占位断言（入口后来全做完了），改成反过来断言「没有待做占位 + 没有独立做题入口」。
+
+**另外三个文件为了守住 ≤300 行做了纯搬运**（逻辑一行没变）：
+`kcExamTypes.ts`（状态机类型）、`kcChatHistory.ts`（消息 → 请求上下文）、
+`dbSchema/dbOpen/dbStale`（见上）。
+
+---
+
+---
+
+---
+
 ## 1. 一句话说清这是什么
 
 一个**个人自用、本地优先**的背单词 Web 应用。核心玩法是「白纸空间记忆」：
@@ -280,6 +678,8 @@ access → ["v. 获取 n. 接近，入口"]
 | `/api/sync-push` | POST | 批量推送（单批 ≤ 500 条） | `X-Space-Key` |
 | `/api/sync-purge` | POST | 清空当前数据空间 | `X-Space-Key` + `{confirm:"DELETE"}` |
 | `/api/ai-proxy` | POST | 无状态 AI 转发 | 来源白名单 + 客户端自带 `Authorization` |
+| `/api/kc-list` | GET | **二期**：知识点卡片增量拉取 `?since=<ts>` | `X-Space-Key` |
+| `/api/kc-push` | POST | **二期**：知识点卡片批量推送（单批 ≤ 500 张） | `X-Space-Key` |
 
 ### 3.1 `GET /api/health`
 
@@ -325,7 +725,6 @@ access → ["v. 获取 n. 接近，入口"]
 - 真 DELETE（不是软删），**只删当前 space_key 的行**（`WHERE space_key = ?` 由 DAO 层强制）
 
 ### 3.5 `POST /api/ai-proxy`
-
 - 请求头：`X-Target-Url`（目标 AI 完整地址，**必须 https**）、`Authorization`（用户密钥）、`Content-Type`
 - body：标准 OpenAI 兼容请求体，原样转发
 - 处理：来源白名单校验（403）→ 目标校验（400/403）→ 剥离 `origin/host/referer/cookie/x-forwarded-*` → 转发
@@ -333,6 +732,35 @@ access → ["v. 获取 n. 接近，入口"]
 - 上游超时 60 秒（`AI_PROXY_TIMEOUT_MS`），对应 `vercel.json` 里 `maxDuration: 120`
 - ★ 允许转发的主机由环境变量 `AI_ALLOWED_HOSTS` 控制（防 SSRF）；
   白名单里的主机允许 http（**只是为了本地开发和自动化测试对着 127.0.0.1 起假上游**）
+
+---
+
+### 3.6 `GET /api/kc-list?since=<ts>`（二期）
+
+与 `sync-pull` 完全同一套口径，只是拉的是知识点卡片：
+
+```json
+{
+  "cards": [ { "id","title","summary","blocks","exam_tags","exam_load","source","attrs",
+               "status","created_at","updated_at","deleted" } ],
+  "serverTime": 1789212312303,
+  "hasMore": false
+}
+```
+
+- **包含软删除**（`deleted=1`）：二期「斩」是留墓碑的，墓碑必须能传到别的设备
+- ★ 二期「斩」与一期**不同**：一期墓碑落地时本地**真删**；二期本地**保留墓碑**
+  （因为二期有「复活」功能，且「已斩」列表要能看到它）
+- `blocks` / `exam_tags` / `exam_load` / `source` / `attrs` 都是 JSON 字符串
+- 建表在 `api/_lib/kcSchema.ts`（`initKcSchema()`，与一期 `initSchema()` 分开）
+
+### 3.7 `POST /api/kc-push`（二期）
+
+- 请求体：`{ cards: [...] }`（单批 ≤ 500，超了 400）
+- 返回与 `sync-push` 同形：`{ applied, conflicts, skipped, serverTime }`
+- 冲突策略同样是**后写覆盖**（`incoming.updatedAt >= server.updatedAt` 才写）
+- 归一化在 `api/_lib/kcValidate.ts`：**坏行只跳过不整批失败**，
+  且 `blocks` 之类字段若是坏 JSON 会被换成兜底值（否则前端 `JSON.parse` 会抛异常）
 
 ---
 
@@ -366,7 +794,9 @@ CREATE INDEX idx_sources_space  ON sources(space_key, updated_at);
 
 ### 4.2 本地（IndexedDB，`src/core/db.ts`）
 
-库名 `blank-sheet-vocab`，版本 **2**（v1→v2 迁移补了 `sources.updatedAt` 等云同步字段）。
+库名 `blank-sheet-vocab`，版本 **3**：
+- v1→v2 迁移补了 `sources.updatedAt` 等云同步字段；
+- v2→v3 新增二期四张表（**纯加法，一期数据一条不动**）。
 
 | 表 | keyPath | 说明 |
 |---|---|---|
@@ -374,6 +804,10 @@ CREATE INDEX idx_sources_space  ON sources(space_key, updated_at);
 | `sources` | `id` | 词库来源，含 `updatedAt?`、`deleted?` |
 | `settings` | `key` | 设置整体存一行（`key = 'main'`）；本地文件夹句柄等用 `putRaw` |
 | `sessions` | `id` | 背诵/复习会话（断点续跑） |
+| `knowledgeCards` | `id` | **二期**：知识点卡片（`core/kcTypes.ts` 的 `KnowledgeCard`） |
+| `dailyContextWords` | `id` | **二期**：每日语境词（防 AI 出题重复） |
+| `examRecords` | `id` | **二期**：已出过的题（防重复 + 复盘） |
+| `bankQuestions` | `id` | **二期**：用户存的参考样题 |
 
 ### 4.3 删除语义（容易搞混，重点看）
 
@@ -383,9 +817,12 @@ CREATE INDEX idx_sources_space  ON sources(space_key, updated_at);
 | 用户「删除」词（列表页） | **硬删**（本地直接移除） |
 | 删除来源 | **软删**：写一条 `deleted=1` 的墓碑（否则别的设备会复活它） |
 | 云端下发 `deleted=1` | **本地真的删掉那一行**（墓碑只在传输中用，落地就清） |
+| **二期**「斩」卡片 | **软删**：`deleted=1` + `status='chopped'`（本地保留墓碑） |
+| **二期**云端下发 `deleted=1` | **本地落成墓碑**（不真删），这样「已斩」列表能看到并能**复活** |
 
 - 墓碑的意义：不留墓碑，「A 设备删了、B 设备还留着」会在下次同步被 B 复活。
 - `dao/words.listAlive()` 过滤掉 `deleted=1`；`getAll()` **故意不过滤**（同步要读墓碑）。
+- 二期同理：`dao/kc.query()` 默认不含墓碑，要看已斩就传 `status: ['chopped']`。
 - 已知限制：墓碑**不会自动清理**，一直留着（占空间很小）。
 
 ---
@@ -484,7 +921,11 @@ src/
 │  ├─ pick.ts               记忆环节抽词规则
 │  ├─ presets.ts            ★预设档位清单（**自动生成**，不要手改）
 │  ├─ syncHelper.ts         sha256 / getSpaceKey / apiUrl / normalizeApiBase / relativeTime
-│  └─ version.ts            构建时间戳（vite define 注入）
+│  ├─ version.ts            构建时间戳（vite define 注入）
+│  ├─ kcTypes.ts            ★二期类型（Block / KnowledgeCard / EXAM_TYPES / 语境词 / 题目 / 题库）
+│  ├─ kcModel.ts            ★二期卡片构造与校验 + **calcMastery 掌握度公式**（含完整对照表注释）
+│  ├─ kcPriority.ts         二期复习优先度 + 掌握度重算 + isBlindSpot（识别盲目自信）
+│  └─ blockRender.ts        ★★二期安全渲染：Block → DOM，**只走 textContent，绝不拼 HTML**
 │
 ├─ dao/                     ★页面只能通过这里取数据，全部返回 Promise
 │  ├─ index.ts              统一出口
@@ -496,7 +937,13 @@ src/
 │  ├─ syncMap.ts            本地对象 ⇄ 服务器行 的字段映射（含 JSON 打包/拆包）
 │  ├─ syncServer.ts         ★HTTP 客户端 + **API_ROUTES 路由表（路径唯一权威定义）**
 │  ├─ cloudSync.ts          ★同步编排：syncOnce / overwrite / clearCloud / getStatus
-│  └─ syncScheduler.ts      防抖调度 + 状态订阅（phase/failStreak）+ 失败重试
+│  ├─ syncScheduler.ts      防抖调度 + 状态订阅（phase/failStreak）+ 失败重试
+│  ├─ syncSchedulerFactory.ts ★调度器工厂（一期/二期各建一个实例，互不干扰）
+│  ├─ kc.ts                 ★二期卡片本地 DAO（query / chop / revive / listDirty…）
+│  ├─ kcCloud.ts            ★二期云同步：kcPull / kcPush / kcSyncOnce（游标在 settings.kc.cloud）
+│  ├─ kcScheduler.ts        二期同步调度（同步实现由 main.ts 注入，避开循环依赖）
+│  ├─ contextWords.ts       二期：每日语境词（自然日 / 去重 / 确认后才生效）
+│  └─ examBank.ts           二期：题目历史（防重复 + 复盘）+ 题库
 │
 ├─ services/
 │  ├─ ai.ts                 ★AI 调用：直连 ⇄ 代理自动切换；getLastAiRoute() 供设置页显示
@@ -567,6 +1014,10 @@ npm run test:presets-ui # 预设导入的真浏览器流程（需要本机有 Ch
 | `test:presets` | 61 | 拿原始词表**独立复算** / **各档两两不相交** / 清单⇄产物一致 / SW 缓存了 json |
 | `test:api` | 58 | 后端：401 / 空间隔离 / 软删除 / 500 上限 / 分批 / 老库主键升级 |
 | `test:sync` | 43 | 前端同步：多设备 / 增量 / 墓碑 / 断网不阻断 / 1100 条自动分批 |
+| `test:kc-import` | 58 | **二期阶段 02**：提示词规则齐全 / 解析三级降级（非法 JSON）/ 逐块校验清洗 / 题型白名单 / 耗时钳制 / 入库存档 |
+| `test:kc-review` | 49 | **二期阶段 06**：抽卡规则 / 桥接词源（新→旧→空库）/ 四阶段流转 / 收尾属性 / 桥接不改一期 |
+| `test:kc-settings` | 58 | **二期阶段 07**：表达式白名单 / 改参数→掌握度变 / 预设→排序变 / 题库分类与导入导出 |
+| `test:kc` | 106 | **二期阶段 01**：mastery 公式 / **安全渲染（XSS）** / **空间隔离** / 软删除墓碑传播 / 断网可用 / 时钟倒退不漏推 / 查询纯函数 / 四张表复合主键 / 一期回归 |
 | `test:ai` | 53 | AI 代理：来源白名单 / 上游白名单 / SSE 透传 / **日志里搜不到密钥** |
 | `test:mobile` | 48 | 断点 / 右下角避让 / 字号热区 / 义项序号规则 |
 | `test:pwa` | 49 | 真跑一遍 SW 的 install/activate/fetch（离线回落、不缓存 API） |

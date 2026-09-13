@@ -51,7 +51,8 @@ console.log('[1] 页面入口');
 console.log('\n[2] 数据说明页的要点（逐条对代码事实）');
 {
   check('讲了「数据存在哪」三层', about.includes('浏览器本地（主）') && about.includes('云端数据库') && about.includes('本地备份文件'));
-  check('明确写了 IndexedDB 库名', about.includes('IndexedDB') && read('src/core/db.ts').includes("DB_NAME = 'blank-sheet-vocab'"));
+  // 库名住在 `src/core/dbSchema.ts`（`db.ts` 只发事务，见 HANDOVER §0.12 的分层）
+  check('明确写了 IndexedDB 库名', about.includes('IndexedDB') && read('src/core/dbSchema.ts').includes("DB_NAME = 'blank-sheet-vocab'"));
   check('明确写了「断网也能用」', about.includes('断网也能用'));
   check('讲了服务器存什么（哈希）', about.includes('SHA-256') && about.includes('不知道你的明文同步码'));
   check('讲了服务器不存 AI 密钥', about.includes('不存：你的 AI 接口密钥'));

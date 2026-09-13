@@ -48,9 +48,14 @@ export function getLastAiRoute(): AiRoute | null {
   return lastRoute;
 }
 
-/** 对话消息 */
+/**
+ * 对话消息。
+ *
+ * `assistant` 是二期录入的上下文记忆需要的（把上一轮模型自己的返回回传，
+ * 用户才能说「第二个再细一点」）。一期的解析链路只用 system + user，不受影响。
+ */
 export interface ChatMessage {
-  role: 'system' | 'user';
+  role: 'system' | 'user' | 'assistant';
   content: string;
 }
 

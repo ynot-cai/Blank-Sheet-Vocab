@@ -1,4 +1,4 @@
-﻿import * as dao from '../../../dao';
+import * as dao from '../../../dao';
 import { exportBackup, importBackup } from '../../../services/backup';
 import * as localfile from '../../../services/localfile';
 import { button, checkbox, h } from '../../dom';

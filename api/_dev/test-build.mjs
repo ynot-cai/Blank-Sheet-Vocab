@@ -10,7 +10,7 @@
  * 2. 检查 vite.config.ts 里 define 的常量确实被声明过（否则运行时报未定义）；
  * 3. 检查资源引用（index.html / manifest）指向的文件真的存在。
  */
-import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, statSync, openSync, readSync, closeSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { loadEnvFiles } from './envFile.mjs';
 
@@ -86,7 +86,12 @@ console.log('[1] 所有相对导入都能解析到真实文件');
   let total = 0;
 
   for (const file of files) {
-    const text = readFileSync(file, 'utf8');
+    // ★ 先剥掉注释再扫：`import(...)` 这条正则没有行首锚点，
+    //   会把注释里提到的路径（比如 loader-hooks 里解释「目录导入」时写的
+    //   `import * as dao from '../../../dao'`）当成真导入，
+    //   然后报一个不存在的坏路径 —— 这个坑又踩了一次。
+    const raw = readFileSync(file, 'utf8');
+    const text = raw.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^[ \t]*\/\/.*$/gm, ' ');
     // 匹配 `from '...'`、`import('...')`、`import '...'`
     //
     // ★ 正则必须**锚定行首**，不能写成 /(?:^|\s)import[\s\S]{0,400}?from/
@@ -367,6 +372,59 @@ console.log('\n[8] 前端 API 路由表与 api/ 真实文件对应（防止再�
 
   const pkgScripts = JSON.parse(readFileSync('package.json', 'utf8')).scripts ?? {};
   check('有 test:live 脚本（线上接口冒烟测试）', Boolean(pkgScripts['test:live']));
+}
+
+// ─────────────────────────────────────────── 9. 不许有 UTF-8 BOM
+console.log('\n[9] UTF-8 BOM 护栏（★ 这条是真踩过的坑）');
+{
+  // 事故经过：用 PowerShell 的 `Set-Content -Encoding UTF8` 改 package.json，
+  // Windows PowerShell 会在开头写一个 UTF-8 BOM（EF BB BF）。
+  // 后果非常阴：
+  //   - Node 读 JSON **容忍** BOM → 所有 `node api/_dev/*.mjs` 测试照样全绿；
+  //   - `tsc` 也容忍 → 类型检查全绿；
+  //   - 但 **Vite 的 PostCSS 配置加载器用 JSON.parse 严格解析 package.json**，
+  //     遇到 BOM 直接抛 `Unexpected token '锘?'`，于是 `vite dev` 里
+  //     **所有 CSS 请求 500**、`main.ts` 里的 `import './styles/global.css'` 挂掉、
+  //     `boot()` 根本不执行 → **页面全白，而且控制台只有一条看不清的 CSS 500**。
+  //   （`vite build` 不走那条路径，所以 `npm run build` 也是绿的。）
+  /** 需要检查的关键文件（配置文件 + 源码） */
+  const targets = [
+    'package.json',
+    'tsconfig.json',
+    'tsconfig.app.json',
+    'tsconfig.api.json',
+    'vercel.json',
+    'index.html',
+    ...walk('src', /\.(ts|css)$/),
+    ...walk('api', /\.(ts|mjs)$/),
+  ];
+  const withBom = [];
+  for (const file of targets) {
+    if (!existsSync(file)) continue;
+    const head = Buffer.alloc(3);
+    const fd = openSync(file, 'r');
+    try {
+      readSync(fd, head, 0, 3, 0);
+    } finally {
+      closeSync(fd);
+    }
+    if (head[0] === 0xef && head[1] === 0xbb && head[2] === 0xbf) withBom.push(file);
+  }
+  check(
+    '★ src/ 与 api/ 及配置文件里没有 UTF-8 BOM（有的话 vite dev 的 CSS 会全 500）',
+    withBom.length === 0,
+    withBom.join(', '),
+  );
+  // 顺带确认 package.json 能被**严格** JSON 解析（BOM 会让它挂）
+  let strictOk = true;
+  let strictErr = '';
+  try {
+    JSON.parse(readFileSync('package.json', 'utf8'));
+  } catch (err) {
+    strictOk = false;
+    strictErr = err instanceof Error ? err.message : String(err);
+  }
+  check('package.json 能被严格 JSON 解析（PostCSS 配置加载器就是这么读它的）', strictOk, strictErr);
 }
 
 console.log(`\n=== 结果：通过 ${passed} 项，失败 ${failed} 项 ===\n`);

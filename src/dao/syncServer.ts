@@ -139,6 +139,7 @@ async function requestWithRetry<T>(
  * 表现就是「同步不了」——后端其实好好的。
  *
  * 改这里的路径时请连带更新：
+ * - `api/_dev/harness.mjs`：本地直调 API 的路由分发表（**必须同步**，否则本地测试调不到）
  * - `api/_dev/test-live.mjs`：线上路由冒烟测试，逐个请求这些路径
  * - `api/_dev/test-build.mjs`：有护栏校验「前端路由表与 api/ 真实文件一一对应」
  */
@@ -149,6 +150,16 @@ export const API_ROUTES = {
   syncPush: '/api/sync-push',
   syncPurge: '/api/sync-purge',
   aiProxy: '/api/ai-proxy',
+  // ── 二期（知识点精学）：数据完全独立，只是共用同一个库和空间隔离逻辑 ──
+  /** 卡片增量拉取，使用时拼查询串：`${API_ROUTES.kcList}?since=<ts>` */
+  kcList: '/api/kc-list',
+  kcPush: '/api/kc-push',
+  /** 每日语境词（阶段 05）：GET ?since=<ts> / POST */
+  contextWords: '/api/context-words',
+  /** 题目历史（阶段 05）：GET ?since=<ts>&recent=<days> / POST */
+  examHistory: '/api/exam-history',
+  /** 题库（阶段 05）：GET ?since=<ts>&type=<id> / POST */
+  bankQuestions: '/api/bank-questions',
 } as const;
 
 /**

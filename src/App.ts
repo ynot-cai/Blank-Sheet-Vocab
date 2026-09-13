@@ -15,6 +15,16 @@ import { renderFooter } from './ui/components/Footer';
 import { maybeShowInstallHint, registerServiceWorker, setBannerHost } from './services/pwa';
 import { toastOk, toastWarn } from './ui/components/Toast';
 import { renderAboutPage } from './ui/pages/AboutPage';
+import { renderKcHomePage } from './ui/pages/KcHomePage';
+import { renderKcImportPage } from './ui/pages/KcImportPage';
+import { renderKcCardListPage } from './ui/pages/KcCardListPage';
+import { renderKcCardEditPage } from './ui/pages/KcCardEditPage';
+import { renderKcCardViewPage } from './ui/pages/KcCardViewPage';
+import { renderKcStudyPage } from './ui/pages/KcStudyPage';
+import { renderKcExamPage } from './ui/pages/KcExamPage';
+import { renderKcReviewPage } from './ui/pages/KcReviewPage';
+import { renderKcSettingsPage } from './ui/pages/KcSettingsPage';
+import { renderKcBankPage } from './ui/pages/KcBankPage';
 
 /** 顶部导航按钮（全部点亮） */
 const NAV: { path: string; label: string }[] = [
@@ -23,6 +33,8 @@ const NAV: { path: string; label: string }[] = [
   { path: '/memorize', label: '记忆' },
   { path: '/list', label: '单词列表' },
   { path: '/review', label: '复习' },
+  // 二期入口：数据与一期完全独立，只是共用同一套同步通道（见二期主提示词第 7 节）
+  { path: '/kc', label: '知识点' },
   { path: '/settings', label: '设置' },
 ];
 
@@ -38,6 +50,18 @@ function registerRoutes(): void {
   registerRoute('/review', (ctx) => renderReviewPage(ctx));
   // 数据说明页（阶段 07）：首页底部的 footer 与设置页都能进来
   registerRoute('/about', () => renderAboutPage());
+  // ── 二期（知识点精学）──
+  registerRoute('/kc', () => renderKcHomePage());
+  registerRoute('/kc/import', () => renderKcImportPage());
+  registerRoute('/kc/list', () => renderKcCardListPage());
+  // 带参数的路由走 query（一期路由是精确匹配的 Map，没有动态段）：#/kc/edit?id=xxx
+  registerRoute('/kc/edit', (ctx) => renderKcCardEditPage(ctx));
+  registerRoute('/kc/view', (ctx) => renderKcCardViewPage(ctx));
+  registerRoute('/kc/study', (ctx) => renderKcStudyPage(ctx));
+  registerRoute('/kc/exam', (ctx) => renderKcExamPage(ctx));
+  registerRoute('/kc/review', (ctx) => renderKcReviewPage(ctx));
+  registerRoute('/kc/settings', () => renderKcSettingsPage());
+  registerRoute('/kc/bank', () => renderKcBankPage());
   setFallback('/home');
 }
 
@@ -98,7 +122,6 @@ export function renderApp(root: HTMLElement): void {
   const outlet = h('main', { class: 'outlet' });
 
   const paintNav = (): void => {
-    const active = currentPath();
     navBox.replaceChildren();
     navBox.appendChild(h('span', { class: 'brand', text: '白纸单词' }));
     for (const item of NAV) {
@@ -106,7 +129,10 @@ export function renderApp(root: HTMLElement): void {
         if (item.path === '/memorize') onMemorizeClick();
         else navigate(item.path);
       });
-      btn.classList.toggle('active', active === item.path);
+      // 二期是一整棵子树（/kc、/kc/import、/kc/list…），
+      // 所以 /kc 这个入口在它的**所有子路由**下都该点亮
+      const active = currentPath() === item.path || (item.path === '/kc' && currentPath().startsWith('/kc/'));
+      btn.classList.toggle('active', active);
       navBox.appendChild(btn);
     }
   };
