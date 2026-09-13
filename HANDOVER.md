@@ -580,8 +580,53 @@ Failed to execute 'transaction' on 'IDBDatabase': One of the specified object st
 是阶段 02 的占位断言（入口后来全做完了），改成反过来断言「没有待做占位 + 没有独立做题入口」。
 
 **另外三个文件为了守住 ≤300 行做了纯搬运**（逻辑一行没变）：
-`kcExamTypes.ts`（状态机类型）、`kcChatHistory.ts`（消息 → 请求上下文）、
+`kcExamState.ts`（状态机类型）、`kcChatHistory.ts`（消息 → 请求上下文）、
 `dbSchema/dbOpen/dbStale`（见上）。
+
+---
+
+### 0.13 二期上线（2026-09-13）
+
+**仓库**：https://github.com/ynot-cai/Blank-Sheet-Vocab （public）
+**线上**：https://blank-sheet-vocab.vercel.app （Vercel，region `hkg1`）
+
+提交 `0fa0acd`（二期全部 + 本轮六项改动，133 个文件、约 2.4 万行）推送后，
+**Vercel 自动构建并上线**（GitHub App 集成：push 到 `main` → Production 部署；
+可用 `gh api repos/ynot-cai/Blank-Sheet-Vocab/deployments` 看每次部署挂在哪个 commit 上）。
+线上 `index-*.js` 的 hash 变了 = 新构建真的生效了，这是最快的判断方式。
+
+**上线后验证（全过）**
+
+| 检查 | 结果 |
+|---|---|
+| `npm run test:live`（真实 URL 打 9 条路由 + 一期同步协议） | ✓ 25 项 |
+| `npm run test:live-ui`（**新增**：真浏览器打线上构建） | ✓ 14 项 |
+| `/api/kc-list`、`/api/context-words`、`/api/exam-history`、`/api/bank-questions` | ✓ 都活着（不带 spaceKey 返回 401，符合预期） |
+| `/api/kc-push` | ✓ GET 返回 405（只收 POST） |
+| `/api/health` | ✓ `db: connected`（Turso 环境变量在，二期建表走 `initKcSchema()` 首次请求自建） |
+
+`test:live` 只打接口、本地那十几套只打 dev 源码，**两者都替代不了「线上构建能不能打开」**——
+所以补了 `test:live-ui`：用真 Chrome 打开线上地址，断言挂载、顶栏「知识点」、
+二期六个入口、**设置页**（用户报过渲染失败的那一页）、一期首页没崩。
+
+**★ 一个容易卡住人的坑：`git push` 的代理**
+
+本仓库的 git 配了 `http.proxy = http://127.0.0.1:7897`（系统代理软件）。
+代理**没开**的时候 push 会直接失败：
+
+```
+fatal: unable to access 'https://github.com/...': Failed to connect to github.com:443
+ over proxy 127.0.0.1 after 2114 ms: Could not connect to server
+```
+
+处理：确认代理端口在不在（`Test-NetConnection 127.0.0.1 -Port 7897`）。
+- 代理开着 → 直接 `git push origin main`；
+- 代理没开 → 一次性绕开：`git -c http.proxy= -c https.proxy= push origin main`
+  （想长期直连就 `git config --unset http.proxy; git config --unset https.proxy`，
+  但网络不稳时直连 GitHub 会间歇性超时，重试一两次即可）。
+
+注意 `gh` CLI 和浏览器（`test:live-ui` 用的 Chrome）走的是各自的路径，
+**它们能通不代表 `git push` 能通**，反之亦然。
 
 ---
 
