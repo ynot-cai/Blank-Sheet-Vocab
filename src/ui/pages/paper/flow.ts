@@ -5,10 +5,10 @@ import { pickForMemorize } from '../../../core/pick';
 import type { Session, Word } from '../../../core/types';
 import * as dao from '../../../dao';
 import { cancelSpeak } from '../../../services/tts';
-import { button, debounce, h } from '../../dom';
+import { button, h } from '../../dom';
 import { openModal, confirmModal, type ModalHandle } from '../../components/Modal';
 import { mountSpeechGate } from '../../components/SpeechGate';
-import { showUndoToast, toastOk, toastWarn } from '../../components/Toast';
+import { showUndoToast, toastError, toastOk, toastWarn } from '../../components/Toast';
 import { renderWordCard } from '../../components/WordCard';
 import { navigate } from '../../router';
 import { createPaperStage } from './PaperStage';
@@ -111,7 +111,11 @@ export function createPaperFlow(opts: FlowOptions): PaperFlow {
   const refreshUi = (): void => {
     const target = settings().memorizeTargetCount;
     const alive = words;
-    const minMem = alive.length > 0 ? Math.min(...alive.map((w) => session.memorizeCount[w.id] ?? 0)) : 0;
+    // ★ 「每词已记忆 N/M」说的是**已经在纸上的词**（这一轮实际在背的这批）。
+    //   原来拿整个队列算最小值：队列里还没上纸的词都是 0 遍，于是刚背完一轮
+    //   也显示「每词已记忆 0/1」，用户会以为记忆根本没生效（实测反馈）。
+    const onPaper = alive.filter((w) => session.shownIds.includes(w.id));
+    const minMem = onPaper.length > 0 ? Math.min(...onPaper.map((w) => session.memorizeCount[w.id] ?? 0)) : 0;
     // 能上纸的数量 = min(词单长度, 间距约束下的纸面容量)；放不下时禁用「再背一个」
     const cap = Math.min(words.length, stage.capacity());
     const paperFull = browseIndex >= cap;
@@ -164,10 +168,65 @@ export function createPaperFlow(opts: FlowOptions): PaperFlow {
     refreshUi();
   };
 
-  /** 编辑写入（防抖写库） */
-  const persistEdit = debounce((w: Word) => {
-    void dao.words.put(w);
-  }, 600);
+  /**
+   * 卡片编辑的写库队列（**每次改动都一定会落盘**）。
+   *
+   * ★★ 用户报的 bug（2026-09）：「在背诵过程中修改单词卡的行为名存实亡，
+   *    所有的修改根本不会保存」。原因有两层，都在这里修掉：
+   *
+   * 1. **原来是一个共享的 `debounce`**（只记住最后一次调用的参数）。
+   *    连续改**两个不同的词**（相隔不到 600ms）时，前一个词的改动会被直接丢掉：
+   *    界面上看着改了、内存里也改了，但**库里永远是旧的** —— 一刷新就「改了个寂寞」。
+   *    现在按词 id 存进 `Map`，同一词只留最新值、不同词各写各的，一个都不丢。
+   * 2. **原来是 `void dao.words.put(w)`**：写库失败（例如 §0.11 那类陈旧连接）
+   *    会被静默吞掉，用户完全看不到。现在失败会弹提示，不再「悄悄不保存」。
+   *
+   * 另外在「背完了 / 保存并退出 / 重新开始 / 页面销毁」之前都会 `flushEdits()`：
+   * 防抖窗口内直接归档的话，那次迟到的写入会带着**旧的 status** 把刚写的 learned 覆盖回去。
+   */
+  const pendingEdits = new Map<string, Word>();
+  let editTimer: number | null = null;
+
+  /** 把待写库的编辑立刻全部落盘（取消防抖计时器，写完再返回） */
+  const flushEdits = async (): Promise<void> => {
+    if (editTimer !== null) {
+      window.clearTimeout(editTimer);
+      editTimer = null;
+    }
+    const batch = [...pendingEdits.values()];
+    pendingEdits.clear();
+    if (batch.length === 0) return;
+    try {
+      // ★ 合并而不是整行覆盖：卡片编辑只动「内容」三个字段，
+      //   状态 / 属性 / 优先级 / 学习顺序 / 墓碑一律以**库里的最新值**为准。
+      //   不这么做的话，一次迟到的写入会把刚做的「斩」「归档」「改状态」悄悄覆盖回去
+      //   （实测：改完卡片 600ms 内点斩，词会自己复活成未背）。
+      const fresh = new Map((await dao.words.getAll()).map((w) => [w.id, w]));
+      const merged: Word[] = [];
+      for (const edit of batch) {
+        const stored = fresh.get(edit.id);
+        merged.push(
+          stored
+            ? { ...stored, phonetic: edit.phonetic, example: edit.example, senses: edit.senses }
+            : edit,
+        );
+      }
+      await dao.words.bulkUpsert(merged);
+    } catch (err) {
+      console.error('[paper] 单词改动写库失败', err);
+      toastError('单词改动没能存进本地库，请再改一次或到设置页看看数据库状态');
+    }
+  };
+
+  /** 排队一次编辑（防抖 600ms 后写库；不同词互不影响） */
+  const queueEdit = (w: Word): void => {
+    pendingEdits.set(w.id, w);
+    if (editTimer !== null) window.clearTimeout(editTimer);
+    editTimer = window.setTimeout(() => {
+      editTimer = null;
+      void flushEdits();
+    }, 600);
+  };
 
   /** 取某词的最新内存副本（用户可能刚在卡里改过义项） */
   const latestWord = (word: Word): Word => wordMap.get(word.id) ?? word;
@@ -186,7 +245,8 @@ export function createPaperFlow(opts: FlowOptions): PaperFlow {
       wordMap.set(next.id, next);
       const idx = words.findIndex((w) => w.id === next.id);
       if (idx >= 0) words[idx] = next;
-      persistEdit(next);
+      // ★ 一定写库（按词排队，连改多个词也不会丢任何一个）
+      queueEdit(next);
     },
     onSpell: (need: boolean) => {
       const w = latestWord(word);
@@ -391,6 +451,7 @@ export function createPaperFlow(opts: FlowOptions): PaperFlow {
     if (destroyed || roundBusy) return;
     const ok = await confirmModal('重新开始这一轮？', '会丢掉保存的位置与每个词的记忆遍数，重新按当前词库开始一轮背诵。', '重新开始', true);
     if (!ok) return;
+    await flushEdits(); // 卡片编辑先落盘，别被重开带走
     await dao.session.clearSession();
     navigate('/learn');
   };
@@ -404,6 +465,7 @@ export function createPaperFlow(opts: FlowOptions): PaperFlow {
       return;
     }
     cancelSpeak();
+    await flushEdits(); // ★ 卡片编辑先落盘再退（防抖窗口内退出也不会丢）
     await exitMidway(session);
     toastOk(
       mode === 'review'
@@ -413,15 +475,29 @@ export function createPaperFlow(opts: FlowOptions): PaperFlow {
     navigate('/home');
   };
 
-  /** 背完了：归档（写回未通过次数、标记已背），完全结束本次背诵 */
+  /**
+   * 背完了：归档（写回未通过次数、标记已背），完全结束本次背诵。
+   *
+   * ★ 归档的**只有本轮上过纸的词**（`shownIds`）——用户报过严重 bug：
+   *   只点了 4 个词上纸，点「背完了」却把整个词库都标成了已背。
+   *   队列里没轮到的词必须原样留着（仍是「未背」），下次继续背。
+   */
   const finishAll = async (): Promise<void> => {
     if (destroyed || roundBusy || flowMode !== 'browse') return;
     if (!allQualified()) {
       toastWarn('每个词都记忆达标后，「背完了」才会出现');
       return;
     }
+    // 先把待写库的卡片编辑落盘，再归档：否则 600ms 后的那次防抖写入
+    // 会带着「旧的 status」把刚写上的 learned 覆盖回去（实测过）。
+    await flushEdits();
+    const rest = words.filter((w) => !session.shownIds.includes(w.id)).length;
     const n = await finishLearn(session, settings().failCountCap);
-    toastOk(`已归档 ${n} 个词，本次背诵完成`);
+    toastOk(
+      rest > 0
+        ? `已归档 ${n} 个词（就是本轮上过纸的这些）；队列里还有 ${rest} 个没上纸，仍是「未背」`
+        : `已归档 ${n} 个词，本次背诵完成`,
+    );
     navigate('/home');
   };
 
@@ -450,13 +526,27 @@ export function createPaperFlow(opts: FlowOptions): PaperFlow {
   const destroy = (): void => {
     destroyed = true;
     aborted = true;
+    // 路由切走前把待写库的卡片编辑落盘（不等它返回：IndexedDB 写入不随路由销毁）
+    void flushEdits();
     window.removeEventListener('keydown', onKey);
     stage.destroy();
     root.remove();
     opts.onDestroy?.();
   };
 
-  /** 挂载初始化：载词 → 有保存的进度就恢复（落点 + 已出现的词 + 记忆次数），否则重新布点 */
+  /**
+   * 挂载初始化：载词 → 恢复进度（落点 + 已出现的词 + 记忆次数）。
+   *
+   * ★★ 用户报的 bug（2026-09）：「保存并退出」后重进**又是一面白纸**。
+   *    根因是这里的判断条件写得太死：`haveSaved` 要求**队列里每一个词**都有落点，
+   *    而落点是「点一个算一个」的 —— 队列里有 100 个词、只点了 4 个上纸时，
+   *    条件永远不成立，于是走了重算分支：位置被重算、**一个词都不画回白纸**，
+   *    用户看到的就是一张白纸（记忆次数其实还在，只是看不见）。
+   *
+   * 现在的口径：**只要「上过纸的词」有落点，就恢复**；恢复不了的那几个
+   * （老存档 / 中途换过词）当场补一个落点，也照样画出来。
+   * 一句话：`shownIds` 里有几个词，重进就必须看到几个词 —— 绝不允许白纸。
+   */
   void (async () => {
     const all = await dao.words.getAll();
     wordMap = new Map(all.map((w) => [w.id, w]));
@@ -464,21 +554,29 @@ export function createPaperFlow(opts: FlowOptions): PaperFlow {
       .map((id) => wordMap.get(id))
       .filter((w): w is Word => w !== undefined && w.status !== 'chopped');
 
+    session.shownIds = session.shownIds.filter((id) => words.some((w) => w.id === id));
     const shownSet = new Set(session.shownIds);
-    const haveSaved = words.length > 0 && words.every((w) => session.placements[w.id] !== undefined);
-    if (haveSaved) {
-      stage.restorePlacements(session.placements);
-      for (const w of words) {
-        const p = session.placements[w.id];
-        if (shownSet.has(w.id) && p) stage.addWord(w, p, { animate: false });
-      }
-      session.shownIds = session.shownIds.filter((id) => words.some((w) => w.id === id));
-      browseIndex = words.filter((w) => shownSet.has(w.id)).length;
-    } else {
+    const shownWords = words.filter((w) => shownSet.has(w.id));
+
+    // 需要重新布点的情况：队列里有**任何一个**词还没有落点
+    //（新会话、老存档、或者中途往队列里加过词）——没有落点就上不了纸。
+    // 只要落点齐（正常「保存并退出」之后就是齐的），就原样恢复，**位置一个都不变**。
+    const needNewPlacements = words.some((w) => session.placements[w.id] === undefined);
+    if (needNewPlacements) {
       session.placements = stage.computePlacements(words, seedFromString(`${session.id}#${opts.groupIndex}`));
-      session.shownIds = session.shownIds.filter((id) => words.some((w) => w.id === id));
-      browseIndex = 0;
+    } else {
+      stage.restorePlacements(session.placements);
     }
+    // ★ 关键：无论走哪条分支，**已出现过的词都要按落点画回白纸**。
+    //   老代码在「重算」分支里一个词都不画 —— 那就是用户看到的白纸。
+    for (const w of shownWords) {
+      const p = session.placements[w.id];
+      if (p) stage.addWord(w, p, { animate: false });
+    }
+    // 已出现的词在队列里是连续的一段前缀，所以「已出现 N 个」= 下一个该上的下标
+    browseIndex = shownWords.length;
+    if (needNewPlacements) await dao.session.saveSession(session); // 新落点立刻落盘
+
     stage.applySettings();
     refreshUi();
     if (opts.startInMemorize) startMemorize();

@@ -200,7 +200,34 @@ console.log('\n[2] 布点：最低距离由字号决定，且不许重合');
   check('★ 任意两个词的最小中心距 ≥ 最宽词 + 字号×系数 或 纵向同理', gapX > 0 && gapY > 0, `${gapX.toFixed(4)}/${gapY.toFixed(4)}`);
 }
 
-// 2d. 按钮避让：中心贴边也不算安全，必须按半个词外扩
+// 2d. ★ 按钮避让区压住一个格子时，容量不许凭空少一个（这条是**确定性**的，不靠运气）
+{
+  const W = 1258;
+  const H = 802;
+  const budget = spacingBudget({ fontSize: 24, gapFactor: 2.4, widestWordPx: 74, rowHeightPx: wordRowHeightPx(24) });
+  const gapW = budget.gapX / W;
+  const gapH = budget.gapY / H;
+  // 实测里被压住的就是右下角这块（桌面按钮区 + 半个词的外扩）
+  const avoidPx = { x: 1033, y: 511, width: 254, height: 307 };
+  const opts = { aspect: W / H, minGapW: gapW, minGapH: gapH, canvas: { width: W, height: H }, avoidPx };
+
+  // 换 60 个种子跑：老实现里「抖动正好把点甩进避让区」时容量会掉成 2（实测踩到过，且随机出现）
+  let worst = Infinity;
+  let inside = 0;
+  for (let seed = 1; seed <= 60; seed += 1) {
+    const pts = jitteredGrid(3, { ...opts, seed });
+    worst = Math.min(worst, pts.length);
+    for (const p of pts) {
+      const px = p.x * W;
+      const py = p.y * H;
+      if (px >= avoidPx.x && px <= avoidPx.x + avoidPx.width && py >= avoidPx.y && py <= avoidPx.y + avoidPx.height) inside += 1;
+    }
+  }
+  check('★ 避让区压住一个格子时，3 个词仍然全都放得下（不靠运气）', worst === 3, `最差一次只放下 ${worst} 个`);
+  check('★ 而且没有一个落点落进按钮避让区里', inside === 0, `${inside} 个点压在按钮区`);
+}
+
+// 2e. 按钮避让：中心贴边也不算安全，必须按半个词外扩
 {
   const stage = read('src/ui/pages/paper/PaperStage.ts');
   check('PaperStage 用 canvas measureText 量最宽的词', stage.includes('measureText'));
@@ -289,6 +316,36 @@ console.log('\n[7] 与用户口径冲突的地方都做了标记');
       existsSync(join(ROOT, 'AI_RULES.md')) &&
       existsSync(join(ROOT, 'HANDOVER.md')),
   );
+}
+
+// ═══════════════════════════════ [8] 用户实测第三轮的三条 bug
+console.log('\n[8] 用户实测报的三条 bug（回归护栏）');
+{
+  const finishSrc = read('src/ui/pages/paper/finish.ts');
+  const flowSrc = read('src/ui/pages/paper/flow.ts');
+  const learnSrc = read('src/ui/pages/LearnPage.ts');
+
+  // bug 1：背完了把整个词库都归档了
+  check('★ 「背完了」只归档上过纸的词（finishLearn 用 shownIds 过滤）', /const shown = new Set\(session\.shownIds\)/.test(finishSrc) && /if \(!shown\.has\(id\)\) continue;/.test(finishSrc));
+  check('★ finishLearn 的注释写明了这条 bug（不许改回遍历整个队列）', finishSrc.includes('整个词库的词全被标成已背'));
+  check('「每词已记忆」只统计纸上的词（不再被队列里没上纸的词拖成 0）', flowSrc.includes('const onPaper = alive.filter'));
+  check('归档提示会说清「队列里还有 N 个没上纸，仍是未背」', flowSrc.includes('仍是「未背」'));
+
+  // bug 2：重进变白纸
+  check('★ 恢复时「已出现过的词一定要画回白纸」（两条分支都画）', /for \(const w of shownWords\)/.test(flowSrc) && /stage\.addWord\(w, p, \{ animate: false \}\)/.test(flowSrc));
+  check('★ 落点判断不再要求「队列里每个词都有落点」才算恢复', flowSrc.includes('const needNewPlacements = words.some'));
+  check('★ 那条 bug 的原因写在代码里（否则以后又会写回去）', flowSrc.includes('重进**又是一面白纸**'));
+  check('LearnPage 恢复后 mountFlow（不是重新开一轮）', /mountFlow\(existing\)/.test(learnSrc));
+
+  // bug 3：卡片编辑不保存
+  check('★ 卡片编辑按词排队（pendingEdits Map），不是共享的 debounce', /const pendingEdits = new Map<string, Word>\(\)/.test(flowSrc));
+  check('★ 已经不用共享 debounce 写卡片编辑了', !/persistEdit/.test(flowSrc));
+  check('★ 写库失败会提示用户（不再 void 静默吞掉）', /toastError\('单词改动没能存进本地库/.test(flowSrc));
+  check('★ 落盘时与库里的最新行合并（只覆盖内容字段，不覆盖 status/attrs）', flowSrc.includes('卡片编辑只动「内容」三个字段'));
+  check('★ 背完了之前先 flushEdits（避免迟到的写入把 learned 覆盖回去）', /await flushEdits\(\);\s*\n\s*const rest = words\.filter/.test(flowSrc));
+  check('★ 保存并退出之前先 flushEdits', /await flushEdits\(\); \/\/ ★ 卡片编辑先落盘再退/.test(flowSrc));
+  check('★ 重新开始之前先 flushEdits', /await flushEdits\(\); \/\/ 卡片编辑先落盘，别被重开带走/.test(flowSrc));
+  check('★ 路由切走时也 flushEdits（best-effort）', /void flushEdits\(\);\s*\n\s*window\.removeEventListener\('keydown', onKey\)/.test(flowSrc));
 }
 
 // ─────────────────────────────── 汇总

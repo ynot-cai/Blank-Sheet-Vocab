@@ -19,11 +19,20 @@ export async function exitMidway(session: Session): Promise<void> {
 }
 
 /**
- * 背诵正常结束：
+ * 背诵正常结束（用户点「背完了」）：
  * - 把本次累计的 failCountTotal / failCount 写回词库（这两个是属性，属于真实学习结果）；
- * - 所有词 status = 'learned'，learnOrder 从当前最大 +1 递增，learnedAt = now；
+ * - **只归档「本次真正上过纸的词」**（`session.shownIds`）：status = 'learned'、
+ *   learnOrder 从当前最大 +1 递增、learnedAt = now；
  * - 清掉会话。
- * 注意区分：中途退出丢进度，正常结束保留「未通过次数」这类属性。
+ *
+ * ★★ 用户报的严重 bug（2026-09）：只点了 4 个词上纸、记忆完点「背完了」，
+ *    结果**整个词库的词全被标成已背**。
+ *    原因就是这里原来遍历的是 `session.wordIds`（= 开始背诵时把**全部未背词**
+ *    都塞进去的「待背队列」，可能几百个），而不是「这次真的背了的词」。
+ *    用户的模型是「点下一个就 +1 个」——本轮就是上过纸的那些；
+ *    队列里没轮到的不该被动。
+ *
+ * 注意区分：中途退出保留整份进度（`exitMidway`），正常结束才写回属性并清会话。
  * @param session 会话
  * @param failCap 未通过次数上限
  * @returns 被标记为已背的词数（被斩的词不计）
@@ -35,7 +44,10 @@ export async function finishLearn(session: Session, failCap: number): Promise<nu
   const now = Date.now();
   const updates: Word[] = [];
 
+  // ★ 只算「上过纸的词」。顺序按 wordIds（= 上纸顺序）走，保证 learnOrder 稳定。
+  const shown = new Set(session.shownIds);
   for (const id of session.wordIds) {
+    if (!shown.has(id)) continue;
     const w = byId.get(id);
     if (!w || w.status === 'chopped') continue;
     const delta = session.failDeltas[id] ?? 0;

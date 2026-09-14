@@ -405,21 +405,28 @@ try {
     }
   }
 
-  // ─────────────── [4] 保存并退出 → 不带 resume 直接续跑
+  // ─────────────── [3] 保存并退出 → 不带 resume 直接续跑
   console.log('\n[3] 「保存并退出」→ 再点「背诵」直接续跑（位置 / 进度 / 遍数都在）');
   {
     const s = await openSession(CDP_PORT, `${ORIGIN}/#/home`);
     try {
       await openFresh(s, '#/home');
+      // ★ 关键：队列里放 **6 个**词，但只点 **3 个**上纸 —— 用户实测就是这个局面
+      //   （词库里词多、这一轮只背了几个）。老代码要求「队列里每个词都有落点」
+      //   才恢复，于是重进变成一面白纸。这条断言就是钉住它。
       await seedWords(s, [
         { en: 'alpha', senses: [{ text: 'n. 甲', aliases: [] }] },
         { en: 'beta', senses: [{ text: 'n. 乙', aliases: [] }] },
+        { en: 'gamma', senses: [{ text: 'n. 丙', aliases: [] }] },
+        { en: 'delta', senses: [{ text: 'n. 丁', aliases: [] }] },
+        { en: 'epsilon', senses: [{ text: 'n. 戊', aliases: [] }] },
+        { en: 'zeta', senses: [{ text: 'n. 己', aliases: [] }] },
       ]);
       await s.evaluate(`location.hash = '#/learn'`);
       await new Promise((r) => setTimeout(r, 1500));
 
-      // 上 2 个词 + 走一轮记忆（让 memorizeCount 有值 + lastRoundFailedIds 有东西）
-      for (let i = 0; i < 2; i += 1) {
+      // 上 3 个词（点满 memorizeEvery=3 之后按钮会变成「记忆」，所以正好 3 次）
+      for (let i = 0; i < 3; i += 1) {
         await s.evaluate(`(() => {
           const b = [...document.querySelectorAll('.paper-controls button')].find((x) => x.textContent.trim().startsWith('再背一个'));
           b?.click();
@@ -455,7 +462,8 @@ try {
         words: document.querySelectorAll('.paper-word').length,
         progress: document.querySelector('.paper-progress')?.textContent ?? '',
       })`);
-      check('退出前纸上有 2 个词', beforeExit.words === 2, JSON.stringify(beforeExit));
+      check('退出前纸上有 3 个词（队列里一共 6 个）', beforeExit.words === 3, JSON.stringify(beforeExit));
+      check('进度文案只统计「纸上的词」的记忆遍数（不是整个队列）', /每词已记忆 1\//.test(beforeExit.progress), beforeExit.progress);
 
       // 保存并退出
       await s.evaluate(`(() => {
@@ -467,7 +475,7 @@ try {
       check('点「保存并退出」回到了首页', (await s.evaluate(`location.hash`)) === '#/home');
 
       const saved = (await readSession(s))[0];
-      check('存档里有词单与已出现的词', Array.isArray(saved?.wordIds) && saved.wordIds.length === 2 && saved.shownIds.length === 2, JSON.stringify(saved?.wordIds));
+      check('存档里有完整词单与已出现的 3 个词', Array.isArray(saved?.wordIds) && saved.wordIds.length === 6 && saved.shownIds.length === 3, JSON.stringify(saved?.wordIds) + '/' + JSON.stringify(saved?.shownIds));
       check('★ 存档里有每个词在白纸上的位置', Object.keys(saved?.placements ?? {}).length >= 2, JSON.stringify(Object.keys(saved?.placements ?? {})));
       check('★ 存档里有每词的记忆遍数', Object.values(saved?.memorizeCount ?? {}).some((n) => n >= 1), JSON.stringify(saved?.memorizeCount));
       check('★ 存档里有上一轮未通过的词字段（老存档兼容字段也在）', saved !== undefined && 'lastRoundFailedIds' in saved, JSON.stringify(saved?.lastRoundFailedIds));
@@ -483,14 +491,176 @@ try {
         words: document.querySelectorAll('.paper-word').length,
         progress: document.querySelector('.paper-progress')?.textContent ?? '',
       })`);
-      check('★ 直接点「背诵」就恢复了上次的 2 个词（没有从头开始）', afterResume.words === 2, JSON.stringify(afterResume));
+      check('★ 直接点「背诵」就恢复了上次的 3 个词（没有从头开始、更不是白纸）', afterResume.words === 3, JSON.stringify(afterResume));
       check('★ 恢复后每个词的位置与退出前**完全一致**', JSON.stringify(afterResume.placements) === JSON.stringify(beforeExit.placements), `前 ${JSON.stringify(beforeExit.placements)}\n    后 ${JSON.stringify(afterResume.placements)}`);
-      // 两个词都上纸且都记忆过 1 遍 → 进度里「每词已记忆」必须是 1/1（不是 0）
-      check('★ 恢复后进度文案里的记忆遍数也回来了（1/1）', /每词已记忆 1\/1/.test(afterResume.progress), afterResume.progress);
+      check('★ 恢复后进度文案里的记忆遍数也回来了（每词 1 遍）', /每词已记忆 1\//.test(afterResume.progress), afterResume.progress);
       check('恢复后的进度文案与退出前一致', afterResume.progress === beforeExit.progress, `前「${beforeExit.progress}」后「${afterResume.progress}」`);
 
       // 出口：重新开始
       check('页面上有「重新开始」按钮（续跑自动化后的显式出口）', (await s.evaluate(`[...document.querySelectorAll('.paper-controls button')].some((b) => b.textContent.trim() === '重新开始')`)) === true);
+    } finally {
+      await s.close();
+    }
+  }
+
+  // ─────────────── [4] ★ 背完了只归档「上过纸的词」（用户报的严重 bug）
+  console.log('\n[4] 「背完了」只归档本轮上过纸的词，队列里没轮到的保持「未背」');
+  {
+    const s = await openSession(CDP_PORT, `${ORIGIN}/#/home`);
+    try {
+      await openFresh(s, '#/home');
+      await seedWords(s, [
+        { en: 'a1', senses: [{ text: 'n. 一', aliases: [] }] },
+        { en: 'a2', senses: [{ text: 'n. 二', aliases: [] }] },
+        { en: 'a3', senses: [{ text: 'n. 三', aliases: [] }] },
+        { en: 'a4', senses: [{ text: 'n. 四', aliases: [] }] },
+        { en: 'a5', senses: [{ text: 'n. 五', aliases: [] }] },
+        { en: 'a6', senses: [{ text: 'n. 六', aliases: [] }] },
+      ]);
+      await s.evaluate(`location.hash = '#/learn'`);
+      await new Promise((r) => setTimeout(r, 1500));
+
+      for (let i = 0; i < 3; i += 1) {
+        await s.evaluate(`(() => {
+          const b = [...document.querySelectorAll('.paper-controls button')].find((x) => x.textContent.trim().startsWith('再背一个'));
+          b?.click();
+          return true;
+        })()`);
+        await new Promise((r) => setTimeout(r, 700));
+      }
+      await s.evaluate(`(() => {
+        const b = [...document.querySelectorAll('.paper-controls button')].find((x) => x.textContent.trim().startsWith('再次记忆'));
+        b?.click();
+        return true;
+      })()`);
+      await waitFor(s, `!!document.querySelector('.memorize-box')`);
+      for (let i = 0; i < 30; i += 1) {
+        const st = await s.evaluate(`({ mem: !!document.querySelector('.memorize-box'), card: !!document.querySelector('.answer-card'), overlay: !document.querySelector('.paper-overlay')?.classList.contains('hidden') })`);
+        if (!st.mem && !st.card && !st.overlay) break;
+        await s.evaluate(`(() => {
+          const card = document.querySelector('.answer-card');
+          if (card) { card.click(); return 'advance'; }
+          const inputs = [...document.querySelectorAll('.memorize-box .mem-input')];
+          if (inputs.length > 0) {
+            for (const el of inputs) { if (!el.value) { el.value = '一'; el.dispatchEvent(new Event('input', { bubbles: true })); } }
+            document.querySelector('#mem-submit')?.click();
+            return 'submit';
+          }
+          return 'idle';
+        })()`);
+        await new Promise((r) => setTimeout(r, 350));
+      }
+
+      const clicked = await s.evaluate(`(() => {
+        const b = [...document.querySelectorAll('.paper-controls button')].find((x) => x.textContent.trim().startsWith('背完了') && !x.classList.contains('hidden'));
+        if (!b) return false;
+        b.click();
+        return true;
+      })()`);
+      check('记忆达标后「背完了」出现了', clicked === true);
+      await new Promise((r) => setTimeout(r, 1600));
+      const words = await readWords(s);
+      const learned = words.filter((w) => w.status === 'learned').map((w) => w.en).sort();
+      const unlearned = words.filter((w) => w.status === 'unlearned').map((w) => w.en).sort();
+      check('★ 只有上过纸的 3 个词变成「已背」', learned.length === 3, JSON.stringify(learned));
+      check('★ 队列里没轮到的 3 个词仍是「未背」（没有被一起归档）', unlearned.length === 3, JSON.stringify(unlearned));
+      check('★ 已背的正好是上纸的那 3 个（a1/a2/a3）', learned.join(',') === 'a1,a2,a3', JSON.stringify(learned));
+    } finally {
+      await s.close();
+    }
+  }
+
+  // ─────────────── [5] ★ 卡片编辑一定写库（用户报「改了不保存」）
+  console.log('\n[5] 卡片编辑：连改两个词 / 改完立刻退出 / 改完立刻斩 —— 都必须保存');
+  {
+    const s = await openSession(CDP_PORT, `${ORIGIN}/#/home`);
+    try {
+      await openFresh(s, '#/home');
+      await seedWords(s, [
+        { en: 'e1', senses: [{ text: 'n. 一', aliases: [] }] },
+        { en: 'e2', senses: [{ text: 'n. 二', aliases: [] }] },
+      ]);
+      await s.evaluate(`location.hash = '#/learn'`);
+      await new Promise((r) => setTimeout(r, 1500));
+      for (let i = 0; i < 2; i += 1) {
+        await s.evaluate(`(() => {
+          const b = [...document.querySelectorAll('.paper-controls button')].find((x) => x.textContent.trim().startsWith('再背一个'));
+          b?.click();
+          return true;
+        })()`);
+        await new Promise((r) => setTimeout(r, 700));
+      }
+
+      /** 打开某个词的卡片、改音标、关掉（返回是否成功） */
+      const editCard = (en, value, close) => `(() => {
+        const zone = [...document.querySelectorAll('.paper-word-zone')].find((z) => z.querySelector('.paper-word')?.textContent.trim() === ${JSON.stringify(en)});
+        if (!zone) return 'no-zone';
+        const meaning = zone.querySelector('.paper-meaning');
+        if (meaning.classList.contains('hidden')) zone.querySelector('.paper-word').click();
+        zone.querySelector('.paper-meaning').click();
+        return 'opened';
+      })()`;
+
+      // —— 连改两个不同的词（相隔不到防抖窗口）——
+      await s.evaluate(editCard('e1'));
+      await new Promise((r) => setTimeout(r, 350));
+      await s.evaluate(`(() => {
+        const el = document.querySelector('.modal-mask input');
+        el.value = '/E1/';
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        document.querySelector('.modal-mask .modal-close')?.click();
+        return true;
+      })()`);
+      // 立刻改第二个词（不等 600ms）
+      await s.evaluate(editCard('e2'));
+      await new Promise((r) => setTimeout(r, 300));
+      await s.evaluate(`(() => {
+        const el = document.querySelector('.modal-mask input');
+        el.value = '/E2/';
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        document.querySelector('.modal-mask .modal-close')?.click();
+        return true;
+      })()`);
+      await new Promise((r) => setTimeout(r, 1500));
+      const both = await readWords(s);
+      check('★ 连改两个词：**两个都写进了库**（不是只写最后一个）', both.find((w) => w.en === 'e1')?.phonetic === '/E1/' && both.find((w) => w.en === 'e2')?.phonetic === '/E2/', JSON.stringify(both));
+
+      // —— 改完**立刻**保存并退出（防抖窗口内退出）——
+      await s.evaluate(editCard('e1'));
+      await new Promise((r) => setTimeout(r, 300));
+      await s.evaluate(`(() => {
+        const el = document.querySelector('.modal-mask input');
+        el.value = '/E1-EXIT/';
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        document.querySelector('.modal-mask .modal-close')?.click();
+        document.querySelector('.paper-controls button:nth-child(3)')?.click();
+        const b = [...document.querySelectorAll('.paper-controls button')].find((x) => x.textContent.trim().startsWith('保存并退出'));
+        b?.click();
+        return true;
+      })()`);
+      await waitFor(s, `location.hash === '#/home'`);
+      await new Promise((r) => setTimeout(r, 900));
+      const afterExit = await readWords(s);
+      check('★ 改完立刻「保存并退出」：改动也写进了库（防抖窗口内退出不丢）', afterExit.find((w) => w.en === 'e1')?.phonetic === '/E1-EXIT/', JSON.stringify(afterExit));
+
+      // —— 改完**立刻斩**：编辑要保存，斩也要生效（不能被迟到的写入复活）——
+      await s.evaluate(`location.hash = '#/learn'`);
+      await new Promise((r) => setTimeout(r, 1600));
+      await s.evaluate(editCard('e2'));
+      await new Promise((r) => setTimeout(r, 300));
+      await s.evaluate(`(() => {
+        const el = document.querySelector('.modal-mask input');
+        el.value = '/E2-CHOP/';
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        const chop = [...document.querySelectorAll('.modal-mask button')].find((x) => x.textContent.includes('斩掉此词'));
+        chop?.click();
+        return true;
+      })()`);
+      await new Promise((r) => setTimeout(r, 1600));
+      const afterChop = await readWords(s);
+      const e2 = afterChop.find((w) => w.en === 'e2');
+      check('★ 改完立刻斩：编辑保存了', e2?.phonetic === '/E2-CHOP/', JSON.stringify(afterChop));
+      check('★ 改完立刻斩：斩也生效了（没被迟到的写入复活成未背）', e2?.status === 'chopped', JSON.stringify(afterChop));
     } finally {
       await s.close();
     }

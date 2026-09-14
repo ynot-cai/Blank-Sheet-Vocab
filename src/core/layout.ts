@@ -62,7 +62,9 @@ export function seedFromString(text: string): number {
  * 3. 格子多于需求时随机抽掉多余的；不够时一格放两个（第二个偏移到格子右下角）；
  * 4. 抖动后做轻量冲突检测：与已放置的间距小于最小间距时把后一个挪到最近空格；
  * 5. 返回顺序打乱（不是按行列排下来的顺序）；
- * 6. 带最小间距时，放不下的词会被截掉（返回值长度 = 纸上实际能放下的数量）。
+ * 6. 带最小间距时，放不下的词会被截掉（返回值长度 = 纸上实际能放下的数量）；
+ * 7. **落进按钮避让区的格子会被跳过、由后面的空格补上**（不是把点丢掉，
+ *    否则按钮区压住一格就白白少放一个词）。
  * 全程用同一个 seeded random，结果可复现。
  * @param count 需要的落点数
  * @param opts 宽高比 / 边距 / 种子 / 最小间距
@@ -108,9 +110,18 @@ export function jitteredGrid(count: number, opts: JitteredGridOptions = {}): Pla
     }
   }
 
-  // 3) 生成落点（每个格子一个，放不下的直接不生成）
+  // 3) 生成落点：按打乱后的格子顺序取，**落进按钮避让区的格子跳过、用后面的空格补上**。
+  //
+  //    ★ 为什么必须「补上」而不是直接丢掉（用户实测反馈）：
+  //      避让区是「右下角按钮 + 半个词」的一块矩形，它有时正好压住一个格子。
+  //      直接丢掉那个点时，**纸上能放的词就少了一个**：库里只有 3 个词、
+  //      网格有 4 个格子，也会因为压住 1 格而只放得下 2 个 ——
+  //      用户看到的是「才 2 个词就说纸面已满」。
+  //      改成往后找空格之后，容量只由「没被按钮压住的格子数」决定，
+  //      不再因为运气（抖动位置）白白少一个。
+  const avoidRect = opts.avoidPx ? toNormalizedRect(opts.avoidPx, opts.canvas ?? { width: 1, height: 1 }) : null;
   const out: Placement[] = [];
-  for (let i = 0; i < place; i += 1) {
+  for (let i = 0; i < capacity && out.length < place; i += 1) {
     const cellIdx = cellIndexes[i] ?? i;
     const col = cellIdx % cols;
     const row = Math.floor(cellIdx / cols);
@@ -118,6 +129,7 @@ export function jitteredGrid(count: number, opts: JitteredGridOptions = {}): Pla
       x: clamp01(margin + (col + 0.5) * cellW + (random() - 0.5) * 2 * jitterAmpX),
       y: clamp01(margin + (row + 0.5) * cellH + (random() - 0.5) * 2 * jitterAmpY),
     };
+    if (avoidRect && pointInRect(p, avoidRect)) continue; // 这个格子被按钮占了 → 换下一个空格
     out.push(p);
   }
 
@@ -131,12 +143,7 @@ export function jitteredGrid(count: number, opts: JitteredGridOptions = {}): Pla
       out[j] = a;
     }
   }
-
-  // 6) 避让区：落进「右下角按钮区」的点直接丢掉（放不下就少放几个，绝不压在按钮下面）
-  if (!opts.avoidPx) return out;
-  const canvas = opts.canvas ?? { width: 1, height: 1 };
-  const avoid = toNormalizedRect(opts.avoidPx, canvas);
-  return out.filter((p) => !pointInRect(p, avoid));
+  return out;
 }
 
 /** 归一化矩形 */
