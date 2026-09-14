@@ -14,10 +14,8 @@ export interface ImportJob {
   id: string;
   sourceId: string;
   sourceName: string;
-  /** 来源优先级（决定「同一个词的义项归谁」，与下面的 wordPriority 是两回事） */
-  priority: number;
   /**
-   * ★ 词级优先级（R1）：这一批词入库时写进每个 `word.priority`（1~5，5 最高）。
+   * ★ 优先级（**唯一的那一个**）：1~5，5 最高。这一批词入库时写进每个 `word.priority`。
    *
    * 为什么放在任务上而不是「入库时现读界面」：录入任务是**可续传**的
    * （存 sessionStorage，刷新后还能继续），续传时界面上的单选框早就没了。
@@ -25,7 +23,7 @@ export interface ImportJob {
    *
    * 老存档没有这个字段 —— 读取时按 `WORD_PRIORITY_DEFAULT` 兜底（见 loadJob）。
    */
-  wordPriority: number;
+  priority: number;
   /** 切好的批次（每批是若干行原文） */
   chunks: string[][];
   /** 每批是否已完成 */
@@ -56,18 +54,20 @@ export function saveJob(job: ImportJob): void {
 /**
  * 读取任务存档。
  *
- * 兼容性：R1 之前存下的任务没有 `wordPriority` 字段，
- * 这里补成默认值 3，不然续传时会写出 `priority: undefined`。
+ * 兼容性：老存档里这个字段叫 `wordPriority`（R1 时期的命名，那时还有两套优先级），
+ * 这里做一次改名兜底——不做的话续传会把优先级丢成 undefined。
  */
 export function loadJob(): ImportJob | null {
   try {
     const raw = sessionStorage.getItem(JOB_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as ImportJob;
+    const parsed = JSON.parse(raw) as ImportJob & { wordPriority?: unknown };
     if (!parsed || !Array.isArray(parsed.chunks)) return null;
-    if (typeof parsed.wordPriority !== 'number') {
-      parsed.wordPriority = normalizeWordPriority(parsed.wordPriority ?? WORD_PRIORITY_DEFAULT);
+    if (typeof parsed.priority !== 'number') {
+      const legacy = parsed.wordPriority;
+      parsed.priority = normalizeWordPriority(typeof legacy === 'number' ? legacy : WORD_PRIORITY_DEFAULT);
     }
+    delete parsed.wordPriority;
     return parsed;
   } catch (err) {
     console.warn('[importJob] 读取存档失败', err);

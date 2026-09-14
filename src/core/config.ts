@@ -213,6 +213,7 @@ export const DEFAULT_SETTINGS: Settings = {
     bgColor: '#ffffff',
     animation: true,
   },
+  // priorityDir 已废弃（来源优先级时代的遗留），保留只为兼容老备份；见 types.ts 的说明
   parse: { fieldSep: 'auto', senseSep: '；;／/|', priorityDir: 'desc' },
   memorize: { position: 'centerTop', offsetY: 0.3 },
   priority: { preset: 'balanced' satisfies PriorityPreset, customExpr: '' },

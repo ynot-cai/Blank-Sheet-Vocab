@@ -1,7 +1,24 @@
-import type { PriorityDir, Source, Word } from './types';
+/**
+ * 入库时的「同一个词已存在」处理。
+ *
+ * ★ 关于优先级（R1 之后收敛成**一套**，别再引入第二套）：
+ *   优先级只有一个，挂在词上（`Word.priority`，1~5）。
+ *   它决定两件事：
+ *     1. 背诵先抽谁（绝对优先）；
+ *     2. 重复录入时**要不要弹确认框**——库里那条的 priority 和本次不同才问
+ *        （见 `ui/pages/MergePage.ts` 的 collectPriorityConflicts）。
+ *
+ *   所以**义项的取舍不再由任何「来源优先级」决定**：
+ *   · 用户选「覆盖」→ 本次的义项与优先级都写进去；
+ *   · 用户选「保留」→ 库里那条一个字都不动，本次的义项留档到 rawSources，
+ *     用户在列表页可以手动采纳（`adoptRawSource`）。
+ *
+ *   这样「覆盖 / 保留」只有一个出口——那个确认框——行为可预测、可解释。
+ */
+import type { Word } from './types';
 import { normalizeEn } from './model';
 
-/** 冲突处理动作：新增 / 覆盖主义项 / 两者都留（新的进 rawSources） */
+/** 冲突处理动作：新增 / 覆盖已有词 / 保留已有词（本次义项进 rawSources 留档） */
 export type ConflictAction = 'insert' | 'replace' | 'keepBoth';
 
 /** 入库计划 */
@@ -13,60 +30,29 @@ export interface ImportPlan {
   report: string;
 }
 
-/** 来源优先级登记表（由调用方从 dao.sources 载入后写入） */
-let priorityRegistry: Record<string, number> = {};
-
 /**
- * 登记来源优先级，供 resolveConflict 查询。
- * @param sources 来源列表
- */
-export function setSourcePriorities(sources: Source[]): void {
-  const next: Record<string, number> = {};
-  for (const s of sources) next[s.id] = s.priority;
-  priorityRegistry = next;
-}
-
-/**
- * 取来源优先级，未登记过按 0 处理。
- * @param sourceId 来源 id
- */
-export function getSourcePriority(sourceId: string): number {
-  return priorityRegistry[sourceId] ?? 0;
-}
-
-/**
- * 按优先级方向判断 a 是否比 b 更优先。
- * @param a 优先级 a
- * @param b 优先级 b
- * @param dir desc = 数字越大越优先；asc = 数字越小越优先
- */
-export function isHigherPriority(a: number, b: number, dir: PriorityDir): boolean {
-  return dir === 'desc' ? a > b : a < b;
-}
-
-/**
- * 判定单个词入库时的冲突处理方式。
+ * 判定单个词入库时的处理方式。
+ *
  * - 库里没有该 en → insert
- * - 库里有：新来源优先级更高 → replace（旧义项塞进 rawSources）
- *            否则 → keepBoth（不动 senses，新的塞进 rawSources）
+ * - 库里有：
+ *   · `overwrite === true`（用户在那个单独的确认框里选了「覆盖」）→ replace，
+ *     旧义项塞进 rawSources 留档；
+ *   · 否则 → keepBoth（不动库里那条，本次义项塞进 rawSources）。
+ *
  * @param existing 库里已有的词（没有则传 null）
  * @param incoming 待入库的词
- * @param priorityDir 优先级方向
- * @param priorities 来源优先级表（默认用 setSourcePriorities 登记的那份）
+ * @param overwrite 用户是否明确要求覆盖这个已存在的词
  */
 export function resolveConflict(
   existing: Word | null,
   incoming: Word,
-  priorityDir: PriorityDir,
-  priorities: Record<string, number> = priorityRegistry,
+  overwrite = false,
 ): { action: ConflictAction; word: Word } {
   if (!existing) return { action: 'insert', word: incoming };
 
-  const oldP = priorities[existing.sourceId] ?? 0;
-  const newP = priorities[incoming.sourceId] ?? 0;
   const now = Date.now();
 
-  if (isHigherPriority(newP, oldP, priorityDir)) {
+  if (overwrite) {
     const mergedRaw = [
       ...existing.rawSources.filter((r) => r.sourceId !== existing.sourceId),
       { sourceId: existing.sourceId, senses: existing.senses },
@@ -77,6 +63,8 @@ export function resolveConflict(
       phonetic: incoming.phonetic || existing.phonetic,
       example: incoming.example || existing.example,
       sourceId: incoming.sourceId,
+      priority: incoming.priority,
+      // 用户选了覆盖：库里那条的旧义项留档，方便列表页回看/采纳
       rawSources: mergedRaw,
       updatedAt: now,
     };
@@ -99,15 +87,12 @@ export function resolveConflict(
 
 /**
  * 把一批待入库的词与库中已有词做冲突规划。
+ *
  * @param incoming 待入库的词
  * @param existing 库中已有词
- * @param priorityDir 优先级方向
+ * @param overwriteIds 用户在那个单独的确认框里选了「覆盖」的词 id（库里那条的 id）
  */
-export function planImport(
-  incoming: Word[],
-  existing: Word[],
-  priorityDir: PriorityDir,
-): ImportPlan {
+export function planImport(incoming: Word[], existing: Word[], overwriteIds: Set<string> = new Set()): ImportPlan {
   const byEn = new Map<string, Word>();
   for (const w of existing) byEn.set(normalizeEn(w.en).toLowerCase(), w);
 
@@ -122,7 +107,8 @@ export function planImport(
     const prevInBatch = batchSeen.get(key) ?? null;
     const inDb = byEn.get(key) ?? null;
     const base = prevInBatch ?? inDb;
-    const { action, word: resolved } = resolveConflict(base, word, priorityDir);
+    const overwrite = base !== null && overwriteIds.has(base.id);
+    const { action, word: resolved } = resolveConflict(base, word, overwrite);
     if (action === 'insert') {
       inserts.push(resolved);
       batchSeen.set(key, resolved);
@@ -147,8 +133,8 @@ export function planImport(
   const report =
     existingHit === 0
       ? `${inserts.length} 个新词将入库`
-      : `${existingHit} 个词已存在，其中 ${replaces.length} 个因来源优先级更高被覆盖，` +
-        `${keeps.length} 个保留原义项（可在列表页手动采纳）`;
+      : `${existingHit} 个词已存在，其中 ${replaces.length} 个按你的选择被覆盖，` +
+        `${keeps.length} 个保留原义项（本次的义项已留档，可在列表页手动采纳）`;
 
   return { inserts, replaces, keeps, report };
 }

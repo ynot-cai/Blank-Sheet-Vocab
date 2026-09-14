@@ -35,7 +35,6 @@ export interface ServerWord {
 export interface ServerSource {
   id: string;
   name: string;
-  priority: number;
   created_at: number;
   updated_at: number;
   deleted: number;
@@ -60,11 +59,10 @@ export interface WordPayload {
   deleted: 0 | 1;
 }
 
-/** 推送时的来源载荷 */
+/** 推送时的来源载荷（来源没有优先级，优先级只有一套、挂在词上） */
 export interface SourcePayload {
   id: string;
   name: string;
-  priority: number;
   createdAt: number;
   updatedAt: number;
   deleted: 0 | 1;
@@ -144,13 +142,16 @@ export function toLocalWord(row: ServerWord): Word {
 
 /**
  * 服务器行 → 本地 Source。
+ *
+ * 说明：服务器表里还留着老的 `priority` 列（历史遗留的「来源优先级」），
+ * 这里**刻意不读它**——来源已经没有优先级了，读了也没人用，
+ * 反而会让人误以为它还有意义。留一列不用的数据比读出来误导人更安全。
  * @param row 服务器返回的一行
  */
 export function toLocalSource(row: ServerSource): Source {
   return {
     id: String(row.id),
     name: String(row.name ?? ''),
-    priority: Number(row.priority ?? 0),
     createdAt: Number(row.created_at ?? 0),
     updatedAt: Number(row.updated_at ?? 0),
     deleted: Number(row.deleted ?? 0) === 1 ? 1 : 0,
@@ -188,7 +189,6 @@ export function toSourcePayload(source: Source): SourcePayload {
   return {
     id: source.id,
     name: source.name,
-    priority: source.priority,
     createdAt: source.createdAt,
     updatedAt: source.updatedAt ?? source.createdAt,
     deleted: source.deleted === 1 ? 1 : 0,

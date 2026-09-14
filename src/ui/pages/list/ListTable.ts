@@ -86,10 +86,7 @@ export function renderListTable(
   failCap: number,
   selectState: { selectedCount: number; matchedCount: number },
 ): HTMLElement {
-  const sourceName = (id: string): { name: string; priority: number } => {
-    const hit = sources.find((s) => s.id === id);
-    return { name: hit?.name ?? '（未知来源）', priority: hit?.priority ?? 0 };
-  };
+  const sourceName = (id: string): string => sources.find((s) => s.id === id)?.name ?? '（未知来源）';
 
   const table = h('table', { class: 'table list-table' });
   const headCheck = h('input', { type: 'checkbox', title: '全选/取消整个筛选结果（跨页）' });
@@ -162,9 +159,8 @@ export function renderListTable(
     }
     tr.appendChild(senseCell);
 
-    // 来源
-    const src = sourceName(word.sourceId);
-    tr.appendChild(h('td', { class: 'sub' }, h('div', { text: src.name }), h('div', { class: 'sub', text: `来源优先级 ${src.priority}` })));
+    // 来源（只是「这批词从哪来」的分组标签，没有优先级）
+    tr.appendChild(h('td', { class: 'sub', text: sourceName(word.sourceId) }));
 
     // ★ 词级优先级：徽章 + 行内下拉（改完立即生效并同步）
     tr.appendChild(h('td', { class: 'prio-cell' }, renderPriorityBadge(wordPriorityOf(word)), renderPrioritySelect(word, handlers.onPriority)));

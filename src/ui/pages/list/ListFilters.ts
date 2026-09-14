@@ -93,14 +93,14 @@ export function renderListFilters(opts: ListFiltersOptions): HTMLElement {
   statusBox.appendChild(statusRow);
   wrap.appendChild(statusBox);
 
-  // 来源
+  // 来源（来源没有优先级了——优先级只有一套、挂在词上）
   wrap.appendChild(
     h(
       'div',
       { class: 'filter-item' },
       h('span', { class: 'filter-label', text: '来源' }),
       select(
-        [{ value: '', label: '全部来源' }, ...opts.sources.map((s) => ({ value: s.id, label: `${s.name}（优先级 ${s.priority}）` }))],
+        [{ value: '', label: '全部来源' }, ...opts.sources.map((s) => ({ value: s.id, label: s.name }))],
         state.sourceId,
         (v) => opts.onChange({ sourceId: v }),
       ),

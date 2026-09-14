@@ -10,23 +10,34 @@ export type WordStatus = 'unlearned' | 'learning' | 'learned' | 'chopped';
 /** 复习优先度预设：遗忘曲线型 / 未通过优先型 / 均衡型（自定义表达式通过 customExpr 表达） */
 export type PriorityPreset = 'forgetting' | 'failFirst' | 'balanced';
 
-/** 来源优先级方向：desc = 数字越大越优先；asc = 数字越小越优先 */
+/**
+ * 来源优先级的排序方向。
+ *
+ * ⚠️ **已废弃**：早期版本里来源有自己的优先级，用这个字段决定「数字大的优先还是小的优先」。
+ * 现在优先级只有一套、挂在词上（`Word.priority`，固定 5 最高），
+ * 「同一个词重复录入要不要覆盖」由那个单独的确认框决定，不再有方向概念。
+ *
+ * 类型与设置项都**保留**只是为了两件事：老备份文件能继续被解析、设置结构不用改。
+ * 新代码不许再读它。
+ */
 export type PriorityDir = 'desc' | 'asc';
 
 /**
- * ★ 词级优先级（R1 阶段新建）——**和「来源优先级」是两回事**，别混：
- *   · 来源优先级（`Source.priority`）：决定「同一个词在别的来源里已存在时，谁的义项被保留」，
- *     只在**入库那一刻**起作用；
- *   · 词级优先级（`Word.priority`，就是下面这一套）：决定「背诵环节先抽谁」，
- *     是**绝对优先**——5 的词全部抽完才开始抽 4 的，不是概率高。
+ * ★ 优先级（**只有这一个概念**）。
  *
- * 取值范围 1~5，5 为最高，默认 3（老数据迁移后也是 3）。
+ *   · 值 1~5，5 为最高，默认 3；
+ *   · 它决定**背诵先抽谁**——高优先级是**绝对优先**：5 的词全部抽完才开始抽 4 的；
+ *   · 也是**唯一**的优先级：不存在第二套「来源优先级」。
+ *     重复录入同一个词时要不要覆盖，由那条**单独的确认框**决定
+ *     （它拿「库里那条的 priority」和「本次的 priority」比，不同才问）。
+ *
+ * 落在数据上就是 `Word.priority`，一个字段。
  */
 export const WORD_PRIORITY_MIN = 1;
 export const WORD_PRIORITY_MAX = 5;
 export const WORD_PRIORITY_DEFAULT = 3;
 
-/** 合法的词级优先级（1~5） */
+/** 合法的优先级（1~5） */
 export type WordPriority = 1 | 2 | 3 | 4 | 5;
 
 /** 优先级选项（录入页单选框、列表页筛选/编辑下拉共用同一份，避免各处写死） */
@@ -75,11 +86,9 @@ export interface Word {
   attrs: Attrs;
   status: WordStatus;
   /**
-   * ★ 词级优先级（R1）：1~5，5 为最高，默认 3。
+   * ★ 优先级（**唯一的那一个**）：1~5，5 为最高，默认 3。
    *
-   * 与 `Source.priority` **完全不同**的东西（对比见文件上方 `WORD_PRIORITY_MIN` 的注释）：
-   * 这里决定「背诵环节先抽谁」，且是**绝对优先**（高优先级没抽完不会抽低的）。
-   *
+   * 决定背诵先抽谁（绝对优先），也是重复录入时确认框用来判断「要不要问」的字段。
    * 兼容性：老数据没有这个字段，读的时候一律用 `wordPriorityOf()` 兜底成 3，
    * 所以任何地方都**不要**直接比 `w.priority`（可能是 undefined）。
    */
@@ -96,11 +105,19 @@ export interface Word {
   deleted?: 0 | 1;
 }
 
-/** 词库来源 */
+/**
+ * 词库来源。
+ *
+ * ★ 来源**没有**优先级：它是「这批词是从哪来的」的分组标签（四级 / 六级 / 自己粘的…），
+ *   供列表页筛选、以及「同一个词在别的来源里已存在时把旧义项留档（rawSources）」用。
+ *   优先级只有一套，挂在词上（见 `Word.priority`）。
+ *
+ * 兼容性：老数据里可能有 `priority` 字段（那是历史遗留的「来源优先级」，已废弃）
+ * 或者完全没有这个字段。两边都不会被读取，也不需要迁移。
+ */
 export interface Source {
   id: string;
   name: string;
-  priority: number; // 数字越大越优先（方向可在设置里反转）
   createdAt: number;
   updatedAt?: number; // 云同步用的版本号，老数据缺省时退回 createdAt
   deleted?: 0 | 1; // 软删除标记（含义同 Word.deleted）
@@ -149,6 +166,7 @@ export interface DisplaySettings {
 export interface ParseSettings {
   fieldSep: string; // 'auto' 或具体分隔符
   senseSep: string; // 义项分隔符集合，如 '；;／/|'
+  /** ⚠️ 已废弃（来源优先级时代的遗留），保留只为兼容老备份；新代码不许读它 */
   priorityDir: PriorityDir;
 }
 

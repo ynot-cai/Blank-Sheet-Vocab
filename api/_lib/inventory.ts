@@ -28,11 +28,16 @@ export interface WordRow {
   deleted: number;
 }
 
-/** 来源行（sources 表） */
+/**
+ * 服务器上的一条来源（sources 表）。
+ *
+ * ⚠️ 表里还留着一个老的 `priority` 列（历史遗留的「来源优先级」）。
+ * 它**已经废弃**：优先级只有一套、挂在词上（words.priority）。
+ * 这里不声明、不读、不写它——列留着不影响任何行为，读出来反而误导。
+ */
 export interface SourceRow {
   id: string;
   name: string;
-  priority: number;
   created_at: number;
   updated_at: number;
   deleted: number;
@@ -60,11 +65,10 @@ export interface WordInput {
   deleted: number;
 }
 
-/** 待写入的一条来源（已校验、已归一化） */
+/** 待写入的一条来源（已校验、已归一化；来源没有优先级） */
 export interface SourceInput {
   id: string;
   name: string;
-  priority: number;
   createdAt: number;
   updatedAt: number;
   deleted: number;
@@ -115,8 +119,14 @@ const WORD_COLUMNS = [
   'deleted',
 ] as const;
 
-/** sources 表的列 */
-const SOURCE_COLUMNS = ['id', 'space_key', 'name', 'priority', 'created_at', 'updated_at', 'deleted'] as const;
+/**
+ * sources 表的列。
+ *
+ * ⚠️ 表里还留着老的 `priority` 列，但**这里刻意不写它**：
+ * 那个列已经废弃（优先级只有一套、挂在词上），而它是 `NOT NULL` 的——
+ * 为了让新插入的行也不报错，db.ts 里的建表语句给了它 `DEFAULT 0`（见 SCHEMA_STATEMENTS）。
+ */
+const SOURCE_COLUMNS = ['id', 'space_key', 'name', 'created_at', 'updated_at', 'deleted'] as const;
 
 /**
  * 生成 `INSERT ... ON CONFLICT DO UPDATE SET ...` 语句。
@@ -174,7 +184,7 @@ function wordArgs(spaceKey: string, w: WordInput): InValue[] {
  * @param s 来源输入
  */
 function sourceArgs(spaceKey: string, s: SourceInput): InValue[] {
-  return [s.id, spaceKey, s.name, s.priority, s.createdAt, s.updatedAt, s.deleted];
+  return [s.id, spaceKey, s.name, s.createdAt, s.updatedAt, s.deleted];
 }
 
 /**
@@ -201,7 +211,7 @@ export async function selectWordsSince(spaceKey: string, since: number, limit: n
  */
 export async function selectSourcesSince(spaceKey: string, since: number, limit: number): Promise<SourceRow[]> {
   const rs = await getDB().execute({
-    sql: `SELECT id, name, priority, created_at, updated_at, deleted
+    sql: `SELECT id, name, created_at, updated_at, deleted
           FROM sources WHERE space_key = ? AND updated_at > ?
           ORDER BY updated_at ASC, id ASC LIMIT ?`,
     args: [spaceKey, since, limit],

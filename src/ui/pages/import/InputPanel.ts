@@ -14,9 +14,8 @@ import { renderReparsePanel } from './ReparsePanel';
 export interface InputState {
   sourceId: string | null;
   sourceName: string;
-  /** 来源优先级（决定义项归谁，与下一条完全无关） */
-  sourcePriority: number;
-  /** ★ 词级优先级（R1）：这一批词入库时写入每个词，决定背诵先抽谁 */
+  /** ★ 优先级（**唯一的那一个**）：1~5，5 最高。写进每个词的 `word.priority`，
+   *  决定背诵先抽谁（绝对优先），也是重复录入时确认框用来判断「要不要问」的字段。 */
   priority: number;
   mode: 'ai' | 'rule';
   batchSize: number;
@@ -31,6 +30,21 @@ export interface InputState {
 export interface InputPanel {
   el: HTMLElement;
   read: () => InputState;
+  /**
+   * 把文本写进编辑框（预设词库点一下就把词表粘进来，用的就是这个）。
+   *
+   * ★ 刻意做成「写进同一个 textarea」而不是另建一个框：
+   *   编辑框是**唯一事实来源**——预设粘进来的内容和用户手打的完全等价，
+   *   之后走的是同一条「开始解析 → AI 过一遍 → 合并确认 → 入库」的路。
+   * @param text 文本
+   */
+  setText: (text: string) => void;
+  /** 切到「粘贴文本」页签（预设粘贴后要让人看见） */
+  showPasteTab: () => void;
+  /** 设置来源名（预设带自己的来源名） */
+  setSourceName: (name: string) => void;
+  /** 设置优先级（预设档位自带一个合理默认值） */
+  setPriority: (priority: number) => void;
 }
 
 /** 单个文件大小上限 */
@@ -49,7 +63,7 @@ interface FileRowState {
 /**
  * 渲染录入页的第零区（预设词库）、第一区（来源+优先级）、第二区（输入方式）、第三区（解析设置）。
  *
- * @param opts.onPreset 点了某个预设档位的回调（由录入页负责加载与跳转）
+ * @param opts.onPreset 点了某个预设档位的回调（由录入页负责把词表粘进编辑框）
  * @param opts.isPresetBusy 是否有预设正在加载
  */
 export function renderInputPanel(opts: {
@@ -59,8 +73,7 @@ export function renderInputPanel(opts: {
   const settings = currentSettings();
   const state: InputState = {
     sourceId: null,
-    sourceName: '四级词汇',
-    sourcePriority: 1,
+    sourceName: '',
     priority: WORD_PRIORITY_DEFAULT,
     mode: 'ai',
     batchSize: 50,
@@ -75,7 +88,7 @@ export function renderInputPanel(opts: {
   // —— 第零区：预设词库 ——
   wrap.appendChild(renderPresetPanel(opts.onPreset, opts.isPresetBusy));
 
-  // —— 第一区：来源设置 ——
+  // —— 第一区：来源与优先级 ——
   const sourceBox = h('div', { class: 'card' });
   sourceBox.appendChild(h('h3', { class: 'card-title', text: '1. 来源与优先级' }));
   const nameInput = textInput(
@@ -86,30 +99,20 @@ export function renderInputPanel(opts: {
     },
     { placeholder: '如：四级词汇 / 考研核心词' },
   );
-  const sourcePriorityInput = numberInput(
-    state.sourcePriority,
-    (v) => {
-      state.sourcePriority = v;
-    },
-    { min: 0, max: 999 },
-  );
-  sourceBox.appendChild(
-    h('label', { class: 'field' }, h('span', { class: 'field-label', text: '来源名称' }), nameInput),
-  );
   sourceBox.appendChild(
     h(
       'label',
       { class: 'field' },
-      h('span', { class: 'field-label', text: '来源优先级' }),
-      sourcePriorityInput,
+      h('span', { class: 'field-label', text: '来源名称' }),
+      nameInput,
       h('span', {
         class: 'field-hint',
-        text: `数字越大越优先（当前方向：${settings.parse.priorityDir === 'desc' ? '越大越优先' : '越小越优先'}，可在设置页改）。它只决定「同一个词在别的来源里已存在时，谁的义项被保留」，与下面的词优先级无关。`,
+        text: '来源只是「这批词从哪来」的分组标签（列表页可按它筛选）。它没有优先级——优先级只有下面这一个。',
       }),
     ),
   );
 
-  // ★ 词级优先级（R1）：这一批词写入 word.priority，决定背诵先抽谁
+  // ★ 优先级（**唯一的那一个**）
   const prioritySelect: PrioritySelectHandle = renderPrioritySelect(state.priority, (v) => {
     state.priority = v;
   });
@@ -127,13 +130,11 @@ export function renderInputPanel(opts: {
     for (const s of list) {
       existingBox.appendChild(
         button(
-          `${s.name}（来源优先级 ${s.priority}）`,
+          s.name,
           () => {
             state.sourceId = s.id;
             state.sourceName = s.name;
-            state.sourcePriority = s.priority;
             nameInput.value = s.name;
-            sourcePriorityInput.value = String(s.priority);
             toastWarn(`已选择已有来源：${s.name}`);
           },
           { variant: 'ghost' },
@@ -432,6 +433,19 @@ export function renderInputPanel(opts: {
   return {
     el: wrap,
     read: () => ({ ...state, fileWarnings: [...state.fileWarnings] }),
+    // ★ 预设词库点一下就调这两个：把词表**粘进同一个编辑框**、切到粘贴页签让人看见。
+    //   刻意不另建输入框——编辑框是唯一事实来源，粘进来的内容和手打的完全等价。
+    setText: (text: string) => applyText(text),
+    showPasteTab: () => switchTab('paste'),
+    setSourceName: (name: string) => {
+      state.sourceName = name;
+      state.sourceId = null;
+      nameInput.value = name;
+    },
+    setPriority: (priority: number) => {
+      state.priority = priority;
+      prioritySelect.set(priority);
+    },
   };
 }
 

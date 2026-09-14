@@ -49,7 +49,11 @@ const SCHEMA_STATEMENTS: string[] = [
     id TEXT NOT NULL,
     space_key TEXT NOT NULL,
     name TEXT NOT NULL,
-    priority INTEGER NOT NULL,
+    -- ⚠️ 这一列是**历史遗留**（早期版本的「来源优先级」），已经废弃：
+    --    优先级只有一套、挂在词上（见 words.priority）。
+    --    保留它的唯一原因是老库里有这一列且是 NOT NULL——
+    --    现在的插入语句不再写它，所以必须给 DEFAULT，否则新来源会插不进去。
+    priority INTEGER DEFAULT 0,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     deleted INTEGER DEFAULT 0,
@@ -59,6 +63,49 @@ const SCHEMA_STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS idx_words_updated ON words(space_key, updated_at)`,
   `CREATE INDEX IF NOT EXISTS idx_sources_space ON sources(space_key, updated_at)`,
 ];
+
+/**
+ * 查一张表的某一列有没有默认值（SQLite 的 `PRAGMA table_info` 第 5 列 `dflt_value`）。
+ * @param table 表名
+ * @param column 列名
+ */
+async function columnHasDefault(table: string, column: string): Promise<boolean> {
+  const rs = await getDB().execute(`PRAGMA table_info(${table})`);
+  for (const row of rs.rows) {
+    const plain = { ...(row as { name?: unknown; dflt_value?: unknown }) };
+    if (plain.name !== column) continue;
+    return plain.dflt_value !== null && plain.dflt_value !== undefined && String(plain.dflt_value) !== '';
+  }
+  return false;
+}
+
+/**
+ * 给老的 `sources.priority` 补上默认值（幂等）。
+ *
+ * 背景：`priority` 这一列在早期版本里是「来源优先级」，**已经废弃**——
+ * 优先级收敛成一套、挂在词上（`words.priority`）。现在的插入语句不再写这一列。
+ *
+ * 但老库里那一列是 **`NOT NULL` 且没有默认值**，于是往老库插一个新来源会直接
+ * `NOT NULL constraint failed: sources.priority`——一条和优先级完全无关的报错，
+ * 排查起来很费劲。SQLite 又**改不了已有列的默认值**（`ALTER TABLE` 只支持 ADD COLUMN），
+ * 所以只能用「建新表 → 搬数据 → 换名」这一套。
+ *
+ * 注意新表结构与 `SCHEMA_STATEMENTS` 里的一致（`priority INTEGER DEFAULT 0`），
+ * 所以 `SELECT *` 能直接对齐列顺序。
+ */
+async function ensureSourcePriorityHasDefault(): Promise<void> {
+  if (await columnHasDefault('sources', 'priority')) return;
+  const db = getDB();
+  const backup = 'sources_pre_priority_default';
+  console.warn('[db] sources.priority 是老的无默认值结构，正在重建表补上默认值');
+  await db.execute(`DROP TABLE IF EXISTS ${backup}`);
+  await db.execute(`ALTER TABLE sources RENAME TO ${backup}`);
+  // 第 2 条建表语句就是 sources（见 SCHEMA_STATEMENTS）
+  await db.execute(SCHEMA_STATEMENTS[1] as string);
+  await db.execute(`INSERT OR REPLACE INTO sources SELECT * FROM ${backup}`);
+  await db.execute(`DROP TABLE ${backup}`);
+  console.info('[db] sources.priority 默认值补齐完成');
+}
 
 /**
  * 老库**补列**清单（幂等）。
@@ -179,6 +226,9 @@ export function initSchema(): Promise<void> {
       await ensureColumns();
       await rebuildCompositeKey('words');
       await rebuildCompositeKey('sources');
+      // 主键升级完成后 sources 的结构已经和 SCHEMA_STATEMENTS 一致，
+      // 但**升级前的那些库**（已经是复合主键、只是 priority 没默认值）也要补一遍
+      await ensureSourcePriorityHasDefault();
     })().catch((err: unknown) => {
       schemaPromise = null;
       throw err;

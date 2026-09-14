@@ -169,6 +169,12 @@ async function pasteAndParse(session, text, priority, mode = 'rule') {
     const ta = document.querySelector('textarea');
     ta.value = ${JSON.stringify(text)};
     ta.dispatchEvent(new Event('input', { bubbles: true }));
+    // 来源名：R1 之后它不再有默认值（来源只是分组标签），不填的话「开始解析」会被拦下
+    const nameInput = document.querySelector('input[type=text]');
+    if (nameInput && nameInput.value.trim() === '') {
+      nameInput.value = 'R1测试来源';
+      nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+    }
     const radios = [...document.querySelectorAll('input[type=radio]')];
     const wanted = radios.find((r) => r.name === 'parsemode' && r.parentElement.textContent.includes(${JSON.stringify(mode === 'rule' ? '规则解析' : 'AI 智能解析')}));
     if (wanted) { wanted.checked = true; wanted.dispatchEvent(new Event('change', { bubbles: true })); }
@@ -523,14 +529,14 @@ try {
         accept: document.querySelector('input[type=file]')?.getAttribute('accept') ?? '',
         multiple: document.querySelector('input[type=file]')?.multiple === true,
         priorityLabels: [...document.querySelectorAll('.seg-item')].map((e) => e.textContent.trim()),
-        hasPriorityHint: (document.body.textContent || '').includes('会先被「背诵」抽到'),
+        hasPriorityHint: (document.body.textContent || '').includes('先被「背诵」抽到'),
       }))()`);
       check('有「上传文件」页签', ui.hasUploadTab);
       check('有拖拽上传区', ui.hasDropZone);
       check('accept 列出了 docx 与 pdf', ui.accept.includes('.docx') && ui.accept.includes('.pdf'), ui.accept);
       check('文件输入支持多选', ui.multiple);
       check('优先级是 5 档单选（1~5）', ui.priorityLabels.length === 5, ui.priorityLabels.join(' | '));
-      check('优先级旁有「会先被背诵抽到」的说明', ui.hasPriorityHint);
+      check('优先级旁有「先被背诵抽到」的说明', ui.hasPriorityHint);
     } finally {
       await s.close();
     }
@@ -693,10 +699,10 @@ try {
         return label;
       })()`);
       check('单条询问有「保留 5」按钮', keepLabel === '保留 5', String(keepLabel));
-      // 「保留」= 这个词本次不入库。全部词都被保留时不该悄悄跳走（那会让用户以为写进去了），
-      // 而是留在合并页并明确告诉他「没有任何改动」。
-      const stayed = await waitFor(s, `document.body.textContent.includes('没有任何改动')`, 120);
-      check('全部保留时留在合并页并明确提示「没有任何改动」', stayed, await s.evaluate('location.hash'));
+      // 「保留」= 库里那条一个字都不动（本次的义项只留档到 rawSources）。
+      // 所以入库流程照常走完、跳到列表页，而 apple 的 priority 仍然是 5。
+      const keptDone = await waitFor(s, `location.hash === '#/list'`, 120);
+      check('选「保留」后照常完成入库并跳到列表页', keptDone, await s.evaluate('location.hash'));
       const afterKeep = await readWords(s, '^apple$');
       check('选「保留」→ apple 的 priority 仍然是 5', afterKeep.length === 1 && afterKeep[0].priority === 5, JSON.stringify(afterKeep));
       check('选「保留」不会建出重复的词', afterKeep.length === 1, JSON.stringify(afterKeep));
@@ -707,8 +713,8 @@ try {
       await pasteAndParse(s, 'apple\tn. 苹果（第三次）', 2);
       await waitFor(s, `location.hash === '#/merge'`, 120);
       await confirmImport(s);
-      const noModal = await waitFor(s, `document.body.textContent.includes('没有任何改动')`, 120);
-      check('同一对优先级冲突在本次会话内不再重复弹窗（直接沿用上次选择）', noModal);
+      const noModal = await waitFor(s, `location.hash === '#/list'`, 120);
+      check('同一对优先级冲突在本次会话内不再重复弹窗（直接沿用上次选择）', noModal, await s.evaluate('location.hash'));
       const stillFive = await readWords(s, '^apple$');
       check('沿用「保留」后 apple 依然是 5', stillFive[0]?.priority === 5, JSON.stringify(stillFive));
 

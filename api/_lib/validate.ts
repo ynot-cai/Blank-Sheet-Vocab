@@ -133,6 +133,8 @@ export function coerceWord(raw: unknown, now: number = Date.now()): WordInput | 
 
 /**
  * 归一化一条来源；结构不合法返回 null。
+ * 说明：来源**没有优先级**（优先级只有一套、挂在词上），所以这里只处理名字与时间戳。
+ * 老的 `priority` 字段即使传上来也**直接忽略**——写了也没人读。
  * @param raw 原始对象
  * @param now 兜底用的时间戳
  */
@@ -145,7 +147,6 @@ export function coerceSource(raw: unknown, now: number = Date.now()): SourceInpu
   return {
     id,
     name,
-    priority: Math.trunc(toNumber(raw.priority, 0)),
     createdAt,
     updatedAt: Math.trunc(toNumber(raw.updatedAt, 0)) || createdAt,
     deleted: toFlag(raw.deleted),

@@ -76,7 +76,7 @@ export function renderPrioritySelect(
     seg,
     h('span', {
       class: 'field-hint',
-      text: '优先级高的词会先被「背诵」抽到（5 → 4 → 3 → 2 → 1，是绝对优先，不是概率高）',
+      text: '这一批词入库时都记成这个优先级。高优先级先被「背诵」抽到（5 → 4 → 3 → 2 → 1，绝对优先，不是概率高）',
     }),
   );
 

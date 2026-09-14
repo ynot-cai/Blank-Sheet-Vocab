@@ -60,32 +60,25 @@ export async function removePermanently(id: string): Promise<void> {
 /**
  * 新建来源。
  * @param name 来源名称
- * @param priority 优先级数字
  */
-export async function create(name: string, priority: number): Promise<Source> {
-  const source: Source = { id: uid(), name: name.trim(), priority, createdAt: Date.now() };
+export async function create(name: string): Promise<Source> {
+  const source: Source = { id: uid(), name: name.trim(), createdAt: Date.now() };
   await upsert(source);
   return source;
 }
 
 /**
- * 按名称找来源（存在则更新优先级并返回，不存在则新建）。
+ * 按名称找来源（存在就返回，不存在就新建）。
+ *
+ * 说明：来源不再有优先级（优先级只有一套、挂在词上），所以这里只按名字判重。
  * @param name 来源名称
- * @param priority 优先级数字
  */
-export async function ensureByName(name: string, priority: number): Promise<Source> {
+export async function ensureByName(name: string): Promise<Source> {
   const key = name.trim().toLowerCase();
   const all = await list();
   const hit = all.find((s) => s.name.trim().toLowerCase() === key);
-  if (hit) {
-    if (hit.priority !== priority) {
-      const next: Source = { ...hit, priority, updatedAt: Date.now() };
-      await putRaw(next);
-      return next;
-    }
-    return hit;
-  }
-  return create(name, priority);
+  if (hit) return hit;
+  return create(name);
 }
 
 /**

@@ -134,3 +134,30 @@ export async function loadPreset(tier: PresetTier): Promise<LoadedPreset> {
 export function clearPresetCache(): void {
   cache.clear();
 }
+
+/**
+ * 把一档预设词库转成**能粘进文本栏的纯文本**（一行一个词）。
+ *
+ * 格式与用户手打的一致：`英文 <Tab> 义项1<分隔符>义项2…`
+ *   · 用 **Tab** 分隔英文与义项：解析器的 auto 探测里 Tab 优先级最高，
+ *     不会因为英文短语里带空格（give up）而被切错；
+ *   · 义项之间用**全角分号**（`；`）——它是项目默认的义项分隔符
+ *     （`settings.parse.senseSep`），而且这个词表里本来就大量使用，不会引入新歧义。
+ *
+ * ★ 为什么不在这里就把义项整理好：预设 JSON 里的义项是原始词表直接生成的
+ *   （一个词常常只有一条、塞着「v. 获取 n. 接近，入口」这种整串中文），
+ *   哪几个算同一个义项、哪个当代表词、哪些是近义词——**这活是 AI 干的**
+ *   （见《资料整理规范》core/senseRules.ts）。所以这里只负责「排版成文本」。
+ *
+ * @param words 预设词条
+ * @param senseSep 义项分隔符（不传就用全角分号）
+ */
+export function presetToText(words: ParsedWord[], senseSep = '；'): string {
+  const sep = senseSep.trim() === '' ? '；' : senseSep.trim()[0] ?? '；';
+  return words
+    .map((w) => {
+      const senses = w.senses.map((s) => s.text.trim()).filter((s) => s !== '');
+      return senses.length === 0 ? w.en : `${w.en}\t${senses.join(sep)}`;
+    })
+    .join('\n');
+}

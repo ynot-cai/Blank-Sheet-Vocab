@@ -6,14 +6,13 @@ import { aiConfigFromSettings, normalizeEndpoint, splitIntoChunks } from '../../
 import type { ImportJob } from '../../services/importJob';
 import { clearJob, jobProgress, loadJob, saveJob } from '../../services/importJob';
 import { dedupeResults, runJob } from '../../services/parsePipeline';
-import { PresetLoadError, clearPresetCache, loadPreset } from '../../services/presetVocab';
+import { PresetLoadError, clearPresetCache, loadPreset, presetToText } from '../../services/presetVocab';
 import { button, h } from '../dom';
 import { confirmModal } from '../components/Modal';
 import { toastError, toastOk, toastWarn } from '../components/Toast';
 import { navigate } from '../router';
 import { renderInputPanel } from './import/InputPanel';
 import { renderJobPanel } from './import/JobPanel';
-import { confirmPresetImport } from './import/PresetConfirm';
 
 /**
  * 录入页：预设词库 + 来源设置 + 输入方式 + 解析设置 + 分批解析（含断点续传）。
@@ -59,14 +58,16 @@ export function renderImportPage(): HTMLElement {
   let running = false;
 
   /**
-   * 导入一整档预设词库。
+   * 点预设档位：把这一档的词表**粘贴到下面的文本栏**，并切到「粘贴文本」页签。
    *
-   * 这些词表的义项是现成的，所以**不经过 AI 解析**：
-   * 直接把词条填进 ImportJob.results，复用 jobPanel（看进度）和合并确认页（逐词确认）。
-   * 走的是和「粘贴文本→解析」完全相同的下游路径，只是跳过了「解析」这一步。
+   * ★ 刻意**不**弹确认框、也**不**直接入库（原来那套已经删掉了）。理由：
+   *   预设 JSON 里的义项是原始词表直接生成的（一个词往往只有一条、塞着
+   *   「v. 获取 n. 接近，入口」这种整串中文），必须让 AI 按《资料整理规范》
+   *   重新分类义项、挑代表词、把近义词逐个分开——而 AI 那一步在「开始解析」里。
+   *   绕过它就等于把一坨没整理的中文直接塞进词库。
    *
-   * 导入前先弹确认框（可改优先度）：优先级决定已有词的义项会不会被覆盖，
-   * 而事后改来源优先级**不会**补做合并，所以必须给用户一个导入前改的机会。
+   * 所以这里只做三件事：填文本、带出来源名、给个合理的默认优先级。
+   * 之后用户点「开始解析」→ 走的是和手打文本**完全同一条**链路。
    *
    * @param tier 选中的档位
    */
@@ -79,48 +80,20 @@ export function renderImportPage(): HTMLElement {
         toastError(`预设词库「${tier.label}」是空的，请重新生成产物（npm run presets）`);
         return;
       }
-
-      // 已存在的来源要先查出来：确认框里要显示「当前优先级」并作为输入框默认值
-      const existingList = await dao.sources.list();
-      const existing =
-        existingList.find((s) => s.name.trim().toLowerCase() === tier.sourceName.trim().toLowerCase()) ?? null;
-
-      const answer = await confirmPresetImport(tier, {
-        words: loaded.words.length,
-        senseCount: loaded.senseCount,
-        existing: existing ? { priority: existing.priority } : null,
-      });
-      if (!answer.confirmed) return;
-
-      const source = await dao.sources.ensureByName(tier.sourceName, answer.priority);
-
-      // chunks 在预设预览流程里**不会被读取**——合并页只用 results。
-      // 但 ImportJob 的类型要求它是数组，而且任务面板/续传横幅会显示「已完成 x/y 批」，
-      // 所以留一个已经完成的占位批次（写清楚来源），既满足类型也让人看得懂。
-      // 这里刻意**不**按词数切几百个批次：那是纯粹的内存浪费。
-      const chunks: string[][] = [[`预设词库：${tier.label}`]];
-
-      const next: ImportJob = {
-        id: uid(),
-        sourceId: source.id,
-        sourceName: source.name,
-        priority: source.priority,
-        // 预设词库也要能选优先级（提示词 2.4 节）：确认框里选的值写进这一批词
-        wordPriority: answer.wordPriority,
-        chunks,
-        doneFlags: chunks.map(() => true),
-        errors: chunks.map(() => null),
-        results: loaded.words,
-        useAi: false,
-        createdAt: Date.now(),
-      };
-      job = next;
-      saveJob(next);
+      const text = presetToText(loaded.words, currentSettings().parse.senseSep);
+      // 词表直接进**本来就有的那个**编辑框（不另建文本栏）
+      panel.setText(text);
+      panel.setSourceName(tier.sourceName);
+      // 优先级给该档位一个合理默认值（初中=1 … 雅思=5），用户仍可自己改
+      panel.setPriority(tier.priority);
+      panel.showPasteTab();
       clearPresetCache();
-      refreshBanner();
-      jobPanel.update(next, false);
-      toastOk(`已载入「${tier.sourceName}」${loaded.words.length} 词、${loaded.senseCount} 个义项，正在进入确认页`);
-      navigate('/merge');
+      toastOk(
+        `已把「${tier.label}」${loaded.words.length} 词（${loaded.senseCount} 个义项）填进文本栏。` +
+          '下一步点「开始解析」，让 AI 按整理规范把义项重新理一遍。',
+      );
+      // 把视线带到「开始解析」上（长词表会让人不知道下一步点哪）
+      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
     } catch (err) {
       if (err instanceof PresetLoadError) toastError(err.message);
       else toastError(err instanceof Error ? err.message : String(err));
@@ -199,17 +172,16 @@ export function renderImportPage(): HTMLElement {
     }
 
     const source = input.sourceId
-      ? (await dao.sources.getById(input.sourceId)) ?? (await dao.sources.ensureByName(input.sourceName, input.sourcePriority))
-      : await dao.sources.ensureByName(input.sourceName, input.sourcePriority);
+      ? (await dao.sources.getById(input.sourceId)) ?? (await dao.sources.ensureByName(input.sourceName))
+      : await dao.sources.ensureByName(input.sourceName);
 
     const chunks = splitIntoChunks(lines, input.batchSize);
     job = {
       id: uid(),
       sourceId: source.id,
       sourceName: source.name,
-      priority: source.priority,
-      // ★ R1：把录入页选的词级优先级记进任务，入库时写给这一批的每个词
-      wordPriority: input.priority,
+      // ★ 唯一的那个优先级：记进任务，入库时写给这一批的每个词
+      priority: input.priority,
       chunks,
       doneFlags: chunks.map(() => false),
       errors: chunks.map(() => null),

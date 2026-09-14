@@ -36,7 +36,7 @@ const tick = (ms = 30): Promise<void> => new Promise((r) => window.setTimeout(r,
  */
 export async function runDataSelfTest(): Promise<SelfTestResult[]> {
   const out: SelfTestResult[] = [];
-  const source = await dao.sources.ensureByName('__selftest__', 0);
+  const source = await dao.sources.ensureByName('__selftest__');
   const words = [
     createWord('selftest-alpha', [createSense('n. 测试甲', ['甲'])], source.id),
     createWord('selftest-beta', [createSense('n. 测试乙')], source.id),

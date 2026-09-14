@@ -1,5 +1,5 @@
 import { normalizeEn, normalizeWordPriority, validateWord, wordPriorityOf } from '../../core/model';
-import { planImport, setSourcePriorities } from '../../core/merge';
+import { planImport } from '../../core/merge';
 import { currentSettings } from './settings/ctx';
 import type { Word } from '../../core/types';
 import * as dao from '../../dao';
@@ -250,6 +250,9 @@ export function renderMergePage(): HTMLElement {
           const ok = await confirmModal('取消本次导入', '会丢弃这次解析出来的所有内容（词库不受影响）。确定吗？', '取消导入', true);
           if (!ok) return;
           clearJob();
+          // 放弃这一批了，把「本次会话问过的优先级冲突」也清掉——
+          // 下次重新走一遍时应该重新问，而不是沿用上一批的选择。
+          resetConflictMemory();
           navigate('/home');
         })();
       },
@@ -398,15 +401,13 @@ export function renderMergePage(): HTMLElement {
     busy = true;
     commitBtn.disabled = true;
     try {
-      const [existing, sources] = await Promise.all([dao.words.getAll(), dao.sources.list()]);
-      setSourcePriorities(sources);
-      const dir = currentSettings().parse.priorityDir;
+      const existing = await dao.words.getAll();
 
       const incoming: Word[] = [];
       const invalid: string[] = [];
       for (const draft of keep) {
-        // ★ R1：这一批词的词级优先级来自任务存档（录入页 / 预设确认框里选的）
-        const word = draftToWord(draft, job.sourceId, job.wordPriority);
+        // ★ 唯一的那个优先级来自任务存档（录入页 / 预设填文本后选的那个）
+        const word = draftToWord(draft, job.sourceId, job.priority);
         const errors = validateWord(word);
         if (errors.length > 0) {
           invalid.push(`${word.en || '（空）'}：${errors.join('，')}`);
@@ -419,76 +420,35 @@ export function renderMergePage(): HTMLElement {
       }
       if (incoming.length === 0) return;
 
-      // ── R1 第 2.5 节：优先级冲突询问 ──
-      // 判据：库里已有该词、且**优先级不同**。顺序固定为「先问、后合并」：
-      // 用户选了「保留」的词直接从本次入库名单里摘掉，这样
-      // planImport 根本看不到它，也就不可能改到它的义项或优先级。
+      // ── 重复录入的处理：**只由那一个确认框决定** ──
+      //   判据：库里已有该词、且**优先级不同** → 弹框问「覆盖 / 保留」。
+      //   优先级相同就不问，静默更新其他内容（义项等）。
       const conflicts = collectPriorityConflicts(incoming, existing);
-      const keptIds = new Set<string>();
+      const overwriteIds = new Set<string>();
       if (conflicts.length > 0) {
         const answer = await askPriorityConflicts(conflicts, { sourceName: job.sourceName });
         for (const c of conflicts) {
-          if (answer.decisions.get(c.wordId) === 'overwrite') continue;
-          keptIds.add(c.wordId);
+          if (answer.decisions.get(c.wordId) === 'overwrite') overwriteIds.add(c.wordId);
         }
         toastOk(`优先级冲突处理完成：覆盖 ${answer.overwrittenCount} 个、保留 ${answer.keptCount} 个`);
       }
       // 本次会话里之前已问过的（同一对话再次入库）也一并应用
       for (const [wordId, decision] of recalledDecisions(incoming, existing)) {
-        if (decision === 'keep') keptIds.add(wordId);
+        if (decision === 'overwrite') overwriteIds.add(wordId);
       }
 
-      // 「保留」= 这个词这次不入库（库里那条原样不动）。
-      // 保留原词是更安全的方向：这一批的义项往往是没整理过的（预设词表就是），
-      // 拿它去覆盖用户已经整理好的义项，比「优先级没改成功」严重得多。
-      const byEnExisting = new Map<string, string>();
-      for (const w of existing) {
-        if (w.deleted === 1) continue;
-        byEnExisting.set(normalizeEnKey(w.en), w.id);
-      }
-      const effective = incoming.filter((w) => {
-        const existingId = byEnExisting.get(normalizeEnKey(w.en));
-        return existingId === undefined || !keptIds.has(existingId);
-      });
-      const skippedByKeep = incoming.length - effective.length;
-
-      if (effective.length === 0) {
-        toastWarn('本次录入的词都和库里已有的词优先级冲突，且你选择了全部保留，所以没有任何改动。要覆盖请重新点「确认入库」并选择「覆盖」。');
-        return;
-      }
-
-      const plan = planImport(effective, existing, dir);
-
-      // ★ 用户选了「覆盖优先级」的词，必须**单独**把优先级写回去。
-      //
-      //   为什么不能只给 incoming 设上 priority 就完事：
-      //   `planImport` 的冲突分支由**来源**优先级决定，来源相同时它走 `keepBoth`，
-      //   而 keepBoth 的结果落在 `plan.keeps` 里——`keeps` 只是给用户看的报告，
-      //   **根本不在写库列表里**（写库只有 `inserts` + `replaces`）。
-      //   于是「我明明点了覆盖，优先级却没变」（实测就是这个现象）。
-      //
-      //   所以这里在 bulkUpsert 之后，用 dao 的批量改优先级把用户的选择落实。
-      //   它按 id 精确改 `word.priority`，不碰义项、状态、属性、来源——
-      //   义项是否被这次录入覆盖，仍然完全由来源优先级规则决定，语义不变。
-      const overwriteEntries: { id: string; priority: number }[] = [];
-      for (const w of effective) {
-        const existingId = byEnExisting.get(normalizeEnKey(w.en));
-        if (existingId !== undefined && !keptIds.has(existingId)) {
-          overwriteEntries.push({ id: existingId, priority: normalizeWordPriority(w.priority) });
-        }
-      }
-
+      // 交给 core/merge 做计划：overwriteIds 就是用户在确认框里的选择。
+      //   · 选了「覆盖」→ 本次的义项与优先级都写进去，旧义项留档到 rawSources；
+      //   · 没选（「保留」）→ 库里那条一个字都不动，本次义项留档到 rawSources。
+      const plan = planImport(incoming, existing, overwriteIds);
       const result = await dao.words.bulkUpsert([...plan.inserts, ...plan.replaces]);
-      if (overwriteEntries.length > 0) {
-        await dao.words.setWordPriorityByIdMany(overwriteEntries);
-      }
-      await dao.sources.upsert({ id: job.sourceId, name: job.sourceName, priority: job.priority, createdAt: Date.now() });
+      await dao.sources.upsert({ id: job.sourceId, name: job.sourceName, createdAt: Date.now() });
       clearJob();
-      resetConflictMemory();
-      toastOk(
-        `入库完成：新增 ${result.inserted} 个、更新 ${result.updated} 个。${plan.report}` +
-          (skippedByKeep > 0 ? ` 另有 ${skippedByKeep} 个词因优先级冲突选择了「保留」，未改动。` : ''),
-      );
+      // ★ 这里**刻意不清**「本次会话问过的冲突」（resetConflictMemory）。
+      //   用户要求的是「同一会话不再重复问」——清了的话，同一对话里再导入一次
+      //   同一批词就会把一模一样的框再弹一遍（实测就是这个现象）。
+      //   会话记忆只在「取消本次导入」时清（见上面的 onAbort）。
+      toastOk(`入库完成：新增 ${result.inserted} 个、更新 ${result.updated} 个。${plan.report}`);
       navigate('/list');
     } catch (err) {
       toastError(err instanceof Error ? err.message : String(err));

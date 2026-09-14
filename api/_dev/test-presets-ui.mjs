@@ -153,13 +153,14 @@ try {
   check('粘贴用的文本域在', sectionState.hasTextarea);
   check('「开始解析」按钮在', sectionState.hasStartBtn);
 
-  // —— [3] 真点一下按钮，走完整条链路 ——
-  // 这一步才是这个文件存在的理由：验证「点击 → 下载预设 → 建来源 → 进合并页」真的通。
-  // 前面的 [1][2] 只证明「文件在」和「按钮画出来了」，证明不了接线是对的。
-  console.log('\n[3] 点「考研」→ 确认框 → 走完整条导入链路');
+  // —— [3] 真点一下预设按钮，走完整条链路 ——
+  // 这一步才是这个文件存在的理由：验证「点击 → 下载预设 → 词表进文本栏 → 解析 → 入库」真的通。
+  // 注意（R3 改动）：点预设**不再弹确认框**，而是把词表直接填进文本栏。
+  //   这里用「规则解析（离线）」跑完整链路——预设的词表本身带义项，
+  //   规则解析能直接切词，不需要联网、不需要 AI 密钥，CI 里最稳。
+  console.log('\n[3] 点「考研」→ 词表进文本栏 → 解析 → 入库');
   const session = await openSession(CDP_PORT, `${ORIGIN}/#/import`);
   try {
-    // 找一个预设按钮并点它。用 textContent 匹配，避免依赖 DOM 结构。
     const clicked = await session.evaluate(`(() => {
       const btns = [...document.querySelectorAll('button')];
       const target = btns.find((b) => b.textContent.trim().startsWith('考研（'));
@@ -169,50 +170,44 @@ try {
     })()`);
     check('页面上找得到「考研」预设按钮并点到了', clicked.ok === true, JSON.stringify(clicked.buttons ?? clicked));
 
-    // —— [3a] 先弹确认框（不是直接导入），且里面有可改的优先度 ——
-    let modal = null;
-    for (let i = 0; i < 40; i += 1) {
-      await new Promise((r) => setTimeout(r, 200));
-      modal = await session.evaluate(`(() => {
-        const m = document.querySelector('.modal');
-        if (!m) return null;
-        return {
-          title: m.querySelector('.modal-title')?.textContent ?? '',
-          text: m.querySelector('.modal-body')?.textContent ?? '',
-          numbers: [...m.querySelectorAll('input[type=number]')].map((i) => ({ value: i.value, min: i.min, max: i.max })),
-          buttons: [...m.querySelectorAll('button')].map((b) => b.textContent.trim()),
-        };
-      })()`);
-      if (modal) break;
-    }
-    check('点预设后弹出了确认框', modal !== null);
-    check('确认框标题写着档位', (modal?.title ?? '').includes('考研'), modal?.title);
-    check('确认框里有可改的优先度输入框', (modal?.numbers ?? []).length === 1, JSON.stringify(modal?.numbers));
-    check('优先度默认是该档位默认值 4', modal?.numbers?.[0]?.value === '4', JSON.stringify(modal?.numbers?.[0]));
-    check('确认框写了词数', (modal?.text ?? '').includes('295 词'), (modal?.text ?? '').slice(0, 90));
-    check(
-      '确认框有「导入」和「取消」',
-      (modal?.buttons ?? []).includes('导入') && (modal?.buttons ?? []).includes('取消'),
-      JSON.stringify(modal?.buttons),
-    );
-    check('确认前没有跳走（被确认框拦住）', !(await session.evaluate('location.hash')).includes('/merge'));
+    // —— [3a] 词表进了**本来就有的那个**文本栏，没有弹窗 ——
+    await new Promise((r) => setTimeout(r, 2500));
+    const filled = await session.evaluate(`(() => {
+      const ta = document.querySelector('textarea');
+      const lines = (ta?.value ?? '').split('\\n').filter((l) => l.trim() !== '');
+      return {
+        hasModal: !!document.querySelector('.modal'),
+        textareas: document.querySelectorAll('textarea').length,
+        lines: lines.length,
+        first: lines[0] ?? '',
+        // 共享的那个 textarea 在「粘贴文本」页签里，所以直接看它是不是可见的
+        textareaVisible: (() => { const r = document.querySelector('textarea')?.getBoundingClientRect(); return !!r && r.width > 0 && r.height > 0; })(),
+        sourceName: document.querySelector('input[type=text]')?.value ?? '',
+        priorityChecked: [...document.querySelectorAll('.seg-item input[type=radio]')].filter((r) => r.checked).map((r) => r.value),
+      };
+    })()`);
+    check('点预设**不再弹任何确认框**', filled.hasModal === false, JSON.stringify(filled));
+    check('页面上仍然只有一个文本栏（没有新造一个）', filled.textareas === 1, `textareas=${filled.textareas}`);
+    check('词表被填进了那个文本栏（295 行）', filled.lines === 295, `lines=${filled.lines}`);
+    check('每行是「英文 + Tab + 义项」的格式', filled.first.includes('\t'), JSON.stringify(filled.first.slice(0, 60)));
+    check('自动切到了「粘贴文本」页签（文本栏可见）', filled.textareaVisible === true, JSON.stringify(filled));
+    check('来源名被带出来了（考研词汇）', filled.sourceName === '考研词汇', filled.sourceName);
+    check('优先级带出了该档位的默认值（考研 = 4）', filled.priorityChecked.join(',') === '4', JSON.stringify(filled.priorityChecked));
 
-    // —— [3b] 把优先度改成 7，再点导入 ——
-    const submitted = await session.evaluate(`(() => {
-      const m = document.querySelector('.modal');
-      if (!m) return { ok: false, why: '没有弹窗' };
-      const input = m.querySelector('input[type=number]');
-      input.value = '7';
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      const btn = [...m.querySelectorAll('button')].find((b) => b.textContent.trim() === '导入');
-      if (!btn) return { ok: false, why: '没有导入按钮' };
+    // —— [3b] 选「规则解析（离线）」并点「开始解析」 ——
+    const started = await session.evaluate(`(() => {
+      const radios = [...document.querySelectorAll('input[type=radio]')];
+      const rule = radios.find((r) => r.name === 'parsemode' && r.parentElement.textContent.includes('规则解析'));
+      if (rule) { rule.checked = true; rule.dispatchEvent(new Event('change', { bubbles: true })); }
+      const btn = [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === '开始解析');
+      if (!btn) return { ok: false, why: '没有开始解析按钮' };
       btn.click();
       return { ok: true };
     })()`);
-    check('能把优先度改成 7 并点「导入」', submitted.ok === true, JSON.stringify(submitted));
+    check('能切到规则解析并点「开始解析」', started.ok === true, JSON.stringify(started));
 
     let reachedMerge = false;
-    for (let i = 0; i < 40; i += 1) {
+    for (let i = 0; i < 120; i += 1) {
       await new Promise((r) => setTimeout(r, 250));
       const hash = await session.evaluate('window.location.hash');
       if (hash.includes('/merge')) {
@@ -220,22 +215,18 @@ try {
         break;
       }
     }
-    check('确认后跳到了合并确认页', reachedMerge);
+    check('解析完跳到了合并确认页', reachedMerge, await session.evaluate('window.location.hash'));
 
     if (reachedMerge) {
-      // 合并页必须真的把 295 个词渲染成卡片，并显示正确的统计
       const mergeState = await session.evaluate(`(() => ({
         hash: window.location.hash,
-        // 用 .merge-stat 精确定位统计行：页面上还有预设提示条等别的 .note
         stat: document.querySelector('.merge-stat')?.textContent ?? '',
         cards: document.querySelectorAll('details.merge-card').length,
         firstCards: [...document.querySelectorAll('details.merge-card summary')].slice(0, 3).map((s) => s.textContent.trim()),
         commitLabel: [...document.querySelectorAll('button')].map((b) => b.textContent.trim()).find((t) => t.startsWith('确认入库')) ?? '',
       }))()`);
-
       check('合并页统计里写着 295 个词', mergeState.stat.includes('295 个词'), mergeState.stat);
       check('合并页真的渲染出了卡片', mergeState.cards > 0, `cards=${mergeState.cards}`);
-      // 每张卡片是 details.merge-card，但有可能是筛选后的数量；只要等于总数即可
       check('卡片数与词数一致', mergeState.cards === 295, `cards=${mergeState.cards}`);
       check('卡片上显示的是词条英文', mergeState.firstCards.every((t) => /^[A-Za-z]/.test(t)), JSON.stringify(mergeState.firstCards));
       check('底部按钮显示「确认入库（295 词）」', mergeState.commitLabel.includes('295'), mergeState.commitLabel);
@@ -252,9 +243,8 @@ try {
       })()`);
       check('找得到并点到了「确认入库」', committed);
 
-      // 等入库完成（会跳转到列表页），然后直接开 IndexedDB 数一遍
       let stored = null;
-      for (let i = 0; i < 60; i += 1) {
+      for (let i = 0; i < 80; i += 1) {
         await new Promise((r) => setTimeout(r, 300));
         stored = await session.evaluate(`(async () => {
           const hash = window.location.hash;
@@ -274,24 +264,22 @@ try {
           return {
             hash,
             words: words.length,
-            sources: sources.map((s) => s.name + '/' + s.priority),
+            sources: sources.map((s) => s.name),
+            priorities: words.slice(0, 5).map((w) => w.priority),
             sample: words.slice(0, 3).map((w) => w.en + '|' + (w.senses?.[0]?.text ?? '')),
-            hashCount: words.filter((w) => w.uniqueHash !== undefined).length,
           };
         })()`);
         if (stored && stored.words === 295) break;
       }
 
       check('IndexedDB 里真的写进了 295 个词', stored?.words === 295, JSON.stringify(stored));
-      // ★ 关键：确认框里改的优先度必须真的落库。
-      //   只验「框里能输入」是不够的——输入框的值没被读走、或者被默认值覆盖，
-      //   界面看起来都完全正常。这里按实际存进去的优先级断言。
+      check('来源按名字建了出来（考研词汇）', (stored?.sources ?? []).includes('考研词汇'), JSON.stringify(stored?.sources));
       check(
-        '确认框里填的优先级 7 真的落到了来源上',
-        (stored?.sources ?? []).includes('考研词汇/7'),
-        `实际来源：${JSON.stringify(stored?.sources)}`,
+        '★ 文本栏旁边选的那个优先级真的落到了每个词上（4）',
+        (stored?.priorities ?? []).length > 0 && stored.priorities.every((p) => p === 4),
+        JSON.stringify(stored?.priorities),
       );
-      check('词条带着义项一起入库', (stored?.sample ?? []).every((s) => s.includes('|') && s.split('|')[1].length > 0), JSON.stringify(stored?.sample));
+      check('词条带着义项一起入库', (stored?.sample ?? []).every((x) => x.includes('|') && x.split('|')[1].length > 0), JSON.stringify(stored?.sample));
       check('入库后跳到了列表页', (stored?.hash ?? '').includes('/list'), stored?.hash);
 
       // —— [5] 列表页：批量编辑不设数量上限 + 清空全部单词按钮 ——
@@ -310,7 +298,6 @@ try {
       check('表头有全选框', listState.hasSelectAllHead);
       check('统计条显示总词数 295', listState.stats.includes('295'), listState.stats);
 
-      // 点表头全选框 → 应该选中**全部 295 个**（而不是当前页）
       await session.evaluate(`(() => {
         const box = document.querySelector('.list-table thead input[type=checkbox]');
         if (box) { box.checked = true; box.dispatchEvent(new Event('change', { bubbles: true })); }
@@ -326,7 +313,6 @@ try {
       check('表头全选选中了全部 295 个（跨页，不是只选当前页）', batchState.count.includes('295'), batchState.count);
       check('批量条出现了「批量设为未背」', batchState.buttons.includes('批量设为未背'), JSON.stringify(batchState.buttons));
 
-      // 真正跑一次批量操作，确认 295 个都被处理
       await session.evaluate(`(() => {
         const b = [...document.querySelectorAll('.batch-bar button')].find((x) => x.textContent.trim() === '批量设为未背');
         if (b) b.click();
@@ -342,7 +328,6 @@ try {
         return { total: words.length, unlearned: words.filter((w) => w.status === 'unlearned').length };
       })()`);
       check('批量操作作用到了全部 295 个词', afterBatch.unlearned === 295, JSON.stringify(afterBatch));
-
       // —— [6] 清空全部单词（破坏性操作，要验「防误触」和「真的清干净」） ——
       console.log('\n[6] 清空全部单词');
       await session.evaluate(`(() => {
@@ -405,13 +390,14 @@ try {
         const sources = await readAll('sources');
         return {
           words: words.length,
-          sources: sources.map((s) => s.name + '/' + s.priority),
+          sources: sources.map((s) => s.name),
           statText: document.querySelector('.stats-bar')?.textContent ?? '',
         };
       })()`);
       check('单词真的全清掉了', afterClear.words === 0, `words=${afterClear.words}`);
       // 来源要保留：优先级是用户特意设的，清词时一起清掉等于白设
-      check('来源保留下来了（含刚设的优先级 7）', afterClear.sources.includes('考研词汇/7'), JSON.stringify(afterClear.sources));
+      // 来源要保留：来源是分组标签，清词时一起清掉等于白建一遍
+      check('来源保留下来了（考研词汇）', (afterClear.sources ?? []).includes('考研词汇'), JSON.stringify(afterClear.sources));
       check('界面统计跟着归零', afterClear.statText.includes('0'), afterClear.statText.slice(0, 60));
     }
   } finally {
