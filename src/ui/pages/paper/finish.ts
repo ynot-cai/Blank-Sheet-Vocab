@@ -3,9 +3,14 @@ import { computePriority } from '../../../core/priority';
 import type { Session, Settings, Word } from '../../../core/types';
 
 /**
- * 中途退出：只写 session.wordIds（进度一律不保留）。
- * 说明：中途退出丢的是「本轮进度」（placements / shownIds / memorizeCount / failedIds / failDeltas
- * 都不写库），词库属性不变。
+ * 中途退出（「保存并退出」）：
+ * **把整份会话原样写库** —— 词单、每个词在白纸上的落点、已出现的词、
+ * 每词已记忆的遍数、未通过情况、组号，全部保留，下次点「背诵」直接接着来。
+ *
+ * ⚠️ 这份注释以前写的是「进度一律不保留」，与代码事实相反（下面就是整份 saveSession）——
+ * 用户 2026-09 明确要求「连同单词位置、背诵进度、每个单词进行了多少遍记忆都保持」，
+ * 所以按**代码事实 + 用户口径**改正：中途退出**保留**全部进度。
+ * 只有「正常背完」（`finishLearn`）才会写回词库属性并清掉会话。
  * @param session 会话
  */
 export async function exitMidway(session: Session): Promise<void> {

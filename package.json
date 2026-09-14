@@ -44,6 +44,8 @@
     "test:r3": "node api/_dev/test-r3.mjs",
     "test:r4": "node --import ./api/_dev/loader-register.mjs api/_dev/test-r4.mjs",
     "test:r4-ui": "node api/_dev/test-r4-ui.mjs",
+    "test:paper": "node --import ./api/_dev/loader-register.mjs api/_dev/test-paper.mjs",
+    "test:paper-ui": "node api/_dev/test-paper-ui.mjs",
     "test:rename": "node api/_dev/test-rename.mjs",
     "test:sense-rules": "node --import ./api/_dev/loader-register.mjs api/_dev/test-sense-rules.mjs",
     "presets": "node scripts/build-presets.mjs",
@@ -51,7 +53,7 @@
     "test:live-ui": "node api/_dev/test-live-ui.mjs",
     "test:e2e": "node scripts/run-e2e.mjs",
     "icons": "node scripts/make-icons.mjs",
-    "test": "npm run rules:check && npm run typecheck && npm run build && npm run verify:api && npm run test:build && npm run test:rename && npm run test:sense-rules && npm run test:presets && npm run test:api && npm run test:sync && npm run test:r1 && npm run test:r2 && npm run test:r3 && npm run test:r4 && npm run test:kc && npm run test:kc-import && npm run test:kc-edit && npm run test:kc-session && npm run test:kc-exam && npm run test:kc-review && npm run test:kc-settings && npm run test:ai && npm run test:mobile && npm run test:pwa && npm run test:about"
+    "test": "npm run rules:check && npm run typecheck && npm run build && npm run verify:api && npm run test:build && npm run test:rename && npm run test:sense-rules && npm run test:presets && npm run test:api && npm run test:sync && npm run test:r1 && npm run test:r2 && npm run test:r3 && npm run test:r4 && npm run test:paper && npm run test:kc && npm run test:kc-import && npm run test:kc-edit && npm run test:kc-session && npm run test:kc-exam && npm run test:kc-review && npm run test:kc-settings && npm run test:ai && npm run test:mobile && npm run test:pwa && npm run test:about"
   },
   "devDependencies": {
     "@types/node": "^22.20.2",

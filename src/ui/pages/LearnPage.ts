@@ -11,9 +11,15 @@ import { createPaperFlow } from './paper/flow';
 /**
  * 背诵白纸页（阶段 05，新版交互）：
  * 不再弹「背多少个词」对话框——直接把全部未背词放进本轮词单（不设数量上限），
- * 右下角「再背一个」逐个上纸，每 memorizeEvery 个新词按钮自动变成「记忆」；
- * 「保存并退出」会把词单、每个词的位置和记忆次数存下来，续跑时原样恢复。
- * @param ctx 路由上下文（resume=1 时用上次保存的进度继续）
+ * 右下角「再背一个」逐个上纸，每 memorizeEvery 个新词按钮自动变成「记忆」。
+ *
+ * ★ 用户要求（2026-09）：「保存并退出」要**连同单词位置、背诵进度、
+ *   每个单词进行了多少遍记忆**一起保留，**下次点「背诵」直接开始**。
+ *   所以本页启动时**总是**先看有没有未完成的会话，有就直接续跑——
+ *   不看 `?resume=1`、也不弹「继续上次 / 重新开始」的询问框（那个框已从首页删掉）。
+ *   代价是「重开一轮」需要一个显式入口：背诵页右下角的「重新开始」（带二次确认）。
+ *
+ * @param ctx 路由上下文（保留形参：`?resume=1` 仍然兼容，但现在不带也会续跑）
  */
 export function renderLearnPage(ctx?: RouteContext): HTMLElement {
   const page = h('div', { class: 'page learn-page' });
@@ -88,18 +94,28 @@ export function renderLearnPage(ctx?: RouteContext): HTMLElement {
   };
 
   void (async () => {
-    // resume=1：用上次保存的词单 + 位置 + 记忆次数继续
-    if (ctx?.query.get('resume') === '1') {
-      const existing = await dao.session.loadSession();
-      if (existing && !existing.finished && existing.type === 'learn' && existing.wordIds.length > 0) {
-        await syncSettings();
-        const words = await dao.words.getAll();
-        const alive = existing.wordIds.filter((id) => words.some((w) => w.id === id && w.status !== 'chopped'));
+    await syncSettings();
+
+    // ★ 用户要求「下次点击直接开始」：**不需要 ?resume=1，也不弹任何询问框**。
+    //   只要库里有未完成的背诵会话，就把它的词单 / 每个词在白纸上的位置 /
+    //   每词已记忆的遍数原样恢复，直接接着背。
+    //
+    //   原来只有带 `?resume=1`（由首页弹「继续上次 / 重新开始」时补上）才续跑，
+    //   从顶栏「背诵」直接进来会走 startNew()，把保存的进度**悄悄丢掉**——
+    //   表现就是「明明点了保存并退出，下次进来还是从头开始」。
+    //   想主动重开一轮用背诵页上的「重新开始」（会先确认）。
+    const existing = await dao.session.loadSession();
+    if (existing && !existing.finished && existing.type === 'learn' && existing.wordIds.length > 0) {
+      const words = await dao.words.getAll();
+      const alive = existing.wordIds.filter((id) => words.some((w) => w.id === id && w.status !== 'chopped'));
+      if (alive.length > 0) {
         existing.wordIds = alive;
         await dao.session.saveSession(existing);
         mountFlow(existing);
         return;
       }
+      // 词单里的词全没了（被斩 / 被删）→ 旧会话没有意义了，清掉重开
+      await dao.session.clearSession();
     }
     await startNew();
   })();

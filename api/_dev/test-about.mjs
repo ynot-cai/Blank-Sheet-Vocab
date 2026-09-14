@@ -126,18 +126,23 @@ console.log('\n[6] 云同步连续失败 3 次后常驻提示');
 }
 
 // ─────────────────────────────────────────── 7. 收尾文档
-console.log('\n[7] 上线自检清单与文档');
+console.log('\n[7] 文档（按用户要求清理过，见下）');
 {
   const { existsSync } = await import('node:fs');
-  check('CHECKLIST.md 存在', existsSync('./CHECKLIST.md'));
-  const checklist = read('CHECKLIST.md');
-  for (const section of ['功能自检', '云同步自检', '多端自检', 'PWA 自检', 'iOS 语音自检', '安全自检', '同步接口自检', '备份自检']) {
-    check(`清单含「${section}」`, checklist.includes(section));
+  // ★ 用户明确要求（2026-09）：把上一轮删掉的那批 md（含旧提示词全套、
+  //   上线清单、README 系列、几份验收单）**从 git 里一并删掉**，
+  //   规则与文档统一收敛到 AI_RULES.md + HANDOVER.md。
+  //   （这里刻意不写旧品牌名，test:rename 会扫全库。）
+  //   所以这里不再断言那些文件存在（原来的断言会让测试永远红），
+  //   改成断言「留下来的两份文档在，且规则原文没丢」——
+  //   约束的是**现在真正该在的东西**，而不是把删除当成 bug。
+  check('AI_RULES.md 在（项目铁律，规则的家）', existsSync('./AI_RULES.md'));
+  check('HANDOVER.md 在（交接文档）', existsSync('./HANDOVER.md'));
+  const rules = read('AI_RULES.md');
+  for (const section of ['R1 · 任何考察都不得设置强制时间限制', 'R2 · 义项系统规则', 'R3 · 「斩」不弹确认，但必须可撤销', 'R4 · 安全底线']) {
+    check(`AI_RULES.md 含「${section}」`, rules.includes(section), section);
   }
-  check('清单里的条目是可勾选的', (checklist.match(/- \[ \]/g) ?? []).length >= 50, `${(checklist.match(/- \[ \]/g) ?? []).length} 条`);
-  check('清单提醒「定期导出备份」', checklist.includes('导出备份'));
-  check('README-DEPLOY.md 存在', existsSync('./README-DEPLOY.md'));
-  check('README 说明了两种模式', existsSync('./README.md'));
+  check('AI_RULES.md 保留了运行时提示词的必含片段', rules.includes('不得设置任何时间限制') && rules.includes('含义相近的中文意思合并为一个义项'));
 }
 
 console.log(`\n=== 结果：通过 ${passed} 项，失败 ${failed} 项 ===\n`);

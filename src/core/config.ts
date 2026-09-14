@@ -2,12 +2,14 @@ import type { DeepPartial, PriorityPreset, Settings } from './types';
 
 /** 星号参数：所有可调数字集中在这里，代码里不许写死 */
 export const DEFAULTS = {
-  memorizeMaxPick: 10, // 一次「记忆」最多抽几个（只抽已出现在纸上的词）
+  memorizeMaxPick: 10, // 一次「记忆」最多抽几个（只抽已出现在纸上的词；上一轮未通过的词作为额外项，可超过它）
   memorizeTargetCount: 1, // 每词至少记忆几次，「背完了」按钮才出现（默认 1 = 至少记一次）
   memorizeEvery: 3, // 每背几个新词，「再背一个」按钮自动变成「记忆」
   failCountCap: 2, // 属性② 未通过次数上限
   reviewGroupSize: 30, // 复习每组上限
-  paperWordGapFactor: 2.4, // 白纸上相邻单词的最小间距 = 字号 × 这个系数
+  // 相邻单词的最低空隙 = 字号 × 这个系数；布点时实际用的最小中心距还会加上
+  // 「本批最宽的那个词」（否则长词之间必然重叠，见 core/layout.ts 的 spacingBudget）
+  paperWordGapFactor: 2.4,
 };
 
 /**

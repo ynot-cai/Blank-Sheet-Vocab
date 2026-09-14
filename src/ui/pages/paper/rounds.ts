@@ -2,7 +2,7 @@
 import { activeSenses, senseMatch } from '../../../core/model';
 import type { Session, Settings, Word } from '../../../core/types';
 import { button, h } from '../../dom';
-import type { AnswerComparison } from './AnswerCard';
+import type { AnswerCardActions, AnswerComparison } from './AnswerCard';
 import { showAnswerCard } from './AnswerCard';
 import type { PaperStage } from './PaperStage';
 
@@ -18,6 +18,14 @@ export interface RoundHost {
   recordShown: (id: string) => void;
   /** 用户点了「返回白纸」等中断信号 */
   isAborted: () => boolean;
+  /**
+   * 答案卡上的「改义项 / 拼 / 斩」回调（**按词构造**）。
+   *
+   * ★ 用户明确要求：记忆时查看答案用的是**和普通界面完全同一张单词卡**——
+   *   即使在考察中，也要能随时查看、随时改义项、随时标记拼写、随时斩。
+   *   所以这里不是另做一套只读卡，而是把普通卡片的那套回调原样接过来。
+   */
+  cardActionsFor?: (word: Word) => AnswerCardActions;
 }
 
 /**
@@ -79,17 +87,37 @@ export async function runMemorizeRound(host: RoundHost, ids: string[]): Promise<
     submitBtn.id = 'mem-submit';
     let submitted = false;
 
-    // Enter 提交（任意一个框按 Enter 都提交；stopPropagation 防止全局 Enter 重复触发）
-    for (const input of inputs) {
+    /**
+     * Enter：**填完一格跳到下一格**，在最后一格（最右）按才提交。
+     *
+     * ★ 用户明确要求：「填写完一个点击 enter 切换到另一个（切换到最后（最右）的那个再按，就提交）」。
+     *   一个词的多个义项是一串并排的输入框，用户是「填一个 → Enter → 填下一个」的节奏；
+     *   原来任意一格按 Enter 都会直接提交，多义项的词几乎必然被半途交上去判错。
+     *
+     * stopPropagation 依然要留着：`flow.ts` 在 window 上还有一个全局 Enter 处理器，
+     * 不拦住的话会重复触发（提交两次）。
+     */
+    inputs.forEach((input, i) => {
       input.addEventListener('keydown', (ev) => {
-        if (ev.key === 'Enter') {
-          ev.stopPropagation();
-          ev.preventDefault();
-          submitted = true;
+        if (ev.key !== 'Enter') return;
+        ev.stopPropagation();
+        ev.preventDefault();
+        const next = inputs[i + 1];
+        if (next !== undefined) {
+          next.focus();
+          next.select(); // 直接覆盖已填内容，省得先删
+          return;
         }
+        submitted = true; // 最后一格：提交
       });
-    }
+    });
     box.appendChild(inputsRow);
+    // 多义项时给一句操作提示（只有一个框时不需要，Enter 就是提交）
+    if (inputs.length > 1) {
+      box.appendChild(
+        h('div', { class: 'field-hint mem-hint', text: '按 Enter 填下一个义项；在最后一格按 Enter 提交' }),
+      );
+    }
     box.appendChild(h('div', { class: 'row center' }, submitBtn));
     overlay.appendChild(box);
 
@@ -117,7 +145,8 @@ export async function runMemorizeRound(host: RoundHost, ids: string[]): Promise<
       input: input.value.trim(),
       ok: results[i] ?? false,
     }));
-    await new Promise<void>((resolve) => showAnswerCard(word, comparison, resolve));
+    // 答案卡 = 和普通界面同一张可编辑单词卡（改义项 / 拼 / 斩都能随时用）
+    await new Promise<void>((resolve) => showAnswerCard(word, comparison, resolve, host.cardActionsFor?.(word)));
     host.recordShown(id);
     if (host.isAborted()) return;
   }
@@ -206,7 +235,7 @@ export async function runSpellRound(host: RoundHost, ids: string[]): Promise<voi
     if (!ok) host.recordFail(id);
 
     await new Promise<void>((resolve) =>
-      showAnswerCard(word, [{ input: value, ok }], resolve),
+      showAnswerCard(word, [{ input: value, ok }], resolve, host.cardActionsFor?.(word)),
     );
     if (host.isAborted()) return;
   }

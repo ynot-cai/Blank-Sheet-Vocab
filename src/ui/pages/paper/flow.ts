@@ -6,12 +6,13 @@ import type { Session, Word } from '../../../core/types';
 import * as dao from '../../../dao';
 import { cancelSpeak } from '../../../services/tts';
 import { button, debounce, h } from '../../dom';
-import { openModal } from '../../components/Modal';
+import { openModal, confirmModal, type ModalHandle } from '../../components/Modal';
 import { mountSpeechGate } from '../../components/SpeechGate';
 import { showUndoToast, toastOk, toastWarn } from '../../components/Toast';
 import { renderWordCard } from '../../components/WordCard';
 import { navigate } from '../../router';
 import { createPaperStage } from './PaperStage';
+import type { AnswerCardActions } from './AnswerCard';
 import type { RoundHost } from './rounds';
 import { runMemorizeRound, runSpellRound } from './rounds';
 import { isAnswerCardOpen, advanceAnswerCard } from './AnswerCard';
@@ -49,6 +50,8 @@ export interface PaperFlow {
  * 所有按钮集中在右下角：进度 →（背完了）→ 保存并退出 → 再次记忆 → 再背一个（每 memorizeEvery 个
  * 新词自动变成「记忆」）。单词点击切换词下中文意思；点中文意思开单词卡。
  * 记忆环节只抽已出现在纸上的词（不满 maxPick 就按已出现数量）。
+ * ⭐ 用户口径（2026-09）：抽词规则、拼写环节的词源、「保存并退出」保留什么，
+ *    都以下面各处的 `⚠️/★ 用户口径` 注释为准（那些提示词 md 已按用户要求从仓库删除）。
  * @param opts 会话与模式
  */
 export function createPaperFlow(opts: FlowOptions): PaperFlow {
@@ -79,7 +82,12 @@ export function createPaperFlow(opts: FlowOptions): PaperFlow {
   const btnSave = button('保存并退出', () => void saveAndExit());
   const btnAgain = button('再次记忆', () => startMemorize());
   const btnNext = button('再背一个 (Enter)', () => nextAction(), { variant: 'primary', class: 'paper-next' });
-  const controls = h('div', { class: 'paper-controls' }, progress, btnDone, btnSave, btnAgain, btnNext);
+  // ★ 用户要求「下次点击直接开始」之后，续跑是自动的，于是必须有一个显式的
+  //   「把这一轮丢掉、从零开始」入口，否则保存过的进度就再也甩不掉了。
+  //   这是**破坏性**操作（丢掉位置与每词记忆遍数），所以保留二次确认——
+  //   RULES-R3 的「不弹确认」只管「斩」，不管这里。
+  const btnRestart = button('重新开始', () => void restartRound(), { class: 'paper-restart' });
+  const controls = h('div', { class: 'paper-controls' }, progress, btnDone, btnSave, btnAgain, btnRestart, btnNext);
   const root = h('div', { class: 'paper-flow' }, stage.root, controls);
 
   // iOS：语音首次必须在用户手势里启动，所以先盖一层「点击开始」（非 iOS 自动跳过）。
@@ -161,38 +169,57 @@ export function createPaperFlow(opts: FlowOptions): PaperFlow {
     void dao.words.put(w);
   }, 600);
 
-  /** 点中文意思 → 单词卡（编辑 / 拼 / 斩） */
-  const openCard = (word: Word): void => {
-    if (destroyed) return;
-    let draft: Word = word;
-    const apply = (next: Word): void => {
-      draft = next;
+  /** 取某词的最新内存副本（用户可能刚在卡里改过义项） */
+  const latestWord = (word: Word): Word => wordMap.get(word.id) ?? word;
+
+  /**
+   * 卡片上的操作（改义项 / 拼 / 斩）。
+   *
+   * ★ 抽成一份是必须的：普通界面点中文意思打开的卡、以及**记忆环节的答案卡**，
+   *   用的是同一个 `renderWordCard`；两处各写一套回调的话，
+   *   会出现「普通卡里改了义项生效，答案卡里改了不生效」这种很难查的不一致。
+   *
+   * @param word 这张卡对应的词（回调内部每次取最新副本）
+   */
+  const cardActionsFor = (word: Word): AnswerCardActions => ({
+    onChange: (next: Word) => {
       wordMap.set(next.id, next);
       const idx = words.findIndex((w) => w.id === next.id);
       if (idx >= 0) words[idx] = next;
-    };
-    const handle = openModal({
+      persistEdit(next);
+    },
+    onSpell: (need: boolean) => {
+      const w = latestWord(word);
+      const next: Word = { ...w, attrs: { ...w.attrs, needSpell: need } };
+      wordMap.set(next.id, next);
+      const idx = words.findIndex((x) => x.id === next.id);
+      if (idx >= 0) words[idx] = next;
+      void dao.words.updateAttrs(word.id, { needSpell: need });
+    },
+    onChop: () => {
+      // RULES-R3: 斩不弹确认，但必须提供 ≥8 秒的撤销 Toast。
+      // 传最新副本而不是 `word`：用户可能刚在卡片里改过义项，
+      // 撤销后要重画回白纸的是**改过的**那一份，否则白纸上会显示旧意思。
+      void chopWord(latestWord(word));
+    },
+  });
+
+  /** 点中文意思 → 单词卡（编辑 / 拼 / 斩） */
+  const openCard = (word: Word): void => {
+    if (destroyed) return;
+    let handle: ModalHandle | null = null;
+    const actions = cardActionsFor(word);
+    handle = openModal({
       title: `单词卡 —— ${word.en}`,
       width: '640px',
       body: renderWordCard(word, {
         editable: true,
-        onChange: (next) => {
-          apply(next);
-          persistEdit(next);
-        },
-        onSpell: (need) => {
-          const next = { ...draft, attrs: { ...draft.attrs, needSpell: need } };
-          apply(next);
-          void dao.words.updateAttrs(word.id, { needSpell: need });
-        },
+        onChange: actions.onChange,
+        onSpell: actions.onSpell,
+        // 弹窗里斩完顺手关掉弹窗（答案卡不是弹窗，没这一步）
         onChop: () => {
-          void (async () => {
-            // RULES-R3: 斩不弹确认，但必须提供 ≥8 秒的撤销 Toast。
-            // 传 `draft` 而不是 `word`：用户可能刚在卡片里改过义项，
-            // 撤销后要重画回白纸的是**改过的**那一份，否则白纸上会显示旧意思。
-            await chopWord(draft);
-            handle.close();
-          })();
+          actions.onChop?.();
+          handle?.close();
         },
       }),
     });
@@ -250,7 +277,15 @@ export function createPaperFlow(opts: FlowOptions): PaperFlow {
     });
   };
 
-  /** 再次记忆 / 每 N 个新词后的记忆：只抽已出现在纸上的词 */
+  /**
+   * 再次记忆 / 每 N 个新词后的记忆：只抽已出现在纸上的词。
+   *
+   * ⭐ 用户口径（2026-09）：「假设设置里填『最大 10 个』。若目前只出现了 3 个，
+   *    那就只进行 3 次。如果有超过 10 个，优先按『已经抽到的次数最低』排序，
+   *    遍数相同时随机抽；如果上一轮有单词未通过、又没被前面的机制抽到，
+   *    则作为**额外项**加入（也就是最终超过 10 个）。」
+   *    规则的实现在 `core/pick.ts` 的 `pickForMemorize`（含与旧写法的差异说明）。
+   */
   const startMemorize = (): void => {
     if (destroyed || roundBusy || flowMode !== 'browse') return;
     const picked = pickForMemorize(session, words, {
@@ -283,17 +318,30 @@ export function createPaperFlow(opts: FlowOptions): PaperFlow {
         if (!session.failedIds.includes(id)) session.failedIds.push(id);
       },
       recordShown: (id) => {
+        // 词在答题途中被斩掉了就不算「已作答」：它已经不在本轮词单里，
+        // 再往 shownIds 里塞回去，等于让一张斩掉的卡重新参与统计与抽词。
+        if (!session.wordIds.includes(id)) return;
         session.memorizeCount[id] = (session.memorizeCount[id] ?? 0) + 1;
         if (!session.shownIds.includes(id)) session.shownIds.push(id);
       },
       isAborted: () => aborted,
+      // ★ 答案卡 = 普通单词卡：考察中也能随时改义项 / 拼 / 斩
+      cardActionsFor,
     };
+
+    // 记下本轮开始前每词的未通过次数，跑完一比就知道「本轮谁没通过」
+    const failBefore = new Map(picked.map((id) => [id, session.failDeltas[id] ?? 0]));
 
     await runMemorizeRound(host, picked);
     if (destroyed) return;
 
+    // ★ 记忆抽词的「额外项」依据：**上一轮**没通过的词。
+    //   只记本轮，不累积 —— 累积的话，一个很早以前错过的词会被永远强制抽到。
+    session.lastRoundFailedIds = picked.filter((id) => (session.failDeltas[id] ?? 0) > (failBefore.get(id) ?? 0));
+
     if (!aborted) {
       // 本轮抽中的词里有需拼写的 → 自动进入拼写环节
+      // （★ 用户重申：拼写不是另外抽的，就是**当次记忆选到的词**里标了「拼」的那些）
       const spellIds = picked.filter((id) => {
         const w = wordMap.get(id);
         return w !== undefined && w.attrs.needSpell && w.status !== 'chopped';
@@ -313,6 +361,9 @@ export function createPaperFlow(opts: FlowOptions): PaperFlow {
     sinceBatch = 0; // 本轮（批次）记忆完成，计数器清零
     if (destroyed) return;
     refreshUi();
+    // 本轮的记忆遍数、未通过情况立刻落库：用户直接关掉页面也不会丢
+    // （「保存并退出」会再存一次，两条路都写，谁先发生都不会漏）
+    await dao.session.saveSession(session);
 
     if (pendingSave) {
       pendingSave = false;
@@ -327,6 +378,21 @@ export function createPaperFlow(opts: FlowOptions): PaperFlow {
         words.every((w) => session.shownIds.includes(w.id) && (session.memorizeCount[w.id] ?? 0) >= target);
       if (qualified) opts.onGroupDone?.();
     }
+  };
+
+  /**
+   * 重新开始：丢掉保存的进度，按当前词库重开一轮。
+   *
+   * 为什么需要它：续跑改成自动之后（「下次点击直接开始」），
+   * 没有这个入口的话，一份保存过的会话就再也甩不掉了。
+   * 这是破坏性操作（丢位置与每词记忆遍数），所以有二次确认。
+   */
+  const restartRound = async (): Promise<void> => {
+    if (destroyed || roundBusy) return;
+    const ok = await confirmModal('重新开始这一轮？', '会丢掉保存的位置与每个词的记忆遍数，重新按当前词库开始一轮背诵。', '重新开始', true);
+    if (!ok) return;
+    await dao.session.clearSession();
+    navigate('/learn');
   };
 
   /** 保存并退出：把词单、每个词的位置和记忆次数都存进会话 */
@@ -362,6 +428,11 @@ export function createPaperFlow(opts: FlowOptions): PaperFlow {
   /** 全局按键：答案卡（Enter/空格）→ 推进；浏览 → 再背一个；作答 → 提交 */
   const onKey = (ev: KeyboardEvent): void => {
     if (destroyed) return;
+    const target = ev.target;
+    // 焦点在输入控件/按钮上时**让给浏览器原生**。
+    // 为什么答案卡也要判：答案卡现在是可编辑的（用户可以在里面改义项、标记拼写），
+    // 在里面打字按 Enter 必须留给输入框，不能被当成「答案看完了」。
+    if (target instanceof HTMLElement && ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(target.tagName)) return;
     if (isAnswerCardOpen()) {
       if (ev.key === 'Enter' || ev.key === ' ') {
         ev.preventDefault();
@@ -371,8 +442,6 @@ export function createPaperFlow(opts: FlowOptions): PaperFlow {
     }
     if (ev.key !== 'Enter') return;
     if (document.querySelector('.modal-mask')) return;
-    const target = ev.target;
-    if (target instanceof HTMLElement && ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(target.tagName)) return;
     if (flowMode === 'browse') nextAction();
     else root.querySelector<HTMLButtonElement>('#mem-submit, #spell-submit')?.click();
   };

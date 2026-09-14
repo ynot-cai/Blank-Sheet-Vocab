@@ -132,8 +132,17 @@ export interface Session {
   shownIds: string[]; // 已在纸上出现过的词
   memorizeCount: Record<string, number>; // 每词被「记忆」次数（保存并退出时持久化）
   spellEnabled: boolean;
-  failedIds: string[]; // 本次会话内记过未通过的词 id（记忆环节必抽的依据）
+  failedIds: string[]; // 本次会话内记过未通过的词 id（历史记录，界面/收尾用）
   failDeltas: Record<string, number>; // 本次会话内每词累计未通过次数（正常结束时写回词库）
+  /**
+   * **上一轮**记忆里没通过的词 id（每次记忆结束刷新）。
+   *
+   * 用途：记忆抽词的第 4 步 —— 上一轮没通过、又没被「遍数最少」抽到的词，
+   * 作为**额外项**加入本轮（总数允许超过 `memorizeMaxPick`）。规则由用户口头定稿，
+   * 见 `core/pick.ts` 的 `pickForMemorize`。
+   * 老数据/老存档没有这个字段 → 按空数组处理（不额外抽词）。
+   */
+  lastRoundFailedIds?: string[];
   groupId: number; // 复习：当前第几组（0-based）；learn 恒为 0
   groups: string[][]; // 复习：全部分组，仅内存
   finished: boolean;

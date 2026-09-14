@@ -8,7 +8,7 @@ import { renderSenseEditor } from './SenseEditor';
 
 /** 单词卡参数 */
 export interface WordCardOptions {
-  /** 列表页 / 背诵页传 true；记忆环节的答案卡传 false */
+  /** 可编辑（改音标 / 例句 / 义项）。⭐ 用户口径（2026-09）：记忆环节的答案卡也传 true——考察中一样能改 */
   editable?: boolean;
   /** 内容变化（调用方决定何时写库） */
   onChange?: (next: Word) => void;
@@ -22,7 +22,11 @@ export interface WordCardOptions {
   showAttrs?: boolean;
   /** 答案卡模式：展示输入对照（对的标绿、错的标红并显示正确答案） */
   answerFeedback?: AnswerComparison[];
-  /** 答案卡模式：只给一个「查看义项」按钮（不显示拼/斩） */
+  /**
+   * 展示「查看义项」按钮。
+   * ⚠️ 旧注释写的是「只给一个『查看义项』按钮（**不显示拼/斩**）」——
+   * 那是只读答案卡时代的说法，已按用户口径作废：答案卡现在跟普通卡一样有拼 / 斩。
+   */
   allowViewSenses?: boolean;
 }
 

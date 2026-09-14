@@ -1,6 +1,6 @@
 import { DEVICE, getSettings } from '../../../core/config';
 import type { Placement } from '../../../core/layout';
-import { jitteredGrid, resolvePaperSize } from '../../../core/layout';
+import { jitteredGrid, resolvePaperSize, spacingBudget, wordRowHeightPx } from '../../../core/layout';
 import { activeSenses, formatSensesBrief } from '../../../core/model';
 import type { Word } from '../../../core/types';
 import { speak } from '../../../services/tts';
@@ -23,7 +23,7 @@ export interface PaperStage {
   applySettings(): void;
   /** 为一组词计算落点（写入内部表并返回） */
   computePlacements(words: Word[], seed: number): Record<string, Placement>;
-  /** 纸上最多能放下的词数（由字号决定的最小间距约束出来的容量） */
+  /** 纸上最多能放下的词数（由「字号 + 最宽的词 + 按钮避让」约束出来的容量） */
   capacity(): number;
   /** 用已保存的落点恢复（续跑用） */
   restorePlacements(placements: Record<string, Placement>): void;
@@ -116,13 +116,41 @@ export function createPaperStage(opts: PaperStageOptions): PaperStage {
 
   let placeCapacity = 0;
 
+  /**
+   * 量出本批词里**渲染后最宽**的那个的宽度（像素）。
+   *
+   * 为什么要真的量：落点是单词中心，只按字号给间距挡不住长词——
+   * 两个各宽 170px 的词，中心只隔 58px 时会直接叠在一起（用户实测反馈）。
+   * 用 canvas 的 measureText 拿真实宽度，字体与字号跟白纸上的完全一致。
+   * @param words 本批词
+   */
+  const widestWordPx = (words: Word[]): number => {
+    if (words.length === 0) return 0;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      // 拿不到 2D 上下文（极罕见）→ 退化成一个保守估计：按最长英文 × 0.6 字号
+      const longest = words.reduce((n, w) => Math.max(n, w.en.length), 0);
+      return longest * effectiveFontSize() * 0.6;
+    }
+    const s = getSettings();
+    ctx.font = `${effectiveFontSize()}px ${s.display.fontFamily}`;
+    return words.reduce((max, w) => Math.max(max, ctx.measureText(w.en).width), 0);
+  };
+
   const computePlacements = (words: Word[], seed: number): Record<string, Placement> => {
     const size = resolvePaperSize(settings.paper, { width: window.innerWidth, height: window.innerHeight });
     const aspect = size.width / Math.max(1, size.height);
-    // 相邻单词的最小间距由字号决定（归一化到画布宽/高）
-    const gapPx = effectiveFontSize() * getSettings().paperWordGapFactor;
-    const minGapW = gapPx / Math.max(1, size.width);
-    const minGapH = gapPx / Math.max(1, size.height);
+    // ★ 相邻单词的最小中心距**由字号 + 最宽的那个词共同决定**（见 core/layout.ts 的 spacingBudget）：
+    //   只用字号的话，长词之间必然会叠在一起。
+    const budget = spacingBudget({
+      fontSize: effectiveFontSize(),
+      gapFactor: getSettings().paperWordGapFactor,
+      widestWordPx: widestWordPx(words),
+      rowHeightPx: wordRowHeightPx(effectiveFontSize()),
+    });
+    const minGapW = budget.gapX / Math.max(1, size.width);
+    const minGapH = budget.gapY / Math.max(1, size.height);
     // 纸张在视口里居中：算出纸面左上角相对视口的偏移，才能把「右下角按钮区」换算到纸面坐标
     const offsetX = (window.innerWidth - size.width) / 2;
     const offsetY = (window.innerHeight - size.height) / 2;
@@ -133,11 +161,13 @@ export function createPaperStage(opts: PaperStageOptions): PaperStage {
       minGapW,
       minGapH,
       canvas: { width: size.width, height: size.height },
+      // ★ 按钮避让区要**按半个词向外扩**：落点是词的中心，
+      //   中心刚好落在矩形外面时，词的一半仍然压在按钮上（用户实测反馈）。
       avoidPx: {
-        x: controls.x - offsetX,
-        y: controls.y - offsetY,
-        width: controls.width,
-        height: controls.height,
+        x: controls.x - offsetX - budget.padX,
+        y: controls.y - offsetY - budget.padY,
+        width: controls.width + budget.padX * 2,
+        height: controls.height + budget.padY * 2,
       },
     });
     placeCapacity = points.length; // 间距与避让约束下纸上实际能放下的数量

@@ -166,7 +166,8 @@ export function runCoreSelfTest(): SelfTestResult[] {
 }
 
 /**
- * 抽词算法自测（阶段 05~07）：pickForMemorize 只抽已出现 + 必抽/上限规则、groupWords 分组、推荐值。
+ * 抽词算法自测（阶段 05~07）：pickForMemorize 的「只抽已出现 / 遍数最少优先 /
+ * 同级随机 / 上一轮未通过作为额外项」规则、groupWords 分组、推荐值。
  */
 export function runPickSelfTest(): SelfTestResult[] {
   const out: SelfTestResult[] = [];
@@ -202,31 +203,51 @@ export function runPickSelfTest(): SelfTestResult[] {
     detail: pick1.join(','),
   });
   out.push({
-    name: 'pickForMemorize：已出现不满 maxPick 时按已出现数量抽',
+    name: 'pickForMemorize：已出现不满 maxPick 时按已出现数量抽（只进行 3 次）',
     ok: pick1.length === shown.length,
     detail: `抽了 ${pick1.length}/${shown.length} 个`,
   });
-  out.push({
-    name: 'pickForMemorize：必抽的未通过词必在结果里',
-    ok: pick1.includes(bId),
-    detail: pick1.join(','),
-  });
 
-  // 记忆次数最少的优先：maxPick=2 时（mandatory=b + 次数最少的 c）
+  // ★ 用户口径：上限是「遍数最少的先抽」，同级随机
+  //   memorizeCount: a=5, b=1, c=0（c 没记过）→ 遍数升序 = c, b, a
   const pick2 = pickForMemorize(session, words, { maxPick: 2, targetCount: 3 });
   out.push({
-    name: 'pickForMemorize：记忆次数最少的优先补位',
-    ok: pick2.length === 2 && pick2.includes(bId) && pick2.includes(cId),
+    name: 'pickForMemorize：记忆遍数最少的优先抽',
+    ok: pick2.length === 2 && pick2.includes(cId) && pick2.includes(bId),
     detail: pick2.join(','),
   });
 
-  // 已出现的必抽词超过 maxPick 时全部纳入
-  const manyFailed: Session = { ...session, failedIds: shown };
-  const pick3 = pickForMemorize(manyFailed, words, { maxPick: 2, targetCount: 3 });
+  // ★ 用户口径：上一轮未通过、又没被「遍数最少」抽到的词 → 作为**额外项**加入（总数可超过上限）
+  const extraSession: Session = {
+    ...session,
+    memorizeCount: { [aId]: 0, [bId]: 5, [cId]: 1 },
+    lastRoundFailedIds: [bId],
+  };
+  const pick3 = pickForMemorize(extraSession, words, { maxPick: 1, targetCount: 3 });
   out.push({
-    name: 'pickForMemorize：必抽词超过 maxPick 时全部纳入',
-    ok: pick3.length === 3,
-    detail: `抽了 ${pick3.length} 个`,
+    name: 'pickForMemorize：上一轮未通过的词作为额外项加入（总数超过上限）',
+    ok: pick3.length === 2 && pick3.includes(aId) && pick3.includes(bId),
+    detail: pick3.join(','),
+  });
+
+  // ★ 反向：没有额外项时，基础项**不许**超过上限
+  const pick4 = pickForMemorize({ ...extraSession, lastRoundFailedIds: [] }, words, { maxPick: 2, targetCount: 3 });
+  out.push({
+    name: 'pickForMemorize：没有额外项时不超过 maxPick',
+    ok: pick4.length === 2,
+    detail: `抽了 ${pick4.length} 个：${pick4.join(',')}`,
+  });
+
+  // ★ 同级（遍数相同）时随机：候选多于上限、且遍数全相同时，重复抽应出现不同组合
+  const tieSession: Session = { ...session, memorizeCount: {} };
+  const combos = new Set<string>();
+  for (let i = 0; i < 40; i += 1) {
+    combos.add([...pickForMemorize(tieSession, words, { maxPick: 2, targetCount: 3 })].sort().join(','));
+  }
+  out.push({
+    name: 'pickForMemorize：遍数相同时是随机抽（重复 40 次不止一种组合）',
+    ok: combos.size > 1,
+    detail: `${combos.size} 种组合：${[...combos].join(' | ')}`,
   });
 
   // 顺序切分：65 个 → 3 组（30/30/5），rank 0 在第 1 组、rank 59 在第 2 组

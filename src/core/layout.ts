@@ -173,6 +173,71 @@ function clamp01(v: number): number {
   return Math.min(1, Math.max(0, v));
 }
 
+/** 布点的间距预算（像素） */
+export interface SpacingBudget {
+  /** 相邻单词落点之间的**最小中心距**（横向）—— 落点即单词的中心 */
+  gapX: number;
+  /** 相邻单词落点之间的**最小中心距**（纵向） */
+  gapY: number;
+  /** 避让按钮区时，矩形要向外扩多少（横向，取半个最宽的词） */
+  padX: number;
+  /** 避让按钮区时，矩形要向外扩多少（纵向，取半个词行高） */
+  padY: number;
+}
+
+/**
+ * 算白纸布点的间距预算。
+ *
+ * ★ 用户明确要求（2026-09）：「确保单词与单词之间，单词与按钮之间有一个
+ *   **最低距离（由字号决定）**，不能重合。」
+ *
+ * 为什么不能只用「字号 × 系数」：
+ *   落点是单词的**中心**（`.paper-word-zone` 有 `translate(-50%,-50%)`）。
+ *   两个中心相距 `字号×2.4 ≈ 58px` 时，两个各宽 170px 的长词
+ *   （photosynthesis 这种）**必然重叠** —— 只按字号给间距挡不住长词。
+ *   所以最小中心距取「**最宽的那个词 + 字号 × 系数**」：
+ *   前者保证任何一对词都不会叠在一起，后者保证还留着一条由字号决定的空隙。
+ *
+ * 纵向同理：用词行高（字号 × 行高系数 + 上下内边距）而不是纯字号。
+ *
+ * @param opts fontSize 单词字号（像素，已含手机放大系数）
+ * @param opts gapFactor 设置里的「间距系数」（字号 × 它 = 最低空隙）
+ * @param opts widestWordPx 本批词里**渲染后最宽**的一个的宽度（像素）
+ * @param opts rowHeightPx 一个词行的高度（像素）
+ */
+export function spacingBudget(opts: {
+  fontSize: number;
+  gapFactor: number;
+  widestWordPx: number;
+  rowHeightPx: number;
+}): SpacingBudget {
+  const gap = Math.max(0, opts.fontSize) * Math.max(0, opts.gapFactor);
+  const w = Math.max(0, opts.widestWordPx);
+  const h = Math.max(0, opts.rowHeightPx);
+  return {
+    gapX: w + gap,
+    gapY: h + gap,
+    // 落点是中心：只要中心离按钮矩形还有「半个词」，词就不会压到按钮上
+    padX: w / 2,
+    padY: h / 2,
+  };
+}
+
+/** 词行的行高系数（与 paper.css 的 .paper-word line-height 对应） */
+export const WORD_LINE_HEIGHT_RATIO = 1.45;
+
+/** 词行上下内边距之和（与 paper.css 的 .paper-word padding 对应） */
+export const WORD_ROW_PADDING_PX = 12;
+
+/**
+ * 一个词行的高度（像素）：字号 × 行高系数 + 上下内边距。
+ * 抽出来是为了让「布点用的行高」与 CSS 里的实际行高只有一处定义。
+ * @param fontSize 字号（像素）
+ */
+export function wordRowHeightPx(fontSize: number): number {
+  return Math.max(0, fontSize) * WORD_LINE_HEIGHT_RATIO + WORD_ROW_PADDING_PX;
+}
+
 /**
  * 根据纸张设置算出白纸的实际像素尺寸。
  * @param paper 纸张设置

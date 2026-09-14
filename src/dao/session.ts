@@ -14,6 +14,8 @@ interface SessionRow {
   memorizeCount: Session['memorizeCount'];
   failedIds: string[];
   failDeltas: Session['failDeltas'];
+  /** 上一轮记忆里没通过的词（记忆抽词的「额外项」依据，见 core/pick.ts） */
+  lastRoundFailedIds: string[];
   spellEnabled: boolean;
   groupId: number;
   finished: boolean;
@@ -38,6 +40,7 @@ export async function saveSession(s: Session): Promise<void> {
     memorizeCount: { ...s.memorizeCount },
     failedIds: [...s.failedIds],
     failDeltas: { ...s.failDeltas },
+    lastRoundFailedIds: [...(s.lastRoundFailedIds ?? [])],
     spellEnabled: s.spellEnabled,
     groupId: s.groupId,
     finished: s.finished,
@@ -66,6 +69,8 @@ export async function loadSession(): Promise<Session | null> {
     spellEnabled: row.spellEnabled ?? false,
     failedIds: [...(row.failedIds ?? [])],
     failDeltas: { ...(row.failDeltas ?? {}) },
+    // 老存档没有这个字段 → 空数组（当作「上一轮没有未通过的词」）
+    lastRoundFailedIds: [...(row.lastRoundFailedIds ?? [])],
     groupId: row.groupId ?? 0,
     groups: [],
     finished: row.finished,

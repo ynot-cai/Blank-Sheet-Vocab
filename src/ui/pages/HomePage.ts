@@ -34,19 +34,34 @@ export function renderHomePage(): HTMLElement {
 
   const grid = h('div', { class: 'home-grid' });
 
-  /** 进入背诵/复习：检查是否有未完成会话 */
+  /**
+   * 进入背诵 / 复习。
+   *
+   * ★ 用户要求（2026-09）：「下次点击直接开始」。
+   *   背诵（`/learn`）**不再问**「继续上次 / 重新开始」——LearnPage 自己会恢复上次的
+   *   词单 / 位置 / 每词记忆遍数并直接接着背（想重开一轮用背诵页里的「重新开始」）。
+   *
+   *   ⚠️ 原来那个询问框的正文写的是「继续上次（**进度从零开始、落点重新布**）」，
+   *   与代码事实**正好相反**（`exitMidway` 就是整份 saveSession，位置是恢复的）——
+   *   属于用户说的「与我说的话冲突的提示部分」，已按用户口径改掉。
+   *
+   *   复习（`/review`）仍保留询问框：复习要先选「这次复习几个」，
+   *   直接跳进去会跳过那个选择，语义上不是「继续上次」而是「再来一轮」。
+   * @param path 目标路由
+   */
   const enterLearning = (path: '/learn' | '/review'): void => {
+    if (path === '/learn') {
+      navigate(path);
+      return;
+    }
     void (async () => {
       const existing = await dao.session.loadSession();
       const match =
-        existing &&
-        !existing.finished &&
-        existing.wordIds.length > 0 &&
-        ((path === '/learn' && existing.type === 'learn') || (path === '/review' && existing.type === 'review'));
+        existing && !existing.finished && existing.wordIds.length > 0 && existing.type === 'review';
       if (match) {
         const resume = await confirmModal(
           '上次未完成',
-          `上次有 ${existing.wordIds.length} 个词的会话没做完。继续上次（进度从零开始、落点重新布），还是重新开始？`,
+          `上次有 ${existing.wordIds.length} 个词的复习没做完。继续上次（进度与落点都会恢复），还是重新开始？`,
           '继续上次',
         );
         if (resume) navigate(`${path}?resume=1`);

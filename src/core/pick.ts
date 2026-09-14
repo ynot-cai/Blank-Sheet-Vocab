@@ -1,5 +1,6 @@
 /**
- * 抽词算法：记忆环节必抽规则 / 复习推荐值 / 复习抽词 / 分组 / ★ 背诵抽词（绝对优先）。
+ * 抽词算法：记忆环节抽词（★ 用户口径，见下）/ 复习推荐值 / 复习抽词 / 分组 /
+ * ★ 背诵抽词（绝对优先）。
  */
 import type { Session, Settings, Word } from './types';
 import { computePriority } from './priority';
@@ -25,16 +26,32 @@ export function shuffle<T>(items: T[]): T[] {
 }
 
 /**
- * 记忆环节抽词。规则按顺序：
- * 1. 候选池 = session.wordIds 里未被斩、**且已经在纸上出现过**（shownIds）的词——
- *    还没出现在纸上的词不进记忆环节（用户要求：已出现不满 maxPick 个时，就按已出现数量来）；
- * 2. 必抽：session.failedIds（本次会话内记过未通过的词）；
- * 3. 其余按记忆次数从少到多补位；
- * 4. 上限 maxPick；必抽词超过 maxPick 时允许突破上限全部纳入；
- * 5. 抽出后随机打乱顺序。
+ * 记忆环节抽词。
+ *
+ * ★★ 规则由用户口头定稿（2026-09 重申），**与文件夹里那些提示词 md 的旧写法冲突时以用户为准**。
+ * 用户原话：
+ *   「假设设置里填『最大 10 个』。若目前只出现了 3 个，那就只进行 3 次。
+ *     如果有超过 10 个，优先按『已经抽到的次数最低』进行排序，在优先级相同时随机抽。
+ *     如果上一轮出现了有单词未通过，而又没被前面的机制抽到，则作为额外项加入
+ *     （也就是最终超过 10 个）。」
+ *
+ * 落成四步：
+ * 1. 候选池 = 本轮词单里**已经在纸上出现过**、且未被斩的词（没上纸的词不进记忆）；
+ * 2. 候选 ≤ maxPick → 全部抽走（有几个抽几个，所以「只进行 N 次」）；
+ * 3. 候选 > maxPick → 按 `memorizeCount` **升序**（记得遍数最少的先抽），
+ *    遍数相同时**随机**；取前 maxPick 个作为基础项；
+ * 4. 基础项里**没抽到的、上一轮未通过**的词作为**额外项**追加 —— 所以总数可以超过 maxPick。
+ *
+ * ⚠️ 与旧实现的差异（已按用户口径改掉，别改回去）：
+ *   - 旧第 3 步只按遍数排序、**没有同级随机**（同级顺序实际上是 wordIds 的固定顺序）；
+ *   - 旧第 4 步把未通过词**排在最前面**、并把上限取成 `max(maxPick, 必抽数)`，
+ *     也就是「未通过词挤掉补位词」。用户要的是**额外加入**（总数可超上限）。
+ *   - 「未通过」的口径也收窄成**上一轮**（`session.lastRoundFailedIds`），
+ *     而不是本次会话内所有历史未通过 —— 否则一个很早以前错过的词会被永远强制抽到。
+ *
  * @param session 当前会话
  * @param allWords 词库全量（按 wordIds 找词）
- * @param cfg maxPick = 单次最多抽几个；targetCount = 每词至少记忆几次
+ * @param cfg maxPick = 单次最多抽几个；targetCount = 每词至少记忆几次（结束条件在页面层用）
  */
 export function pickForMemorize(
   session: Session,
@@ -49,13 +66,18 @@ export function pickForMemorize(
     return w !== undefined && w.status !== 'chopped' && shown.has(id);
   });
 
-  const mandatorySet = new Set(session.failedIds.filter((id) => candidates.includes(id)));
-  const mandatory = candidates.filter((id) => mandatorySet.has(id));
-  const rest = candidates.filter((id) => !mandatorySet.has(id));
-  rest.sort((a, b) => (session.memorizeCount[a] ?? 0) - (session.memorizeCount[b] ?? 0));
+  const cap = Math.max(0, Math.floor(cfg.maxPick));
+  const memorized = (id: string): number => session.memorizeCount[id] ?? 0;
+  // 先随机打乱，再用**稳定**排序按遍数升序 —— 稳定排序会保留同级之间的随机顺序，
+  // 这正是「优先级（遍数）相同时随机抽」。反过来先排后打乱就把排序结果毁了。
+  const ordered = shuffle(candidates).sort((a, b) => memorized(a) - memorized(b));
+  const base = ordered.slice(0, cap);
+  const chosen = new Set(base);
 
-  const ordered = [...mandatory, ...rest];
-  return shuffle(ordered.slice(0, Math.max(cfg.maxPick, mandatory.length)));
+  // 额外项：上一轮未通过、又没被上面抽到的词（允许把总数顶到 maxPick 以上）
+  const extras = (session.lastRoundFailedIds ?? []).filter((id) => candidates.includes(id) && !chosen.has(id));
+
+  return shuffle([...base, ...extras]);
 }
 
 /**

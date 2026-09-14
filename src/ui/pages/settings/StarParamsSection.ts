@@ -9,7 +9,7 @@ const ITEMS: { key: keyof typeof DEFAULTS; label: string; hint: string }[] = [
   {
     key: 'memorizeMaxPick',
     label: '记忆一次最多抽几个',
-    hint: `点一次「记忆」最多抽几个词（只抽已经出现在纸上的词；默认 ${DEFAULTS.memorizeMaxPick}）`,
+    hint: `点一次「记忆」最多抽几个词（只抽已经出现在纸上的词；已出现不满这个数就只抽已出现的。上一轮没通过的词作为额外项加入，所以实际可能超过它；默认 ${DEFAULTS.memorizeMaxPick}）`,
   },
   {
     key: 'memorizeTargetCount',
