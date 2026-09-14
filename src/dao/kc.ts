@@ -180,7 +180,8 @@ export async function updateMeta(id: string, patch: KcMetaPatch): Promise<boolea
 }
 // ── 删除语义：**实现搬到了 `kcBatch.ts`**（斩/复活/永久删除与批量版住一起），
 //    这里保留同名转发，保证 `dao.kc.chop()` 这类既有调用点不用改。
-export { chop, revive, removePermanently } from './kcBatch';
+//    `restoreChopState` 是 RULES-R3 的撤销入口（撤销斩 = 完全恢复，不是 revive）。
+export { chop, revive, removePermanently, restoreChopState } from './kcBatch';
 
 /**
  * 查询卡片（列表页用）。

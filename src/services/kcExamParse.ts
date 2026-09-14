@@ -6,6 +6,8 @@
  *
  * 三条原则与录入解析一致：坏数据丢掉、文本过清洗、数值钳制。
  */
+
+// RULES-R1: 此处禁止任何强制时间限制（无倒计时 / 无超时提交 / 无超时判错）
 import { KC, getSettings } from '../core/config';
 import { sanitizeText } from '../core/kcModel';
 import { filterExamTags } from '../core/kcExamTypes';

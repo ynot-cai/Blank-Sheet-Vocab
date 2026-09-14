@@ -25,6 +25,8 @@
  * 另外一条规则：**焦点在按钮上时不抢**（浏览器的原生行为就是 Enter = 点这个按钮），
  * 否则会和原生行为打架，出现「按一次 Enter 提交两次」。
  */
+
+// RULES-R1: 此处禁止任何强制时间限制（无倒计时 / 无超时提交 / 无超时判错）
 import type { ExamPhase } from '../pages/kcExam/kcExamController';
 
 /** Enter 该做的事 */

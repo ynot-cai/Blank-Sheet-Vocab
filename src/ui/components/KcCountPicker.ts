@@ -72,6 +72,7 @@ export function renderKcCountPicker(opts: KcPickerOptions): HTMLElement {
   input.addEventListener('keydown', (ev: Event) => {
     if ((ev as KeyboardEvent).key === 'Enter') start();
   });
+  // RULES-R1: 纯 UI 延迟（等渲染完再把光标放进输入框），与动画/过渡同类，不是答题计时
   window.setTimeout(() => input.focus(), 30);
   return box;
 }

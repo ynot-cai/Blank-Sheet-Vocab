@@ -855,6 +855,31 @@ body {
   transform: translateY(6px);
 }
 
+/* RULES-R3: 斩不弹确认，但必须提供 ≥8 秒的撤销 Toast（文案「已斩 XXX 〔撤销〕」） */
+.toast-undo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.toast-undo-btn {
+  flex: none;
+  min-height: 30px;
+  padding: 2px 12px;
+  border: none;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.24);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.toast-undo-btn:hover,
+.toast-undo-btn:focus-visible {
+  background: rgba(255, 255, 255, 0.4);
+}
+
 .banner-box {
   display: flex;
   flex-direction: column;

@@ -239,36 +239,84 @@ try {
   check('进度更新为 3/5', kd.progress?.includes('3/5') === true, String(kd.progress));
 
   // ── 斩 ──
-  console.log('\n[5] 斩（验收标准 6）');
+  console.log('\n[5] 斩：不弹确认（RULES-R3）+ 撤销入口（验收标准 6）');
+  // ★ R4 改动：斩原来是「二次确认弹窗」，现在铁律 R3 要求**不弹确认 + ≥8 秒撤销 Toast**。
+  //   所以这里原来的断言「斩有二次确认弹窗」已经过期，改成断言新行为——
+  //   留着旧断言的话，测试会因为「没有弹窗」而红，那是把 bug 焊死的修法。
   const chopped = await session.evaluate(`(async () => {
-    // 弹窗里点「斩掉」
-    document.querySelector('.kc-chop-btn').click();
-    for (let i = 0; i < 40; i += 1) {
-      await new Promise((r) => setTimeout(r, 150));
-      if (document.querySelector('.modal-title')) break;
+    window.__confirmCalls = 0;
+    const realConfirm = window.confirm;
+    window.confirm = () => { window.__confirmCalls += 1; return true; };
+    try {
+      // 点「斩」：应当**立即生效**，不出现任何弹窗
+      document.querySelector('.kc-chop-btn').click();
+      await new Promise((r) => setTimeout(r, 700));
+      const modalAfterClick = document.querySelector('.modal-title')?.textContent ?? null;
+      const undoToast = document.querySelector('.toast-undo')?.textContent ?? null;
+      const hasUndoBtn = !!document.querySelector('.toast-undo-btn');
+      for (let i = 0; i < 40; i += 1) {
+        await new Promise((r) => setTimeout(r, 200));
+        if (document.querySelector('.kc-study-title')?.textContent === '学习卡 5') break;
+      }
+      const kc = await import('/src/dao/kc.ts');
+      const c4 = await kc.getById('${seed.ids[3]}');
+      return JSON.stringify({
+        confirmCalls: window.__confirmCalls,
+        modalAfterClick,
+        undoToast,
+        hasUndoBtn,
+        nowTitle: document.querySelector('.kc-study-title')?.textContent,
+        deleted: c4?.deleted,
+        status: c4?.status,
+        progress: document.querySelector('.kc-study-progress')?.textContent,
+      });
+    } finally {
+      window.confirm = realConfirm;
     }
-    const modalTitle = document.querySelector('.modal-title')?.textContent ?? '';
-    const confirmBtn = [...document.querySelectorAll('.modal-foot button')].find((b) => b.textContent === '斩掉');
-    confirmBtn?.click();
+  })()`);
+  const ch = JSON.parse(chopped);
+  check('★ 斩**不弹任何确认框**（点了就生效）', ch.confirmCalls === 0 && ch.modalAfterClick === null, `confirm=${ch.confirmCalls} modal=${ch.modalAfterClick}`);
+  check('★ 斩后给出「已斩 XXX 〔撤销〕」Toast', (ch.undoToast ?? '').includes('已斩') && ch.hasUndoBtn === true, String(ch.undoToast));
+  check('★ 斩后卡片变墓碑（deleted=1、status=chopped）', ch.deleted === 1 && ch.status === 'chopped', `${ch.deleted}/${ch.status}`);
+  check('★ 斩后自动跳到下一张（学习卡 5）', ch.nowTitle === '学习卡 5', String(ch.nowTitle));
+  check('★ 本轮总数减到 4（进度 xx/4）', ch.progress?.includes('/4') === true, String(ch.progress));
+
+  // ── 撤销：必须「完全恢复」（卡片回库 + 回到本轮队列） ──
+  const undone = await session.evaluate(`(async () => {
+    document.querySelector('.toast-undo-btn')?.click();
+    await new Promise((r) => setTimeout(r, 1000));
+    const kc = await import('/src/dao/kc.ts');
+    const sess = await import('/src/dao/kcSession.ts');
+    const c4 = await kc.getById('${seed.ids[3]}');
+    const open = await sess.loadLatestOpen('study');
+    return JSON.stringify({
+      deleted: c4?.deleted,
+      status: c4?.status,
+      inSession: (open?.cardIds ?? []).includes('${seed.ids[3]}'),
+      cardCount: open?.cardIds.length,
+      nowTitle: document.querySelector('.kc-study-title')?.textContent,
+    });
+  })()`);
+  const un = JSON.parse(undone);
+  check('★ 撤销后墓碑翻回来（deleted=0）', un.deleted === 0, String(un.deleted));
+  // 这张卡（学习卡 4）之前**没有自评过**，斩之前的状态本来就是 unlearned，
+  // 所以这里期望 unlearned。注意 `revive()` 也会写 unlearned —— 想看
+  // 「是否按原值还原（而不是一律 unlearned）」，用 `npm run test:r4-ui`：
+  // 那边种的是 learned / learning，用 revive() 会被写成 unlearned，断言才分得出来。
+  check('★ 撤销后状态回到斩之前的值（这张卡原本就是 unlearned）', un.status === 'unlearned', String(un.status));
+  check('★ 撤销后卡片回到本轮会话队列', un.inSession === true && un.cardCount === 5, `in=${un.inSession} count=${un.cardCount}`);
+  check('★ 撤销后它重新成为当前这张（位置也还原）', un.nowTitle === '学习卡 4', String(un.nowTitle));
+
+  // 再斩一次，让后面的用例回到「本轮 4 张」的局面
+  const rechopped = await session.evaluate(`(async () => {
+    document.querySelector('.kc-chop-btn').click();
     for (let i = 0; i < 40; i += 1) {
       await new Promise((r) => setTimeout(r, 200));
       if (document.querySelector('.kc-study-title')?.textContent === '学习卡 5') break;
     }
-    const kc = await import('/src/dao/kc.ts');
-    const c4 = await kc.getById('${seed.ids[3]}');
-    return JSON.stringify({
-      modalTitle,
-      nowTitle: document.querySelector('.kc-study-title')?.textContent,
-      deleted: c4?.deleted,
-      status: c4?.status,
-      progress: document.querySelector('.kc-study-progress')?.textContent,
-    });
+    return JSON.stringify({ nowTitle: document.querySelector('.kc-study-title')?.textContent });
   })()`);
-  const ch = JSON.parse(chopped);
-  check('★ 斩有二次确认弹窗', ch.modalTitle.includes('确定斩掉'), ch.modalTitle);
-  check('★ 斩后卡片变墓碑（deleted=1、status=chopped）', ch.deleted === 1 && ch.status === 'chopped', `${ch.deleted}/${ch.status}`);
-  check('★ 斩后自动跳到下一张（学习卡 5）', ch.nowTitle === '学习卡 5', String(ch.nowTitle));
-  check('★ 本轮总数减到 4（进度 xx/4）', ch.progress?.includes('/4') === true, String(ch.progress));
+  check('★ 再斩一次后又跳到学习卡 5（为后续用例复位）', JSON.parse(rechopped).nowTitle === '学习卡 5', rechopped);
 
   // ── 保存并退出 → 重进继续（验收标准 7）──
   console.log('\n[6] 保存并退出 → 重进继续（验收标准 7）');

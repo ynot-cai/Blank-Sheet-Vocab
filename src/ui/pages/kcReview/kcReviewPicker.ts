@@ -4,6 +4,8 @@
  * 与学习流程共用 `renderKcCountPicker`，复习额外给一句**推荐数字**的说明
  * （用户明确要求「进入时给一个推荐值」）。
  */
+
+// RULES-R1: 此处禁止任何强制时间限制（无倒计时 / 无超时提交 / 无超时判错）
 import type { KnowledgeCard } from '../../../core/kcTypes';
 import { renderKcCountPicker } from '../../components/KcCountPicker';
 import { h } from '../../dom';

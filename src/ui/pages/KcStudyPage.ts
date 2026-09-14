@@ -15,6 +15,8 @@
  * 3. **重进时问「继续上次 / 重新开始」**：`dao.kcSession.loadLatestOpen('study')`。
  * 4. **键盘 1/2/3 自评、Esc 退出**，与一期手感一致。
  */
+
+// RULES-R1: 此处禁止任何强制时间限制（无倒计时 / 无超时提交 / 无超时判错）
 import type { KcSession, KnowledgeCard } from '../../core/kcTypes';
 import * as dao from '../../dao';
 import { toastOk, toastWarn } from '../components/Toast';
@@ -24,7 +26,8 @@ import { navigate, registerCleanup } from '../router';
 import { renderKcCountPicker } from '../components/KcCountPicker';
 import { pickUnlearned, resumeSession } from './kcExam/kcExamFlow';
 import { renderKcFinishPanel, summarizeScores } from '../components/KcFinishPanel';
-import { askResume, confirmDialog, scoreLabel } from '../components/kcStudyDialogs';
+import { askResume, scoreLabel } from '../components/kcStudyDialogs';
+import { chopKcCardUndoable } from './kcChopUndo';
 
 /** 学习流程的阶段：选卡片 → 逐张自评 → 看完了（做题在阶段 05） */
 type Phase = 'picking' | 'cards' | 'finished';
@@ -195,22 +198,26 @@ export function renderKcStudyPage(ctx?: { query: URLSearchParams }): HTMLElement
   }
 
   /**
-   * 斩掉当前卡片（二次确认），然后跳过它。
+   * 斩掉当前卡片，然后跳过它。
+   *
+   * ★ RULES-R3: 斩不弹确认，但必须提供 ≥8 秒的撤销 Toast。
+   *   撤销的实现（含「完全恢复本轮位置」）在 `kcChopUndo.ts`，
+   *   与复习流程共用同一份——两处行为不一致的话用户立刻能感觉到。
+   *
    * @param card 卡片
    */
   async function chopCurrent(card: KnowledgeCard): Promise<void> {
-    const ok = await confirmDialog('确定斩掉？', '斩后这张卡不再出现在学习与复习里（可以在「卡片列表 → 已斩」里复活）。', '斩掉');
-    if (!ok || session === null) return;
-    await dao.kc.chop(card.id);
-    // 从本轮里移除，并把会话里的 id 与分数也去掉（否则重启会话又会把它捞回来）
-    cards = cards.filter((c) => c.id !== card.id);
-    session.cardIds = session.cardIds.filter((id) => id !== card.id);
-    delete session.selfScores[card.id];
-    // currentIndex 不前进：数组短了一位，当前位置自然就是下一张
-    session.currentIndex = Math.min(session.currentIndex, cards.length);
-    await dao.kcSession.save(session);
-    toastOk('已斩');
-    renderCard();
+    const s = session;
+    if (s === null) return;
+    await chopKcCardUndoable({
+      card,
+      cards,
+      session: s,
+      onChanged: async () => {
+        await dao.kcSession.save(s);
+        renderCard();
+      },
+    });
   }
 
   /** 全部卡片过完 */

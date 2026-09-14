@@ -9,6 +9,8 @@
  * 推进逻辑（第几题、评分、存档、会话）全在 `kcExam/kcExamController`；
  * 出题材料的准备（题型 / 语境词 / 防重复 / 题库参考）在 `kcExam/kcExamFlow`。
  */
+
+// RULES-R1: 此处禁止任何强制时间限制（无倒计时 / 无超时提交 / 无超时判错）
 import type { KnowledgeCard } from '../../core/kcTypes';
 import * as dao from '../../dao';
 import { renderKcExamTaker } from '../components/ExamTaker';

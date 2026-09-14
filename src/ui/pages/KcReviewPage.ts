@@ -23,16 +23,19 @@
  * 3. **桥接复用一期白纸流程**（`createKcWordBridge` → `createPaperFlow`），
  *    只在外层调用，不改一期代码。
  */
+
+// RULES-R1: 此处禁止任何强制时间限制（无倒计时 / 无超时提交 / 无超时判错）
 import { getSettings } from '../../core/config';
 import type { KcSession, KnowledgeCard } from '../../core/kcTypes';
 import * as dao from '../../dao';
 import { renderReviewPicker } from './kcReview/kcReviewPicker';
 import { renderKcStudyCard } from '../components/KcStudyCardView';
-import { askResume, confirmDialog } from '../components/kcStudyDialogs';
+import { askResume } from '../components/kcStudyDialogs';
 import { toastOk, toastWarn } from '../components/Toast';
 import { button, h } from '../dom';
 import { navigate, registerCleanup } from '../router';
 import { createKcWordBridge, type KcWordBridge } from './KcWordBridge';
+import { chopKcCardUndoable } from './kcChopUndo';
 import { pickForReview, resumeSessionCards } from './kcReview/kcReviewFlow';
 
 /**
@@ -146,20 +149,26 @@ export function renderKcReviewPage(ctx?: { query: URLSearchParams }): HTMLElemen
   }
 
   /**
-   * 斩掉当前卡片（二次确认）。
+   * 斩掉当前卡片。
+   *
+   * ★ RULES-R3: 斩不弹确认，但必须提供 ≥8 秒的撤销 Toast。
+   *   实现与学习流程**共用同一份**（`kcChopUndo.ts`）——
+   *   两个流程的斩行为不一致的话，用户立刻能感觉到。
+   *
    * @param card 卡片
    */
   async function chopCurrent(card: KnowledgeCard): Promise<void> {
-    if (session === null) return;
-    if (!(await confirmDialog('确定斩掉？', '斩后这张卡不再出现在学习与复习里（可以在「卡片列表 → 已斩」里复活）。', '斩掉'))) return;
-    await dao.kc.chop(card.id);
-    cards = cards.filter((c) => c.id !== card.id);
-    session.cardIds = session.cardIds.filter((id) => id !== card.id);
-    delete session.selfScores[card.id];
-    session.currentIndex = Math.min(session.currentIndex, cards.length);
-    await dao.kcSession.save(session);
-    toastOk('已斩');
-    renderCard();
+    const s = session;
+    if (s === null) return;
+    await chopKcCardUndoable({
+      card,
+      cards,
+      session: s,
+      onChanged: async () => {
+        await dao.kcSession.save(s);
+        renderCard();
+      },
+    });
   }
 
   /** ③ 进入「背单词」环节（桥接一期） */

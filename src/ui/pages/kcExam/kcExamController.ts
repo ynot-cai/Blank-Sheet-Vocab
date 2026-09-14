@@ -15,6 +15,8 @@
  * 出题（`prepareQuestions`）在用户答第一题之前一次性全部做完（用户明确要求，
  * 免得每答完一题都要等一次）；评分仍然只能一题一题来（用户提交了才能评）。
  */
+
+// RULES-R1: 此处禁止任何强制时间限制（无倒计时 / 无超时提交 / 无超时判错）
 import type { KcSession, KnowledgeCard } from '../../../core/kcTypes';
 import * as dao from '../../../dao';
 import { aiConfigFromSettings } from '../../../services/ai';

@@ -9,6 +9,8 @@
  * ⚠️ 这个文件里**不允许**出现 `innerHTML`：卡片内容是 AI 生成的，
  * 一律走 `renderBlocks` / `textContent`（见 `core/blockRender.ts` 的安全铁律）。
  */
+
+// RULES-R1: 此处禁止任何强制时间限制（无倒计时 / 无超时提交 / 无超时判错）
 import type { Block, ExamLoad } from '../../core/kcTypes';
 import { renderBlocks } from '../../core/blockRender';
 import { examTypeName } from '../../services/kcImportParse';

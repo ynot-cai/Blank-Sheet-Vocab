@@ -4,6 +4,8 @@
  * 题型表本身（`EXAM_TYPES`）在 `kcTypes.ts`，**新增题型只需要往那个数组加一项**，
  * 这里和别处都不许写死「4 种题型」之类的分支。
  */
+
+// RULES-R1: 此处禁止任何强制时间限制（无倒计时 / 无超时提交 / 无超时判错）
 import { EXAM_TYPES, findExamType } from './kcTypes';
 /** 已知的题型 id 集合（给「把 AI 输出的标签过滤成合法 id」用） */
 export const KNOWN_EXAM_TYPE_IDS: readonly string[] = EXAM_TYPES.map((t) => t.id);

@@ -11,8 +11,15 @@
  * 1. **语境词必须互不相关**（用户明确要求，防止 AI 硬凑成一个主题）；
  * 2. 每道题**只关联其中一个**语境词，由 AI 挑最贴切的那个并输出选了哪个；
  * 3. 评分必须**按每种题型的 rubric** 来，不能凭感觉给分。
+ *
+ * ★ 第四条（铁律 R1）：出题提示词里必须原样带上 `AI_RULES.md` 第 4.2 节的
+ *   《出题约束》——**任何时间限制、倒计时、限时完成要求都不许出现**。
+ *   原文在 `services/promptRules.ts`，自检脚本 R2 会查这段在不在。
  */
+
+// RULES-R1: 此处禁止任何强制时间限制（无倒计时 / 无超时提交 / 无超时判错）
 import { EXAM_TYPES } from '../core/kcTypes';
+import { MANDATORY_EXAM_RULES } from './promptRules';
 
 /** 题型清单（提示词里要用，从 `EXAM_TYPES` 生成，**不许手写第二份**） */
 const EXAM_TYPE_LIST = EXAM_TYPES.map((t) => `- \`${t.id}\`（${t.name}）${t.desc ? `：${t.desc}` : ''}`).join('\n');
@@ -31,7 +38,7 @@ export const KC_CONTEXT_SYSTEM_PROMPT = `你是一个英语学习语境词生成
 输出**严格 JSON**，不要 markdown 代码块，不要解释。
 
 输出 schema：
-{"words":["photosynthesis","telescope","jam","deadline","thunderstorm"]}
+{"words":["photosynthesis","telescope","jam","umbrella","thunderstorm"]}
 
 规则：
 1. 生成 **5 个**英语单词或短语，用于给学生出题时提供语境。
@@ -79,6 +86,8 @@ const EXAM_TYPE_REQUIREMENTS: Record<string, string> = {
  */
 export const KC_EXAM_SYSTEM_PROMPT = `你是一个英语教师，负责为一个知识点出练习题。
 输出**严格 JSON**，不要 markdown 代码块，不要解释。
+
+${MANDATORY_EXAM_RULES}
 
 输出 schema：
 {"question":"题干（可含换行）","contextWord":"你选的语境词","expected":"参考答案与要点"}

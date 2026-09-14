@@ -152,6 +152,7 @@ export async function requestWithRetry<T>(
   if (first.ok) return first;
   if (first.status !== undefined && !RETRYABLE_STATUS.has(first.status)) return first;
   console.warn('[kcCloudHttp] 请求失败，稍后重试一次：', first.error);
+  // RULES-R1: 失败后的重试间隔（网络超时/重试保护），不是答题计时
   await new Promise((resolve) => window.setTimeout(resolve, SYNC.retryDelayMs));
   return requestJson<T>(url, method, body, spaceKey);
 }

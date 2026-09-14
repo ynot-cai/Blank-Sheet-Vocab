@@ -343,6 +343,31 @@ export async function setStatusMany(ids: string[], status: WordStatus | null): P
 }
 
 /**
+ * 把一批词的状态**逐个还原**成各自的原值（撤销批量斩用）。
+ *
+ * ★ 为什么不能复用 `setStatusMany(ids, status)`：它给所有词写**同一个**状态，
+ *   而「撤销斩」的场景里每个词斩之前的状态各不相同（有的 learned、有的 learning）。
+ *   一律写成 unlearned 的话，一次批量撤销就把用户的复习进度抹平了——
+ *   这正是 RULES-R3 说的「完全恢复」所不允许的。
+ *
+ * @param entries 每项是「词 id + 斩之前的状态」
+ */
+export async function restoreStatuses(entries: { id: string; status: WordStatus }[]): Promise<void> {
+  if (entries.length === 0) return;
+  const wanted = new Map(entries.map((e) => [e.id, e.status]));
+  const all = await getAll();
+  const now = Date.now();
+  await txRun(STORE.words, 'readwrite', (s) => {
+    for (const w of all) {
+      const status = wanted.get(w.id);
+      if (status === undefined) continue;
+      s.put({ ...w, deleted: 0, status, updatedAt: now });
+    }
+  });
+  emitDataChanged();
+}
+
+/**
  * 判断一个词是否符合查询条件（只看筛选，不看排序与分页）。
  *
  * ★ 抽出来是必须的：`query()` 和 `queryIds()` 都要用同一套筛选。

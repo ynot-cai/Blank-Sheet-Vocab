@@ -55,6 +55,7 @@ export function mountSyncBanner(container: HTMLElement, onRetry: () => void): vo
 
     clearTimer();
     container.replaceChildren(el);
+    // RULES-R1: 提示条到点自动隐藏（与 toast 同类），不是答题计时
     if (!persistent) hideTimer = window.setTimeout(dismiss, AUTO_HIDE_MS);
   };
 

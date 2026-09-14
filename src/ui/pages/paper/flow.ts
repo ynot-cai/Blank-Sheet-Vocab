@@ -1,3 +1,4 @@
+// RULES-R1: 此处禁止任何强制时间限制（无倒计时 / 无超时提交 / 无超时判错）
 import { getSettings } from '../../../core/config';
 import { seedFromString } from '../../../core/layout';
 import { pickForMemorize } from '../../../core/pick';
@@ -5,9 +6,9 @@ import type { Session, Word } from '../../../core/types';
 import * as dao from '../../../dao';
 import { cancelSpeak } from '../../../services/tts';
 import { button, debounce, h } from '../../dom';
-import { confirmModal, openModal } from '../../components/Modal';
+import { openModal } from '../../components/Modal';
 import { mountSpeechGate } from '../../components/SpeechGate';
-import { toastOk, toastWarn } from '../../components/Toast';
+import { showUndoToast, toastOk, toastWarn } from '../../components/Toast';
 import { renderWordCard } from '../../components/WordCard';
 import { navigate } from '../../router';
 import { createPaperStage } from './PaperStage';
@@ -26,8 +27,12 @@ export interface FlowOptions {
   startInMemorize?: boolean;
   /** 复习：当前组达标（全部出现 + 每词记忆达标）后回调（页面弹「继续下一组 / 休息」） */
   onGroupDone?: () => void;
-  /** 词被斩时通知（复习页要从当前组与后续组移除） */
-  onWordChopped?: (id: string) => void;
+  /**
+   * 词被斩时通知（复习页要从当前组与后续组移除）。
+   * ★ 返回值是「撤销这次移除」的函数：RULES-R3 的撤销要把它调回来，
+   *   否则词虽然复活了，却不在复习分组里（下一组就少了它）。
+   */
+  onWordChopped?: (id: string) => void | (() => void);
   /** 销毁时回调 */
   onDestroy?: () => void;
 }
@@ -182,9 +187,10 @@ export function createPaperFlow(opts: FlowOptions): PaperFlow {
         },
         onChop: () => {
           void (async () => {
-            const ok = await confirmModal('确定斩掉？', `「${word.en}」斩后不再出现（列表页可复活）。`, '斩掉', true);
-            if (!ok) return;
-            await chopWord(word);
+            // RULES-R3: 斩不弹确认，但必须提供 ≥8 秒的撤销 Toast。
+            // 传 `draft` 而不是 `word`：用户可能刚在卡片里改过义项，
+            // 撤销后要重画回白纸的是**改过的**那一份，否则白纸上会显示旧意思。
+            await chopWord(draft);
             handle.close();
           })();
         },
@@ -192,18 +198,56 @@ export function createPaperFlow(opts: FlowOptions): PaperFlow {
     });
   };
 
-  /** 斩词：画布移除 + 会话词单移除（复习时通知页面同步各分组） */
+  /**
+   * 斩词：画布移除 + 会话词单移除（复习时通知页面同步各分组）。
+   *
+   * ★ RULES-R3: 斩不弹确认，但必须提供 ≥8 秒的撤销 Toast。
+   *   撤销必须**完全恢复**，所以斩之前要把「怎么恢复」需要的东西全记下来：
+   *   原状态、在词单里的位置、是否已出现在纸上、落点。
+   *   只把 `status` 改回来的话，词会回到库里但**不在白纸上**，
+   *   用户看到的是「撤销了但什么都没变」——这是最容易漏的一处。
+   *
+   * @param word 要斩的词
+   */
   const chopWord = async (word: Word): Promise<void> => {
+    const prevStatus = word.status;
+    const prevIndex = words.findIndex((w) => w.id === word.id);
+    const prevWordIdIndex = session.wordIds.indexOf(word.id);
+    const wasShown = session.shownIds.includes(word.id);
+    const placement = session.placements[word.id];
+
     await dao.words.chop(word.id);
     stage.removeWord(word.id);
     words = words.filter((w) => w.id !== word.id);
     wordMap.delete(word.id);
     session.wordIds = session.wordIds.filter((id) => id !== word.id);
     session.shownIds = session.shownIds.filter((id) => id !== word.id);
-    if (mode === 'review') opts.onWordChopped?.(word.id);
+    // 复习页要同步各组；它返回的撤销函数在下面撤销时调回
+    const undoGroups = mode === 'review' ? opts.onWordChopped?.(word.id) : undefined;
     browseIndex = words.reduce((n, w) => n + (session.shownIds.includes(w.id) ? 1 : 0), 0);
     await dao.session.saveSession(session);
     refreshUi();
+
+    // RULES-R3: 斩不弹确认，但必须提供 ≥8 秒的撤销 Toast
+    showUndoToast(`已斩 ${word.en}`, async () => {
+      const restored: Word = { ...word, status: prevStatus };
+      await dao.words.setStatus(word.id, prevStatus);
+      // 插回原来的位置：追加到末尾的话，「再背一个」的顺序会和斩之前不一样
+      words.splice(prevIndex < 0 ? words.length : Math.min(prevIndex, words.length), 0, restored);
+      wordMap.set(word.id, restored);
+      if (prevWordIdIndex >= 0) session.wordIds.splice(Math.min(prevWordIdIndex, session.wordIds.length), 0, word.id);
+      else if (!session.wordIds.includes(word.id)) session.wordIds.push(word.id);
+      if (wasShown && !session.shownIds.includes(word.id)) session.shownIds.push(word.id);
+      if (placement !== undefined) {
+        session.placements[word.id] = placement;
+        // 原本已经上纸的词，撤销后要重新画回白纸（否则它「回来了」但看不见）
+        if (wasShown) stage.addWord(restored, placement, { animate: false });
+      }
+      undoGroups?.();
+      browseIndex = words.reduce((n, w) => n + (session.shownIds.includes(w.id) ? 1 : 0), 0);
+      await dao.session.saveSession(session);
+      refreshUi();
+    });
   };
 
   /** 再次记忆 / 每 N 个新词后的记忆：只抽已出现在纸上的词 */

@@ -10,6 +10,8 @@
  * 评分结果卡上有**「改分」入口**：用户明确要求保留（AI 评分不一定准），
  * 改分后会回写 `ExamRecord.aiScore` 与 `card.attrs.lastExamScore`（由调用方负责）。
  */
+
+// RULES-R1: 此处禁止任何强制时间限制（无倒计时 / 无超时提交 / 无超时判错）
 import { EXAM_TYPES } from '../../core/kcTypes';
 import { button, h } from '../dom';
 import { nextOptionIndex } from './examKeys';
@@ -151,6 +153,7 @@ function renderAnswerInput(q: KcQuestion, answer: string, handlers: KcExamTakerH
   //（用户明确要求「Enter 要一直有用」）。散在各处监听正是当初「时灵时不灵」的原因：
   // 填空题认 Enter、选择题不认、评分页也不认。
   box.appendChild(actions);
+  // RULES-R1: 纯 UI 延迟（等渲染完再把光标放进输入框），与动画/过渡同类，不是答题计时
   window.setTimeout(() => el.focus(), 30);
   return box;
 }

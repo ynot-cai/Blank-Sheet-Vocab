@@ -7,7 +7,7 @@ import { exportBackup, importBackup } from '../../services/backup';
 import { button, debounce, h } from '../dom';
 import { confirmModal, openModal, promptModal } from '../components/Modal';
 import { renderPagination } from '../components/Pagination';
-import { toastError, toastOk, toastWarn } from '../components/Toast';
+import { showUndoToast, toastError, toastOk, toastWarn } from '../components/Toast';
 import { renderWordCard } from '../components/WordCard';
 import { currentSettings } from './settings/ctx';
 import { renderBatchBar } from './list/BatchBar';
@@ -330,10 +330,16 @@ export function renderListPage(): HTMLElement {
       void dao.words.setStatus(word.id, status).then(load);
     },
     onChop: (word: Word): void => {
-      void dao.words.chop(word.id).then(() => {
-        toastOk(`已斩：${word.en}`);
-        return load();
-      });
+      void (async () => {
+        // RULES-R3: 斩不弹确认，但必须提供 ≥8 秒的撤销 Toast
+        const prevStatus = word.status;
+        await dao.words.chop(word.id);
+        showUndoToast(`已斩 ${word.en}`, async () => {
+          await dao.words.setStatus(word.id, prevStatus);
+          await load();
+        });
+        await load();
+      })();
     },
     onRevive: (word: Word): void => {
       void dao.words.revive(word.id).then(() => {
@@ -377,9 +383,24 @@ export function renderListPage(): HTMLElement {
   const batchStatus = async (status: WordStatus | null): Promise<void> => {
     const ids = Array.from(selected);
     if (ids.length === 0) return;
+    // RULES-R3: 批量斩也是斩，同样要能撤销——先把每个词的原状态快照下来。
+    // 不能事后用「一律设成 unlearned」代替：那会把用户的复习进度抹平。
+    const snapshot =
+      status === 'chopped'
+        ? (await dao.words.getAll())
+            .filter((w) => selected.has(w.id))
+            .map((w) => ({ id: w.id, status: w.status }))
+        : null;
     await dao.words.setStatusMany(ids, status);
-    toastOk(`已处理 ${ids.length} 个词`);
     selected.clear();
+    if (snapshot !== null) {
+      showUndoToast(`已斩 ${ids.length} 个词`, async () => {
+        await dao.words.restoreStatuses(snapshot);
+        await load();
+      });
+    } else {
+      toastOk(`已处理 ${ids.length} 个词`);
+    }
     await load();
   };
 

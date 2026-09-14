@@ -1,3 +1,4 @@
+// RULES-R1: 此处禁止任何强制时间限制（无倒计时 / 无超时提交 / 无超时判错）
 import type { Word } from '../../../core/types';
 import { renderWordCard } from '../../components/WordCard';
 import { h } from '../../dom';

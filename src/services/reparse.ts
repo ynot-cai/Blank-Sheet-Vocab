@@ -263,6 +263,9 @@ function buildDiff(word: Word, next: ReparseSenses): ReparseDiff {
 
 /**
  * 等一会儿（批间间隔 / 重试前等待）。
+ *
+ * RULES-R1: 分批请求之间的间隔，用途是不打爆上游限流，
+ * 与网络超时同类，**不是答题计时**。
  * @param ms 毫秒
  */
 function delay(ms: number): Promise<void> {

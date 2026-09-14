@@ -1,3 +1,4 @@
+// RULES-R1: 此处禁止任何强制时间限制（无倒计时 / 无超时提交 / 无超时判错）
 import { uid } from '../../core/model';
 import { setSettingsCache } from '../../core/config';
 import { groupWords, pickForReview, recommendReviewCount } from '../../core/pick';
@@ -38,12 +39,28 @@ export function renderReviewPage(ctx?: RouteContext): HTMLElement {
       groupCount: groups.length,
       onWordChopped: (id) => {
         // 斩掉的词从当前组与后续组移除（组内数量相应减少）
-        if (!session) return;
-        session.wordIds = session.wordIds.filter((x) => x !== id);
+        const s = session;
+        if (!s) return undefined;
+        const wordIdIndex = s.wordIds.indexOf(id);
+        s.wordIds = s.wordIds.filter((x) => x !== id);
+        // 记下每个组里被摘掉的位置 —— 撤销时要插回原处，否则复习顺序会变
+        const removed: { group: string[]; index: number }[] = [];
         for (const group of groups) {
           const at = group.indexOf(id);
-          if (at >= 0) group.splice(at, 1);
+          if (at >= 0) {
+            removed.push({ group, index: at });
+            group.splice(at, 1);
+          }
         }
+        // ★ RULES-R3: 撤销斩要「完全恢复」，复习分组里的位置也算在内
+        return () => {
+          if (wordIdIndex >= 0) s.wordIds.splice(Math.min(wordIdIndex, s.wordIds.length), 0, id);
+          else if (!s.wordIds.includes(id)) s.wordIds.push(id);
+          // 从后往前插：先把靠后的位置填回去，避免前面的插入把后面记下的下标顶偏
+          for (const item of [...removed].reverse()) {
+            item.group.splice(Math.min(item.index, item.group.length), 0, id);
+          }
+        };
       },
       onGroupDone: () => groupDone(),
     });

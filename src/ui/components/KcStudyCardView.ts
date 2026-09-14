@@ -7,6 +7,8 @@
  *
  * 渲染一律走 `renderBlocks`（AI 内容只当纯文本），这个文件里不出现任何 HTML 拼接。
  */
+
+// RULES-R1: 此处禁止任何强制时间限制（无倒计时 / 无超时提交 / 无超时判错）
 import { EXAM_TYPES, type KnowledgeCard } from '../../core/kcTypes';
 import { renderBlocks } from '../../core/blockRender';
 import { button, h } from '../dom';

@@ -8,6 +8,7 @@
  * 共享的语义规则（如「义项怎么整理」）放 `core/senseRules.ts` 并被引用，不复制。
  */
 import { EXAM_TYPES } from '../core/kcTypes';
+import { MANDATORY_IMPORT_RULES } from './promptRules';
 
 /** 题型清单（提示词里要用，从 `EXAM_TYPES` 生成，**不许手写第二份**） */
 const EXAM_TYPE_LIST = EXAM_TYPES.map((t) => `- \`${t.id}\`（${t.name}）${t.desc ? `：${t.desc}` : ''}`).join('\n');
@@ -31,10 +32,16 @@ const EXAM_TYPE_LIST = EXAM_TYPES.map((t) => `- \`${t.id}\`（${t.name}）${t.de
  *
  * 「自动拆分」那条保持原样：用户只会说一个模糊的点，
  * 模型必须主动拆成若干个独立知识点，而不是把一整章塞进一张卡。
+ *
+ * ★ 出题量 \`estMinutes\` 只是「建议花多久」，**不是答题时限**：
+ *   铁律 R1 禁止任何强制时间限制（AI_RULES.md 第 1 节），
+ *   题量提示与倒计时是两件事，别把这里改成「限时 N 分钟」。
  */
 export const KC_IMPORT_SYSTEM_PROMPT = `你是一个英语教师，擅长把学生模糊的"我这块不行"整理成结构化的知识点卡片。
 输出**严格 JSON**，不要 markdown 代码块，不要解释。
 学生是用碎片时间**扫一眼卡片找回记忆**，不是读教材——所以宁可短，绝不许长。
+
+${MANDATORY_IMPORT_RULES}
 
 输出 schema：
 {"cards":[{"title":"charge 的短语：有 the / 无 the","summary":"有 the 用介词短语，无 the 用 that 从句","blocks":[{"type":"heading","content":"看有没有 the"},{"type":"text","content":"有 the：the + 名词 + of doing；无 the：直接跟 that 从句"},{"type":"example","content":"She was in charge of the project.","translation":"她负责这个项目。"},{"type":"list","items":["有 the → charge of + 名词/动名词","无 the → charge that + 从句（指控）"]},{"type":"table","rows":[["in charge of + 名词","负责（有 the）"],["in the charge of + 人","由…负责（有 the）"],["charge that + 从句","指控（无 the）"]]},{"type":"tip","content":"in charge of 和 in the charge of 方向正好相反"}],"examTags":["fill","choice"],"examLoad":{"types":["fill","choice"],"estMinutes":4}}]}

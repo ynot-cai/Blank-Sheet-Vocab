@@ -4,6 +4,8 @@
  * 从页面里拆出来的原因：单文件 ≤ 300 行；而且这两套规则**可以在 Node 里测**
  * （不碰 DOM），是验收标准 2（空库不崩）与 6（词源优先级）的落点。
  */
+
+// RULES-R1: 此处禁止任何强制时间限制（无倒计时 / 无超时提交 / 无超时判错）
 import type { KcSession, KnowledgeCard } from '../../../core/kcTypes';
 import type { Word } from '../../../core/types';
 import * as dao from '../../../dao';

@@ -14,7 +14,7 @@ import { KC } from '../../core/config';
 import type { KcQuery, KnowledgeCard } from '../../core/kcTypes';
 import * as dao from '../../dao';
 import { openModal } from '../components/Modal';
-import { toastOk } from '../components/Toast';
+import { showUndoToast, toastOk } from '../components/Toast';
 import { button, debounce, h, select } from '../dom';
 import { navigate, registerCleanup } from '../router';
 import { renderKcFilters, renderKcStatsBar, type KcListQuery } from './kcList/KcListFilters';
@@ -114,8 +114,13 @@ export function renderKcCardListPage(): HTMLElement {
       onEdit: (id) => navigate(`/kc/edit?id=${encodeURIComponent(id)}`),
       onChop: (card) => {
         void (async () => {
+          // RULES-R3: 斩不弹确认，但必须提供 ≥8 秒的撤销 Toast
+          const prev = { deleted: card.deleted ?? 0, status: card.status } as const;
           await dao.kc.chop(card.id);
-          toastOk('已斩');
+          showUndoToast(`已斩 ${card.title}`, async () => {
+            await dao.kc.restoreChopState(card.id, { deleted: prev.deleted, status: prev.status });
+            await refresh();
+          });
           await refresh();
         })();
       },

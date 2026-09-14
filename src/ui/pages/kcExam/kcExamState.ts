@@ -11,6 +11,8 @@
  * `kcExamController.ts` 会把它们**再导出**一次，所以别处的
  * `import { ExamState } from './kcExamController'` 不用改。
  */
+
+// RULES-R1: 此处禁止任何强制时间限制（无倒计时 / 无超时提交 / 无超时判错）
 import type { KcSession, KnowledgeCard } from '../../../core/kcTypes';
 import type { KcGradeResult, KcQuestion } from '../../components/ExamTaker';
 import type { PrepareProgress } from './kcExamPrepare';

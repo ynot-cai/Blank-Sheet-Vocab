@@ -9,6 +9,8 @@
  *
  * 路由名 = 文件名：/api/exam-history（连字符）。
  */
+
+// RULES-R1: 此处禁止任何强制时间限制（无倒计时 / 无超时提交 / 无超时判错）
 import { requireSpaceKey, spaceKeyHint, SpaceKeyError } from './_lib/spaceAuth.js';
 import { applyCors, handleOptions } from './_lib/cors.js';
 import { firstQueryValue, readJsonBody, sendError, sendJson } from './_lib/http.js';

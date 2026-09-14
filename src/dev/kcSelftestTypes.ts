@@ -11,7 +11,13 @@ export interface KcSelfTestResult {
   detail: string;
 }
 
-/** 等一小会（IndexedDB 事务提交用） */
+/**
+ * 等一小会（IndexedDB 事务提交用）。
+ *
+ * RULES-R1: 只在浏览器自测脚本里用的等待，不在任何产品流程里，
+ * 与答题计时无关（铁律允许保留的计时只有网络超时 / 防抖 / 动画这几类，
+ * 本条属于测试脚手架）。
+ */
 export const tick = (ms = 30): Promise<void> => new Promise((r) => window.setTimeout(r, ms));
 /**
  * 把浮点数格式化成便于阅读的字符串（保留 3 位）。

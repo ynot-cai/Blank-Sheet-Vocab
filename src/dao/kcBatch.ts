@@ -45,6 +45,37 @@ export async function bulkSetDeleted(ids: string[], deleted: 0 | 1): Promise<num
 }
 
 /**
+ * 批量撤销斩：把一批卡片**按各自原来**的 `deleted` 与 `status` 还原
+ * （★ RULES-R3 的批量版）。
+ *
+ * 为什么不能复用 `bulkSetDeleted(ids, 0)`：它把状态一律写成 `unlearned`，
+ * 一次批量撤销就会把用户的掌握进度抹平（原本 `learned` 的卡全掉回未学）。
+ * 撤销的语义是「当作没斩过」，所以必须按快照逐张还原。
+ *
+ * @param entries 每张卡的「id + 斩之前的 deleted/status」
+ */
+export async function bulkRestoreChopState(
+  entries: { id: string; deleted: 0 | 1; status: KcStatus }[],
+): Promise<number> {
+  if (entries.length === 0) return 0;
+  const all = await getAll();
+  const wanted = new Map(entries.map((e) => [e.id, e]));
+  const targets = all.filter((c) => wanted.has(c.id));
+  if (targets.length === 0) return 0;
+  const now = await nextUpdatedAt();
+  const next: KnowledgeCard[] = targets.map((c) => {
+    const prev = wanted.get(c.id) as { deleted: 0 | 1; status: KcStatus };
+    return { ...c, deleted: prev.deleted, status: prev.status, updatedAt: now };
+  });
+  await txRun(STORE.knowledgeCards, 'readwrite', (s) => {
+    for (const card of next) s.put(card);
+  });
+  emitDataChanged();
+  scheduleKcSync();
+  return next.length;
+}
+
+/**
  * 批量加题型标签（列表页的批量操作）。
  * 已在标签里的不重复加。
  * @param ids 卡片 id 数组
@@ -127,6 +158,35 @@ export async function removePermanently(id: string): Promise<boolean> {
 }
 
 
+
+/**
+ * 撤销斩：把卡片恢复成**斩之前**的完整状态（`deleted` 与 `status` 都还原）。
+ *
+ * ★ RULES-R3 要的「撤销 → 完全恢复」不能走 `revive()`：
+ *   `revive()` 把状态一律写成 `unlearned`，于是一张原本 `learned` 的卡
+ *   撤销后会掉回「未学」——它原本在学习/复习流程里的位置就丢了。
+ *   这里按调用方保存下来的原值写回，「原样」到什么程度由调用方决定。
+ *
+ * @param id 卡片 id
+ * @param prev 斩之前的状态快照（`deleted` 与 `status`）
+ */
+export async function restoreChopState(
+  id: string,
+  prev: { deleted: 0 | 1; status: KcStatus },
+): Promise<boolean> {
+  const card = await getById(id);
+  if (card === null) return false;
+  const next: KnowledgeCard = {
+    ...card,
+    deleted: prev.deleted,
+    status: prev.status,
+    updatedAt: await nextUpdatedAt(),
+  };
+  await tx(STORE.knowledgeCards, 'readwrite', (s) => s.put(next));
+  emitDataChanged();
+  scheduleKcSync();
+  return true;
+}
 
 /**
  * 置软删除标记（内部用）。

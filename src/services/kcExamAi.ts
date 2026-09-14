@@ -7,6 +7,8 @@
  * **安全底线（方案 B）**：密钥由 `chatComplete` 直接发给模型服务，
  * 服务器（含我们自己的代理）不保存、不落库。本文件不出现任何存密钥的逻辑。
  */
+
+// RULES-R1: 此处禁止任何强制时间限制（无倒计时 / 无超时提交 / 无超时判错）
 import { getSettings } from '../core/config';
 import type { BankQuestion, KnowledgeCard } from '../core/kcTypes';
 import type { AiConfig } from './ai';

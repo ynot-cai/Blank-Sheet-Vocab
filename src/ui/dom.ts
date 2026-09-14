@@ -128,6 +128,7 @@ export function debounce<A extends unknown[]>(fn: (...args: A) => void, ms: numb
   const wrapped = (...args: A): void => {
     lastArgs = args;
     if (timer !== null) window.clearTimeout(timer);
+    // RULES-R1: 防抖（debounce）本身就在铁律的允许清单里，不是答题计时
     timer = window.setTimeout(() => {
       timer = null;
       const callArgs = lastArgs;

@@ -106,6 +106,7 @@ export function createSyncScheduler(opts: SyncSchedulerOptions): SyncScheduler {
   /** 失败后安排一次重试（只在断网/后端挂了时用，间隔比较长） */
   function scheduleRetry(): void {
     if (retryTimer !== null) return;
+    // RULES-R1: 同步失败后的重试退避（网络超时/重试保护），不是答题计时
     retryTimer = window.setTimeout(() => {
       retryTimer = null;
       void runSync(false);

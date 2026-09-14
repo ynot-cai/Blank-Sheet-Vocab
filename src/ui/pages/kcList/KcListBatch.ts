@@ -6,7 +6,7 @@
  */
 import * as dao from '../../../dao';
 import { openModal } from '../../components/Modal';
-import { toastOk } from '../../components/Toast';
+import { showUndoToast, toastOk } from '../../components/Toast';
 import { h } from '../../dom';
 import { renderKcBatchBar } from './KcListFilters';
 
@@ -26,7 +26,19 @@ export function renderKcBatchActions(ids: string[], after: () => void | Promise<
 
   return renderKcBatchBar(ids.length, {
     onChop: () => {
-      void run('已斩', () => dao.kcBatch.bulkSetDeleted(ids, 1));
+      void (async () => {
+        // RULES-R3: 批量斩也是斩，同样要能撤销 —— 斩之前把每张卡的原状态快照下来
+        // （不能事后用「一律设成 unlearned」代替，那会抹平掌握进度）
+        const snapshot = (await dao.kc.getAll())
+          .filter((c) => ids.includes(c.id))
+          .map((c) => ({ id: c.id, deleted: (c.deleted ?? 0) as 0 | 1, status: c.status }));
+        const n = await dao.kcBatch.bulkSetDeleted(ids, 1);
+        showUndoToast(`已斩 ${n} 张`, async () => {
+          await dao.kcBatch.bulkRestoreChopState(snapshot);
+          await after();
+        });
+        await after();
+      })();
     },
     onRevive: () => {
       void run('已复活', () => dao.kcBatch.bulkSetDeleted(ids, 0));

@@ -17,6 +17,7 @@ import type { Settings } from '../core/types';
 import { normalizeApiBase } from '../core/syncHelper';
 import { splitPackedSenses } from '../core/model';
 import { SENSE_RULES_FOR_AI, normalizeAliases } from '../core/senseRules';
+import { MANDATORY_IMPORT_RULES } from './promptRules';
 import { API_ROUTES } from '../dao/syncServer';
 
 /** AI 接口配置（三项全部由用户填） */
@@ -340,8 +341,14 @@ export async function testConnection(cfg: AiConfig): Promise<{ ok: boolean; mess
  * ★★★ 义项怎么整理，规则全文在 `core/senseRules.ts` 的 `SENSE_RULES_FOR_AI`。
  *     这里只写「输出格式 + 不许做什么」，语义规则一律引用那份，不在这里重写一遍：
  *     规则抄两份的话，改了这份忘了那份，AI 的行为就会和代码兜底、和文档互相矛盾。
+ *
+ * ★ 开头的《义项处理规则》是 `AI_RULES.md` 第 4.1 节的**必含片段**（项目铁律），
+ *   原文存在 `services/promptRules.ts`，必须原样出现在本提示词里（自检脚本 R2 会查）。
+ *   它与下面那份详细规范不冲突：这一段是铁律摘要，那份是四步细则。
  */
 export const PARSE_SYSTEM_PROMPT = `你是一个英语词库结构化助手。把用户给的生词文本解析成严格 JSON。
+
+${MANDATORY_IMPORT_RULES}
 
 输出 schema：
 {"words":[{"en":"abandon","phonetic":"/əˈbændən/","example":"He abandoned his car.","senses":[{"text":"v. 放弃","aliases":["抛弃","遗弃"]}]}]}

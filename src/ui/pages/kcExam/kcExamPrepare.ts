@@ -14,6 +14,8 @@
  * 与 `kcExamFlow` 的分工：那边回答「该出哪些题型、要哪些材料」，
  * 这边回答「怎么把它们一次性、并发地出出来」。
  */
+
+// RULES-R1: 此处禁止任何强制时间限制（无倒计时 / 无超时提交 / 无超时判错）
 import { KC } from '../../../core/config';
 import type { KnowledgeCard } from '../../../core/kcTypes';
 import type { AiConfig } from '../../../services/ai';

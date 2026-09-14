@@ -630,6 +630,108 @@ fatal: unable to access 'https://github.com/...': Failed to connect to github.co
 
 ---
 
+### 0.14 阶段 R4：规则固化 + 三项改造（★ 当前最新改动）
+
+用户的原话是「之前口头提过『不要时间限制』，但换个对话就忘了」。
+所以本阶段的核心不是「改三处代码」，而是**让规则住进文件，而不是住在对话记忆里**。
+
+#### ① 规则固化（治「AI 失忆」的机制）
+
+| 文件 | 作用 |
+|---|---|
+| `AI_RULES.md`（仓库根） | **项目铁律**（最高优先级）。R1 无强制时间限制 / R2 义项系统 / R3 斩可撤销 / R4 安全底线 + 第 4 节「运行时 AI 提示词必含片段」 |
+| `scripts/checkRules.mjs` | 机器检查：注释标记、提示词必含片段、可疑答题计时、安全底线 |
+| `npm run rules:check` | 跑上面那个脚本（**已挂进 `npm test` 的第一环**） |
+| 代码里的 `// RULES-R1:` `// RULES-R3:` 注释 | 让规则在代码里「看得见」 |
+
+⚠️ **`AI_RULES.md` 与 `scripts/checkRules.mjs` 都是用户给的原文，逐字放进来**（首次落地时做过
+SHA-256 校验）。改它们等于改铁律，**需要用户明确同意**。
+★ 「改松自检让它变绿」是被明令禁止的修法（和 §0.1 里那条「把断言改回旧值」是同一类错误）。
+
+**第 4 节的必含片段存了一份在代码里**：`src/services/promptRules.ts`
+（`MANDATORY_IMPORT_RULES` / `MANDATORY_EXAM_RULES`），由 `AI_RULES.md` 决定内容，
+三个提示词模板（一期 `ai.ts` 的 `PARSE_SYSTEM_PROMPT`、二期 `kcPrompts.ts` 的
+`KC_IMPORT_SYSTEM_PROMPT`、`kcExamPrompts.ts` 的 `KC_EXAM_SYSTEM_PROMPT`）都引用它。
+- 为什么不各抄一份：抄三份就会「改一处忘两处」，AI 的行为和铁律互相矛盾（§0.4 踩过）。
+- 为什么文件名叫 `promptRules.ts`：自检脚本 R2 是在「文件名像提示词模板」的文件里找指纹的，
+  放 `core/` 下会变成「规则写了但自检看不见」。
+- `npm run test:r4` 会**逐字**比对这份副本与 `AI_RULES.md` 第 4 节，不一致就红。
+
+#### ② 斩：不弹确认 + ≥8 秒撤销（一 / 二期全部斩点）
+
+`components/Toast.ts` 新增 `showUndoToast(message, onUndo)`，窗口常量 `UNDO_WINDOW_MS = 8000`。
+文案就是用户要的「已斩 XXX 〔撤销〕」。七个斩点全部改完：
+
+| 位置 | 撤销时恢复什么 |
+|---|---|
+| `paper/flow.ts`（一期白纸单词卡） | 状态 + 词单位置 + 是否已上纸 + **画布上的落点**（重新画回去） |
+| `ListPage.ts` 单行 | 状态。**批量斩**额外走 `dao.words.restoreStatuses()` 逐词还原 |
+| `KcStudyPage.ts` / `KcReviewPage.ts` | 共用 `ui/pages/kcChopUndo.ts`（两处行为必须一致） |
+| `KcCardListPage.ts` / `KcCardEditPage.ts` | 状态 + 墓碑；编辑页斩完会跳走，所以撤销**不依赖本页状态** |
+| `kcList/KcListBatch.ts` | `dao.kcBatch.bulkRestoreChopState()` 一次事务批量还原 |
+
+★ **撤销的语义是「完全恢复」，不是「复活」**，这是本次最容易做错的一处：
+- `dao.words.revive()` 按 `learnedAt` 猜状态、`dao.kc.revive()` 一律写 `unlearned`，
+  用它们做撤销会把 `learned/learning` 的卡掉回未学 —— 所以新增了
+  `words.restoreStatuses()` / `kcBatch.restoreChopState()` / `bulkRestoreChopState()`，
+  都是**按快照还原原值**。
+- 二期还要还原**本轮学习/复习队列里的位置**：插回 `max(原下标, 当前下标)`
+  （立刻撤销 → 它重新变成当前这张；先评了几张再撤销 → 它接着就会被看到。
+  硬插回原下标会落在「已经翻过去」的位置，用户会以为撤销没生效）。完整推导在 `kcChopUndo.ts` 头注释。
+- 复习页的 `onWordChopped` 现在**返回一个「撤销这次移除」的函数**（分组里的下标也要还原）。
+
+#### ③ 清除强制时间限制（★ 抓到一个脚本扫不到的真 bug）
+
+`paper/rounds.ts` 的 `waitUntil()` 原来是 `for (let i = 0; i < 400; i += 1)` × 25ms
+= **等 10 秒就 `return cond()`（false）**，而两个调用点都不看返回值、直接往下判分。
+后果：用户盯着默写题思考超过 10 秒，界面会**自己把没作答的框当提交判掉**
+（空答案 → 记一次未通过 → 弹答案卡）—— 这就是铁律禁止的「超时自动提交」。
+
+- 已改成 `for (;;)`：一直等到用户真的提交或主动退出，**不给任何时限**。
+- ⚠️ `scripts/checkRules.mjs` 的 R1 是按变量名（timeLimit / countdown / deadline）扫的，
+  **这种「按次数封顶的等待循环」它扫不到** —— 所以本项是靠人工排查发现的，
+  `npm run test:r4` 里加了一条「等待循环不许有次数上限」的断言钉住它。
+- 另外把 `kcExamPrompts.ts` 语境词 schema 示例里的 `deadline` 换成了 `umbrella`：
+  它只是个示例单词，但会触发 R1 的 WARN，看着像违规。
+- 逐条确认过 14 处 `setTimeout` 全是合法用途（网络/数据库超时、防抖、重试退避、
+  焦点转移、Toast/banner 自动隐藏、自测 tick），都在原处加了 `RULES-R1:` 说明。
+- 21 个「考察相关」文件（自检按文件名捞的）+ 一期真正作答的 4 个文件都加了 `RULES-R1` 标记。
+
+#### ④ 义项系统：评判结论 = **合格**（6 条自查全过）
+
+录入 → 数据结构 → 输入框 → 判分，全链路本来就是对的，本次**没有改判定逻辑**，
+只补了验收脚本把它钉住（`test:r4-ui` 第 [1] 组就是这 6 条）：
+
+| §3.2 | 结果 | 实测现象 |
+|---|---|---|
+| ① `bank` 是 2 个义项 | ✅ | `coerceParsedWord` 出来 2 条（银行 / 河岸），没被合并 |
+| ② 高兴/快乐/愉快 = 1 义项 + 2 近义词 | ✅ | 1 个义项、`aliases` 被 `normalizeAliases` 拆成 2 项 |
+| ③ 考 `bank` 出现 2 个输入框 | ✅ | `.mem-input` 实测 2 个（`rounds.ts` 是 `senses.forEach` 生成） |
+| ④ 填「银行」+「河岸」→ 通过 | ✅ | 答案卡两条都 ✓ |
+| ⑤ 改填「岸边」（近义词）→ 仍通过 | ✅ | `senseMatch` 命中 aliases，两条都 ✓ |
+| ⑥ 只对第一个 → 未通过 | ✅ | `results.every(Boolean)`，第二条 ✗ |
+
+#### ⑤ 验收与自检
+
+| 套件 | 项数 | 内容 |
+|---|---|---|
+| `npm run rules:check` | 9 | **全绿（9 通过 / 0 警告 / 0 错误）** |
+| `npm run test:r4` | 55 | 规则文件机制、必含片段逐字比对、R1 无时限、义项数据形态、撤销窗口 ≥8s、安全底线 |
+| `npm run test:r4-ui` | 33 | 真 Chrome：§3.2 的 ③④⑤⑥、停 12 秒不被自动提交、一/二期斩无确认+可撤销 |
+| `npm test` | — | 全量回归通过 |
+
+★ `test:r4` 的两条**设计取向**，改的时候别拆掉：
+1. 它会 `execFileSync` **真的跑一次 `scripts/checkRules.mjs`** 并断言退出码 0 —— 
+   不是「把它抄一遍」，否则脚本坏了测试还是绿的。
+2. 扫「禁止出现的计时代码」时**先剥注释**（同 `test-build.mjs` 的做法）：
+   注释里提到 timeLimit 往往正是在讲这条规则，不剥的话**解释规则的话反而被判违规**。
+   （`checkRules.mjs` 本身的 R4 有一处同类误报：`blockRender.ts` 的注释里
+   `el.innerHTML = block.content` 会被当成真的 innerHTML 赋值。**没有改脚本**，
+   而是把注释改写成不触发该模式的说法「把 `block.content` 当作元素的 `innerHTML` 赋进去」，
+   既保住了说明，又不放松检查。）
+
+---
+
 ---
 
 ---

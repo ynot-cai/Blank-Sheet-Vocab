@@ -14,7 +14,7 @@ import { EXAM_TYPES, type Block, type ExamLoad, type KcStatus, type KnowledgeCar
 import * as dao from '../../dao';
 import { renderBlockEditor } from '../components/BlockEditor';
 import { openModal } from '../components/Modal';
-import { toastError, toastOk } from '../components/Toast';
+import { showUndoToast, toastError, toastOk } from '../components/Toast';
 import { button, debounce, h, numberInput, textInput } from '../dom';
 import { navigate, registerCleanup, type RouteContext } from '../router';
 
@@ -209,10 +209,15 @@ function renderEditor(card: KnowledgeCard): HTMLElement {
   foot.appendChild(
     button('斩', () => {
       void (async () => {
-        if (!window.confirm('斩掉这张卡片？斩后不再出现在学习/复习里（可在「已斩」里复活）。')) return;
+        // RULES-R3: 斩不弹确认，但必须提供 ≥8 秒的撤销 Toast。
+        // 注意这里斩完就跳走了，撤销必须**不依赖本页状态**——
+        // toast 挂在 document.body 上、撤销只调 DAO，所以跳页之后照样能撤销。
+        const prev = { deleted: card.deleted ?? 0, status: card.status } as const;
         autoSave.cancel();
         await dao.kc.chop(card.id);
-        toastOk('已斩');
+        showUndoToast(`已斩 ${card.title}`, async () => {
+          await dao.kc.restoreChopState(card.id, { deleted: prev.deleted, status: prev.status });
+        });
         navigate('/kc/list');
       })();
     }, { variant: 'danger' }),

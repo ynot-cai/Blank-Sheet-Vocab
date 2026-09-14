@@ -10,6 +10,8 @@
  *
  * 空间隔离：两张表都带 `spaceKey`（与云端行同构，推上去零转换）。
  */
+
+// RULES-R1: 此处禁止任何强制时间限制（无倒计时 / 无超时提交 / 无超时判错）
 import { STORE, clearStore, tx, txRun } from '../core/db';
 import { newId, sanitizeText } from '../core/kcModel';
 import { getSettings } from '../core/config';

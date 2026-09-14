@@ -1,3 +1,4 @@
+// RULES-R1: 此处禁止任何强制时间限制（无倒计时 / 无超时提交 / 无超时判错）
 import { activeSenses, senseMatch } from '../../../core/model';
 import type { Session, Settings, Word } from '../../../core/types';
 import { button, h } from '../../dom';
@@ -19,14 +20,30 @@ export interface RoundHost {
   isAborted: () => boolean;
 }
 
-/** 等待条件成立或中断 */
+/**
+ * 等待「用户提交」或「主动中断」。
+ *
+ * ★ RULES-R1: 这里**不许有次数上限**（原来写的是 400 次 × 25ms = 10 秒）。
+ *
+ * 原来的写法是一个隐蔽的**超时自动提交**：等满 10 秒就 `return cond()`（= false），
+ * 而两个调用点都不看返回值、直接往下走去判分 —— 于是用户盯着题思考超过 10 秒，
+ * 界面会自己把没作答的框当提交判掉（空答案 → 记一次未通过 → 弹答案卡）。
+ * 这正是铁律第 1 节明令禁止的「超时自动提交 / 超时判错」，
+ * 而且 `scripts/checkRules.mjs` 按变量名（timeLimit / countdown）扫，**扫不到它**。
+ *
+ * 现在改成一直等到用户真的提交、或者用户主动退出（abort）为止，
+ * 不给任何时限：思考多久都不会被判错、不会被自动提交。
+ *
+ * @param cond 条件（用户已提交）
+ * @param abort 中断信号（用户点了返回白纸 / 页面被销毁）
+ * @returns true = 用户提交了；false = 被中断
+ */
 async function waitUntil(cond: () => boolean, abort: () => boolean): Promise<boolean> {
-  for (let i = 0; i < 400; i += 1) {
+  for (;;) {
     if (cond()) return true;
     if (abort()) return false;
     await new Promise((r) => window.setTimeout(r, 25));
   }
-  return cond();
 }
 
 /**
@@ -77,13 +94,17 @@ export async function runMemorizeRound(host: RoundHost, ids: string[]): Promise<
     overlay.appendChild(box);
 
     // 光标自动落到第一个输入框：点完「记忆」直接敲键盘就能输入，不用先点一下输入框
+    // RULES-R1: 纯 UI 延迟（等渲染完再聚焦），与动画/过渡同类，不是答题计时
     window.setTimeout(() => inputs[0]?.focus(), 0);
 
+    // RULES-R1: 提交靠用户点「提交」或按 Enter，**没有任何超时**——
+    // 停在这里多久都不会被自动提交、也不会被判错（见 AI_RULES.md 第 1 节）。
     await waitUntil(() => submitted, host.isAborted);
     host.stage.hideOverlay();
     if (host.isAborted()) return;
 
     // 判分：每个框命中任意一个义项的 text / aliases 即算对（顺序无关）
+    // RULES-R1: 判分只看对错，不看用时
     const results = inputs.map((input) => {
       const value = input.value.trim();
       if (value === '') return false;
@@ -173,6 +194,7 @@ export async function runSpellRound(host: RoundHost, ids: string[]): Promise<voi
     overlay.appendChild(box);
 
     // 光标自动落到拼写输入框
+    // RULES-R1: 纯 UI 延迟（等渲染完再聚焦），与动画/过渡同类，不是答题计时
     window.setTimeout(() => input.focus(), 0);
 
     await waitUntil(() => submitted, host.isAborted);

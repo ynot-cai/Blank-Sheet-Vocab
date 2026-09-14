@@ -88,6 +88,7 @@ export function openDB(): Promise<IDBDatabase> {
     }
     /** 是否已经给出结果（超时后浏览器回调仍会到达，靠它忽略） */
     let settled = false;
+    // RULES-R1: 打开数据库的超时兜底（与网络超时同等性质），不是答题计时
     const timer = window.setTimeout(() => {
       if (settled) return;
       settled = true;
@@ -156,6 +157,7 @@ export function repairUpgrade(): Promise<IDBDatabase> {
   repairPromise = new Promise<IDBDatabase>((resolve, reject) => {
     // 先放开本页的连接：不放的话这次升级会被自己挡住
     releaseConnections();
+    // RULES-R1: 重建表被别的标签页挡住时的超时兜底（与网络超时同等性质），不是答题计时
     const timer = window.setTimeout(() => {
       repairPromise = null;
       reject(

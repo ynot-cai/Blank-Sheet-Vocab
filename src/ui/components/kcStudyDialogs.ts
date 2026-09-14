@@ -4,6 +4,8 @@
  * 与一期的 `confirmModal` 的区别：那个只有「确认/取消」两个固定文案，
  * 而「继续上次 / 重新开始」需要两个按钮都换文案，所以单独做一个。
  */
+
+// RULES-R1: 此处禁止任何强制时间限制（无倒计时 / 无超时提交 / 无超时判错）
 import { openModal } from '../components/Modal';
 import { h } from '../dom';
 
