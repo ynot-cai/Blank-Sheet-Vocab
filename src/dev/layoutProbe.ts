@@ -338,5 +338,27 @@ declare global {
     __layoutViewport?: { width: number; height: number };
     /** 调试页写入的当前避让区（外部脚本直接调 __layoutProbe() 时用它判交） */
     __layoutAvoidRects?: ({ label: string } & Rect)[];
+    /**
+     * 调试页挂的**题干遮罩**测量钩子（只量几何，不改业务逻辑）。
+     * 用来验「记忆/拼写题干弹在哪、会不会被底部按钮带压住」。
+     * @param mode 'centered' 居中偏上 / 'origin' 第一个词的原落点 /
+     *   'originBottom' 最后一个词（最靠下）的原落点 / 'hide' 收起
+     */
+    __devOverlay?: (mode: 'centered' | 'origin' | 'originBottom' | 'hide') => {
+      mode: string;
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+      centerX: number;
+      centerY: number;
+      bottom: number;
+      right: number;
+      zIndex: string;
+      position: string;
+      viewport: number[];
+      word: string | null;
+      placement: { x: number; y: number } | null;
+    } | null;
   }
 }

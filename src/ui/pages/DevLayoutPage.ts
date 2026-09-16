@@ -198,6 +198,67 @@ function cloneTier(tier: LayoutTier): LayoutTier {
   return { ...tier, button: { ...tier.button } };
 }
 
+/**
+ * 挂上「题干遮罩」的测量钩子（只在 `?probe=1` 时调用）。
+ *
+ * 遮罩用的是**真实的** `stage.showOverlay()`（所以 `settings.memorize.position`
+ * 与 `clampOverlayTop()` 的实际效果都会被量到），内容用真实的 `.memorize-box` +
+ * `.memorize-word` + `.mem-inputs` 结构，尺寸与记忆环节一致。
+ *
+ * 暴露 `window.__devOverlay(mode)`：
+ * - `'centered'`   居中偏上（默认）
+ * - `'origin'`     弹在**第一个词**的原落点
+ * - `'originBottom'` 弹在**最后一个词**（最靠下那个）的原落点 —— 最容易压到按钮
+ * - `'hide'`       收起
+ * 返回遮罩的 getBoundingClientRect() 与关键尺寸，供脚本断言。
+ * @param stage 当前舞台
+ * @param words 当前在纸上的词
+ */
+function installOverlayProbe(stage: PaperStage, words: Word[]): void {
+  const first = words[0];
+  const last = words[words.length - 1];
+  window.__devOverlay = (mode: 'centered' | 'origin' | 'originBottom' | 'hide') => {
+    if (mode === 'hide') {
+      stage.hideOverlay();
+      return null;
+    }
+    const target = mode === 'origin' ? first : mode === 'originBottom' ? last : undefined;
+    const placement = target ? stage.placementOf(target.id) : null;
+    // 用 positionOverride 强制切换模式（不动用户设置），这样两种模式可以在同一次运行里对比
+    const overlay = stage.showOverlay(placement, mode === 'centered' ? 'centerTop' : 'origin');
+    overlay.dataset.devOverlay = mode;
+    // 与记忆环节同样的结构（1 个义项 → 1 个输入框；这里故意用 2 个框压最大高度）
+    const box = h('div', { class: 'memorize-box' });
+    box.appendChild(h('div', { class: 'memorize-word', text: target?.en ?? 'photosynthesis' }));
+    const inputs = h('div', { class: 'mem-inputs' });
+    inputs.appendChild(h('input', { class: 'input mem-input', type: 'text', placeholder: '义项 1' }));
+    inputs.appendChild(h('input', { class: 'input mem-input', type: 'text', placeholder: '义项 2' }));
+    box.appendChild(inputs);
+    box.appendChild(h('div', { class: 'row center' }, h('button', { class: 'btn btn-primary mem-submit', type: 'button', text: '提交' })));
+    overlay.replaceChildren(box);
+    // 内容填完再定位（与记忆/拼写环节完全一致的调用顺序）
+    stage.repositionOverlay();
+    const r = overlay.getBoundingClientRect();
+    const cs = getComputedStyle(overlay);
+    return {
+      mode,
+      x: r.left,
+      y: r.top,
+      w: r.width,
+      h: r.height,
+      centerX: r.left + r.width / 2,
+      centerY: r.top + r.height / 2,
+      bottom: r.bottom,
+      right: r.right,
+      zIndex: cs.zIndex,
+      position: cs.position,
+      viewport: [window.innerWidth, window.innerHeight],
+      word: target?.en ?? null,
+      placement: placement ? { x: placement.x, y: placement.y } : null,
+    };
+  };
+}
+
 /** 注入可视化样式（半透明包围盒 + 红色避让区） */
 function ensureDebugStyles(): void {
   if (document.getElementById('dev-layout-style')) return;
@@ -445,8 +506,13 @@ export function renderDevLayoutPage(query?: URLSearchParams): HTMLElement {
       bandEl.dataset.devControls = '1';
       for (const el of document.querySelectorAll('[data-dev-controls]')) el.remove();
       document.body.appendChild(bandEl);
-
     }
+
+    // ★ `?probe=1`：挂一个**真实几何的题干遮罩**（记忆/拼写那两种），并暴露测量钩子。
+    //   为什么必须在这里测：「题干弹在原落点」这句在 M2 之后会紧贴底部按钮带，
+    //   而这条只有把遮罩真的渲染出来、量它的 getBoundingClientRect() 才看得见。
+    //   钩子：window.__devOverlay('centered' | 'origin' | 'originBottom' | 'hide')
+    if (autoProbe) installOverlayProbe(stage, words);
 
     const layoutInfo: LayoutInfo = { ...published, cols: 0, rows: 0, gridCapacity: 0, cellsSkippedByAvoid: 0 };
     window.__layoutInfo = layoutInfo;

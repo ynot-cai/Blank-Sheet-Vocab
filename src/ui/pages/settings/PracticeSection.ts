@@ -40,7 +40,7 @@ export function renderPracticeSection(): HTMLElement {
       h('span', { class: 'field-label', text: '记忆环节单词位置' }),
       select(
         [
-          { value: 'centerTop', label: '居中偏上（默认）' },
+          { value: 'centerTop', label: '居中偏上（默认，自动避开底部按钮）' },
           { value: 'origin', label: '原位置（保持在白纸上的位置）' },
         ],
         settings.memorize.position,
@@ -48,7 +48,12 @@ export function renderPracticeSection(): HTMLElement {
           void patchSettings({ memorize: { ...currentSettings().memorize, position: v } }).then(renderOffset);
         },
       ),
-      h('span', { class: 'field-hint', text: '进入「记忆」环节时，被抽到的词显示在哪里' }),
+      h(
+        'span',
+        { class: 'field-hint' },
+        '进入「记忆」环节时，被抽到的词显示在哪里。两种模式都会把整块卡片夹在屏幕内' +
+          '（原位置模式在手机上会被夹到最近的空白处，因为词分两列、卡片比词宽得多）。',
+      ),
     ),
   );
   wrap.appendChild(offsetBox);

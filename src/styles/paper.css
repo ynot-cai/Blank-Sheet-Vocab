@@ -277,27 +277,59 @@
   font-size: 17px;
 }
 
-/* 记忆/拼写遮罩：居中偏上（或原落点） */
+/* 记忆/拼写的题干遮罩：两种模式（settings.memorize.position）
+   - at-origin：弹在该词**原来的落点**上（左图右词的空间记忆感）
+   - 默认（居中偏上）：弹在屏幕 50% / memorize.offsetY 处
+
+   ★ 为什么要有两种：M2 之后手机上词更密、更靠下（2 列 × 8 行铺满，
+     最后一行的词就在按钮带上方一点点），「弹在原落点」会紧贴甚至压到
+     底部按钮带（按钮带 z-index 45 > 遮罩 35），用户看到的就是「卡片看不见了」。
+     默认改成居中偏上，原落点模式保留给喜欢空间记忆感的人。
+
+   ★ 定位用 **fixed**（相对视口）而不是 absolute：
+     遮罩挂在 `.paper-stage`（`position:fixed; overflow:auto`）里，
+     absolute 会被那个滚动容器的尺寸/滚动位置影响；fixed 永远相对视口，
+     在手机上不会跑到屏幕外。 */
 .paper-overlay {
-  position: absolute;
+  position: fixed;
   left: 50%;
   top: 30%;
   transform: translate(-50%, -50%);
-  z-index: 35;
+  z-index: 50; /* 高于底部按钮带（45），不能被按钮压住 */
   display: flex;
   justify-content: center;
   text-align: center;
   min-width: 200px;
+  /* 尺寸：不许超出视口。原来没有上限，手机上长单词 + 多个输入框会横着溢出 */
+  max-width: min(560px, 92vw);
+  max-height: 86vh;
+  overflow: auto;
+}
+
+/* 原落点模式：位置由 JS 写成该词的百分比坐标 */
+.paper-overlay.at-origin {
+  /* 只作标记，位置走内联样式；这里保留钩子方便调试时高亮 */
 }
 
 .paper-overlay.hidden {
   display: none;
 }
 
+/* 题干盒子：手机上跟着视口收窄，不硬撑 */
+.memorize-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 100%;
+}
+
 .memorize-word {
   font-size: 36px;
   font-weight: 700;
   letter-spacing: 1px;
+  /* 长单词（photosynthesis 这种）不许横向溢出屏幕 */
+  max-width: 92vw;
+  overflow-wrap: anywhere;
 }
 
 .mem-inputs {

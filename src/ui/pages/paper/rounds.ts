@@ -120,6 +120,9 @@ export async function runMemorizeRound(host: RoundHost, ids: string[]): Promise<
     }
     box.appendChild(h('div', { class: 'row center' }, submitBtn));
     overlay.appendChild(box);
+    // ★ 内容填完再定位：遮罩位置要按「整块卡片都在视口内」来夹（M2 之后手机上
+    //   词分两列，原落点模式的卡片会跑出屏幕左边 —— 见 PaperStage 的 clampOverlayLeft）
+    host.stage.repositionOverlay();
 
     // 光标自动落到第一个输入框：点完「记忆」直接敲键盘就能输入，不用先点一下输入框
     // RULES-R1: 纯 UI 延迟（等渲染完再聚焦），与动画/过渡同类，不是答题计时
@@ -221,6 +224,8 @@ export async function runSpellRound(host: RoundHost, ids: string[]): Promise<voi
     box.appendChild(h('div', { class: 'row center' }, input, submitBtn));
     box.appendChild(h('div', { class: 'row center' }, hintBtn, hintLabel));
     overlay.appendChild(box);
+    // ★ 内容填完再定位（同记忆环节：卡片必须整块在视口内）
+    host.stage.repositionOverlay();
 
     // 光标自动落到拼写输入框
     // RULES-R1: 纯 UI 延迟（等渲染完再聚焦），与动画/过渡同类，不是答题计时

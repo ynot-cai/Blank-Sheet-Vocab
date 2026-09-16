@@ -149,6 +149,51 @@ try {
   check('没有单词落进按钮带', inBand.length === 0, `${inBand.length} 个：${inBand.map((b) => b.text).join(',')}`);
   const leftOfButtons = result.boxes.filter((b) => b.x + b.w < 242); // 按钮带最左边那个圆的左边缘
   check('有单词出现在按钮**左侧**（用户报的那个问题）', leftOfButtons.length > 0, `${leftOfButtons.length} 个`);
+
+  // ── 题干遮罩（记忆/拼写）：两种模式都必须整块留在屏幕内 ──
+  console.log('  [题干遮罩两种模式]');
+  const bandTop = avoid ? avoid.y : 670;
+  for (const mode of ['centered', 'origin', 'originBottom']) {
+    const ov = await page.evaluate(`window.__devOverlay('${mode}')`);
+    const label = mode === 'centered' ? '居中偏上' : mode === 'origin' ? '原落点(第一个词)' : '原落点(最靠下的词)';
+    check(
+      `遮罩-${label}：整块在视口内（左右不越界）`,
+      ov.x >= -0.6 && ov.right <= 390 + 0.6,
+      `x=${ov.x.toFixed(1)} right=${ov.right.toFixed(1)}`,
+    );
+    check(
+      `遮罩-${label}：整块在视口内（上下不越界）`,
+      ov.y >= -0.6 && ov.bottom <= 844 + 0.6,
+      `y=${ov.y.toFixed(1)} bottom=${ov.bottom.toFixed(1)}`,
+    );
+    check(
+      `遮罩-${label}：不与底部按钮带相交`,
+      ov.bottom <= bandTop + 0.6,
+      `bottom=${ov.bottom.toFixed(1)} vs 按钮带顶 ${bandTop.toFixed(1)}`,
+    );
+    check(`遮罩-${label}：层级高于按钮带（45）`, Number(ov.zIndex) > 45, `z-index=${ov.zIndex}`);
+    check(`遮罩-${label}：fixed 定位（不受纸面滚动影响）`, ov.position === 'fixed', ov.position);
+  }
+  const centered = await page.evaluate(`window.__devOverlay('centered')`);
+  check(
+    '遮罩-居中偏上：水平居中（±6px）',
+    Math.abs(centered.centerX - 195) <= 6,
+    `centerX=${centered.centerX.toFixed(1)} vs 195`,
+  );
+  check(
+    '遮罩-居中偏上：纵向落在上半屏（20%~45%）',
+    centered.centerY >= 844 * 0.2 && centered.centerY <= 844 * 0.45,
+    `centerY=${centered.centerY.toFixed(1)} (${((centered.centerY / 844) * 100).toFixed(1)}%)`,
+  );
+  const originOv = await page.evaluate(`window.__devOverlay('origin')`);
+  check(
+    '遮罩-原落点：确实跟着那个词走（水平位置与原落点一致或被迫夹住）',
+    originOv.placement !== null && originOv.w > 0,
+    JSON.stringify(originOv.placement),
+  );
+  await page.evaluate(`window.__devOverlay('hide')`);
+  const hiddenAfter = await page.evaluate(`document.querySelector('.paper-overlay').classList.contains('hidden')`);
+  check('遮罩可以正常收起', hiddenAfter === true);
   await page.close();
 
   // ───────────────────────── 桌面 1280×800 ─────────────────────────

@@ -1,43 +1,40 @@
-﻿M1+M2: 手机端一屏 5~6 个词 → 15~16 个（布点算法重构 + 底部圆形按钮 + 避让带）
+﻿修复 M2 回归：记忆时题干卡片跑到屏幕外（接通 memorize.position + 夹进视口）
 
-M1（只测不改，先建测量设施再诊断）
-- 新增 probeLayout.mjs（根目录）：无头浏览器打开调试页抓测量 JSON 并判 PASS/FAIL
-- 新增 src/dev/layoutProbe.ts：window.__layoutProbe() 用真实 getBoundingClientRect
-  量词数/行列/重叠对/越界/最小间距/与按钮区相交，结果写 console 与 <pre id="probe-result">
-- 新增 src/ui/pages/DevLayoutPage.ts（#/dev/layout）：真实 PaperStage + 包围盒可视化
-  + 红色避让区 + 六个参数滑块（可一键写进设置）
-- PaperStage：加 data-word-box 测量标记、__layoutInfo 只读诊断快照、视口可注入
-- 测量环境两个坑（都写进注释与 HANDOVER）：
-  1. Windows 无头 Chromium 最小窗宽 504px，--window-size=390,844 量不到真机尺寸
-     → dvw/dvh 注入 + test:m2-ui 用 CDP Emulation.setDeviceMetricsOverride 精确设视口
-  2. 真实视口高度 = 窗口高度 − 95px → probeLayout.mjs 加 --window-height
+用户实测：「放下的单词多了，但记忆时弹出的卡片看不到了」；要求把「弹在原位置」
+改成「居中偏上、两种模式可切换」，并注意尺寸（答案卡不要动）。
 
-M1 诊断结论（390×844、字号 28、实测）
-- wordCount=5，算法网格 1 列 × 6 行，gridCapacity=6，widestWordPx=129.2，gapX=196.4
-- 瓶颈在 core/layout.ts:83：cols = min(3, floor(0.88 / (196.4/390))) = 1
-  「最小中心距 = 最宽词 + 字号×2.4」被拿来夹列数，一个长词就把整屏压成 1 列
-- 附带发现：抖动幅度公式把间距减了两次；避让区被 padX 放大 2.4 倍
+两个真 bug（都是真机视口量出来的）
+1. 横向跑出屏幕（主因）：遮罩「以中心点定位 + translate(-50%)」，宽 327px；
+   M2 之后手机上是 2 列，左列词中心 x≈65px → 遮罩左边缘 -30.6px，
+   最靠下那行的词到 -77.3px，大半个卡片在屏幕外
+   → clampOverlayLeft() 按「整块卡片都在视口内」夹（两侧各留 8px）
+2. 纵向可能被底部按钮带压住（按钮 z-index 45 > 遮罩 35）
+   → 遮罩改 z-index:50，clampOverlayTop() 夹纵向（上留 8px、下不碰底）
 
-M2（改完复测：16 个词、0 重叠、0 越界、0 压按钮、minGap=8）
-- core/layout.ts 新增 computeGrid / layoutWords / controlBandHeight：
-  列数按平均词宽定（平均×1.15 + minGap），每个词按自己的宽度找格子，
-  落点做真实矩形碰撞检测，撞了就推开（不是换格子）
-- flow.ts 新增 buildRoundControls()：手机底部横排圆形按钮（尺寸来自参数，注入 CSS 变量），
-  点击转交原按钮，状态由 syncRoundControls() 单向同步；桌面/平板保持右下角竖排不变
-- device.ts：手机避让区从「右下角方块」改成「底部横带」→ 词可以出现在按钮左侧
-- settings.layout.{mobile,tablet,desktop} 三档 6 参数（types/config 新增），
-  设置页新增 C2 布局参数（LayoutSection.ts），调试页也能改
-- 手机档参数：边距 8 / 间距 8 / 字号 16 / 目标 16 / 按钮直径 50 间距 16
+接线：settings.memorize.position 早就有（类型/默认值/设置页下拉都在），
+但 showOverlay() 从来没读过它 —— 有落点就永远弹原落点，这个开关一直形同虚设。
+现在接通：'centerTop'（默认，居中偏上）/ 'origin'（原落点）。
 
-★ M2 最大的坑（已写进 WORD_LINE_HEIGHT_RATIO 注释）
-- CSS 实际行高是 1.6（body 的 line-height），代码里常量写的是 1.45
-  → 算法以为一行词高 39.2px，实际渲染 41.6px，每行少算 2.4px
-  → 屏幕上配置 8px 的空隙实测只剩 5.6px
-- 同类：canvas.measureText 量的是文字宽度，占位置的是带 padding 的 .paper-word
-  → 新增 wordBoxPx() 把热区 padding 算进碰撞矩形
+测量陷阱：夹位置要知道遮罩宽高，但 showOverlay() 里刚 replaceChildren()
+那一刻盒子是空的（宽 0），拿它夹等于没夹（第一次改完实测还是 -30.6px）。
+拆成两步：showOverlay() 只记「弹在哪」，调用方填完内容再调
+repositionOverlay() 定位；尺寸用上一次量到的缓存（首次按 92vw/30vh 保守估）。
+rounds.ts 的记忆与拼写两处都按这个顺序调。
 
-验收（全部真实 DOM / 真机视口）
-- 390×844：16 词、列 6、minGap 8.00、重叠 0、越界 0、压按钮 0
-- 360×800：15 词；430×932：15 词；长词表（含 photosynthesis）：容量 16（改前 4）
-- test:mobile 59 项、test:m2-ui 20 项（CDP 精确视口）、test:build 52 项、rules:check 全绿
-- 桌面：仍是 legacy-jitter 算法 + 右下角方块避让（有断言守着）
+尺寸（用户特意提醒）：.paper-overlay 由 absolute 改 fixed（原来挂在
+overflow:auto 的 .paper-stage 里，会受容器尺寸/滚动影响）+ max-width min(560px,92vw)
++ max-height 86vh + overflow auto；.memorize-word 加 max-width 92vw +
+overflow-wrap anywhere（长单词不横向溢出）。
+
+答案卡一行未改（.answer-card CSS 与 AnswerCard.ts 都没动）。
+
+实测（390×844 真机视口，量真实 DOM）
+  居中偏上        x=31.2 right=358.8 y=134.2 bottom=372.2（centerX=195.0，居中）
+  原落点(第一个词)  x= 8.0 right=335.6 y=145.8 bottom=383.8（原来 -30.6）
+  原落点(最靠下的词) x= 8.0 right=335.6 y=  8.0 bottom=246.0（原来 -77.3）
+  底部按钮带顶边 670，三种模式遮罩下沿都 ≤384，都不与按钮带相交
+
+测试：test:m2-ui 20 → 39 项（新增题干遮罩三种模式 × 5 条断言）
+回归：tsc / build / rules:check / test:mobile 59 / test:build 52 / test:paper 76
+      / test:pwa 49 / test:r4 55 / test:api 58 / test:sync 43 / r1 67 / r2 48
+      / r3 34 / test:about 51 / test:rename 27 / test:sense-rules 81 / test:presets 61 全绿

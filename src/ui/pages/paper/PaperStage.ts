@@ -13,7 +13,7 @@ import {
   type WordMetrics,
 } from '../../../core/layout';
 import { activeSenses, formatSensesBrief } from '../../../core/model';
-import type { Word } from '../../../core/types';
+import type { MemorizeSettings, Word } from '../../../core/types';
 import { speak } from '../../../services/tts';
 import { controlsAvoidRect, controlTier, deviceKind } from '../../device';
 import { h } from '../../dom';
@@ -48,6 +48,50 @@ function layoutViewport(): LayoutViewport {
   return { width: window.innerWidth, height: window.innerHeight };
 }
 
+/**
+ * 把题干遮罩的**横向**中心位置夹进视口。
+ *
+ * ★ 这是「记忆时卡片看不见」的真正原因（M2 实测）：
+ *   遮罩是「以中心点定位 + translate(-50%)」的，宽度约 290~330px；
+ *   而 M2 之后手机上词分两列、左列词的中心 x ≈ 65px —— 以它为中心时
+ *   遮罩左边缘落在 **-30 ~ -77px**，大半个卡片直接跑到屏幕外，用户什么也看不到。
+ *   所以横向必须按「整块卡片都要在视口内」来夹。
+ * @param centerXRatio 归一化的目标中心 x（0=屏幕左，1=屏幕右）
+ * @param overlayWidthPx 遮罩实际宽度（像素）
+ * @param viewportWidthPx 视口宽度（像素）
+ */
+function clampOverlayLeft(centerXRatio: number, overlayWidthPx: number, viewportWidthPx: number): number {
+  const margin = 8; // 两侧各留 8px，别贴着边
+  const width = Math.min(overlayWidthPx, Math.max(1, viewportWidthPx - margin * 2));
+  const desired = (Number.isFinite(centerXRatio) ? centerXRatio : 0.5) * viewportWidthPx;
+  const min = margin + width / 2;
+  const max = viewportWidthPx - margin - width / 2;
+  const clamped = max < min ? viewportWidthPx / 2 : Math.min(max, Math.max(min, desired));
+  return clamped / Math.max(1, viewportWidthPx);
+}
+
+/**
+ * 题干遮罩纵向位置的**安全区**。
+ *
+ * 遮罩是「以中心点定位」的，高度约 1/3 屏，所以中心点太靠上会顶出屏幕、
+ * 太靠下会被底部按钮带压住。这里把中心点夹在 `minTop ~ maxTop` 之间：
+ * - 28%：再往上，长单词 + 多义项输入框会把标题顶出屏幕；
+ * - 62%：再往下，遮罩下沿会进按钮带（按钮带顶部在 844 屏上约 670，即 79%）。
+ * 之所以是「夹」而不是「直接改设置」：用户的 offsetY 是他们自己调的，
+ * 保留他们的意图，只在真会出问题时兜一下。
+ * @param ratio 归一化的目标中心位置（0=屏幕顶，1=屏幕底）
+ */
+function clampOverlayTop(ratio: number, overlayHeightPx: number, viewportHeightPx: number): number {
+  const margin = 8;
+  const height = Math.min(overlayHeightPx, Math.max(1, viewportHeightPx - margin * 2));
+  const desired = (Number.isFinite(ratio) ? ratio : 0.3) * viewportHeightPx;
+  // 上边界留 8px；下边界也不许贴到最底（8px）
+  const min = margin + height / 2;
+  const max = viewportHeightPx - margin - height / 2;
+  const clamped = max < min ? viewportHeightPx / 2 : Math.min(max, Math.max(min, desired));
+  return clamped / Math.max(1, viewportHeightPx);
+}
+
 /** 白纸舞台：纸张尺寸、布点、单词元素、义项序号、词下中文意思、记忆模式遮罩。 */
 export interface PaperStage {
   root: HTMLElement;
@@ -75,7 +119,12 @@ export interface PaperStage {
   /** 移除一个词（斩掉） */
   removeWord(id: string): void;
   /** 显示记忆/拼写遮罩 */
-  showOverlay(placement: Placement | null): HTMLElement;
+  showOverlay(placement: Placement | null, positionOverride?: MemorizeSettings['position']): HTMLElement;
+  /**
+   * 按「上一次量到的遮罩尺寸」把当前遮罩位置夹进视口（见 clampOverlayLeft/Top）。
+   * 调用方**填完内容之后**调一次即可（记忆/拼写环节都走这一步）。
+   */
+  repositionOverlay(): void;
   /** 收起遮罩 */
   hideOverlay(): void;
   /** 朗读 */
@@ -103,6 +152,19 @@ export function createPaperStage(opts: PaperStageOptions): PaperStage {
   /** 最新一个自动显示意思的词（下一个词出现时自动收起它） */
   let lastAutoMeaning: HTMLElement | null = null;
   const overlay = h('div', { class: 'paper-overlay hidden' });
+  /**
+   * 题干遮罩的定位状态（记忆/拼写两个环节共用）。
+   *
+   * 为什么要单独存：`showOverlay()` 只是「把盒子亮出来」，位置要等调用方
+   * **填完内容**（`repositionOverlay()`）才能算 —— 因为夹位置需要知道遮罩有多宽多高，
+   * 而刚 `replaceChildren()` 完的盒子宽度是 0。所以：
+   * - `overlayPlacement`：这次要弹在哪（null = 居中偏上）
+   * - `overlaySize`：上一次量到的实际尺寸（首次按视口比例保守估）
+   * - `overlayPositionOverride`：只给调试页用（一次调用临时改模式，不动设置）
+   */
+  let overlayPlacement: Placement | null = null;
+  let overlaySize = { w: 0, h: 0 };
+  let overlayPositionOverride: MemorizeSettings['position'] | null = null;
   root.appendChild(overlay);
 
   /**
@@ -495,20 +557,40 @@ export function createPaperStage(opts: PaperStageOptions): PaperStage {
         meaningEls.delete(id);
       }
     },
-    showOverlay(placement) {
+    showOverlay(placement, positionOverride) {
       overlay.replaceChildren(); // 每个词都要换新内容
       overlay.classList.remove('hidden');
-      if (placement) {
-        overlay.style.left = `${placement.x * 100}%`;
-        overlay.style.top = `${placement.y * 100}%`;
-        overlay.classList.add('at-origin');
-      } else {
-        const s = getSettings();
-        overlay.style.left = '50%';
-        overlay.style.top = `${s.memorize.offsetY * 100}%`;
-        overlay.classList.remove('at-origin');
-      }
+      // 只记住「这次要弹在哪」：内容还没填、尺寸也不知道，位置等
+      // 调用方填完内容调 repositionOverlay() 再算（见那个方法的注释）。
+      overlayPlacement = placement;
+      overlayPositionOverride = positionOverride ?? null;
       return overlay;
+    },
+    repositionOverlay() {
+      if (overlay.classList.contains('hidden')) return;
+      const s = getSettings();
+      const vp = layoutViewport();
+      // ★ 两种弹法（settings.memorize.position，设置页「D. 记忆与练习」里可切）：
+      //   'origin'    = 弹在该词原来的落点（空间记忆感）
+      //   'centerTop' = 弹在屏幕居中偏上（默认）
+      // 为什么默认居中偏上：M2 之后手机上一屏铺 15~16 个词、分两列，
+      // 「弹在原落点」时左列词会让整块卡片跑出屏幕左边（实测 left=-30.6 ~ -77.3px），
+      // 用户看到的就是「记忆时卡片看不见了」。见 clampOverlayLeft 的注释。
+      // ★ 尺寸必须取「上一次量到的」，不能现量：调用方刚 replaceChildren() 完，
+      //   这一刻盒子是空的（宽 0），拿它去夹位置等于没夹（M2 实测踩到）。
+      //   首次没有记录时按 92vw / 30vh 保守估，宁可先窄一点也不会跑出屏幕。
+      const widthPx = overlaySize.w > 1 ? overlaySize.w : vp.width * 0.92;
+      const heightPx = overlaySize.h > 1 ? overlaySize.h : vp.height * 0.3;
+      const position = overlayPositionOverride ?? s.memorize.position;
+      const useOrigin = position === 'origin' && overlayPlacement !== null;
+      const centerX = useOrigin && overlayPlacement ? overlayPlacement.x : 0.5;
+      const centerY = useOrigin && overlayPlacement ? overlayPlacement.y : s.memorize.offsetY;
+      overlay.style.left = `${clampOverlayLeft(centerX, widthPx, vp.width) * 100}%`;
+      overlay.style.top = `${clampOverlayTop(centerY, heightPx, vp.height) * 100}%`;
+      overlay.classList.toggle('at-origin', useOrigin);
+      // 量一次尺寸记下来，供下一次定位与验收脚本使用
+      const r = overlay.getBoundingClientRect();
+      overlaySize = { w: r.width, h: r.height };
     },
     hideOverlay() {
       overlay.classList.add('hidden');
