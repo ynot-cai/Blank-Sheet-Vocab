@@ -13,6 +13,52 @@ export const DEFAULTS = {
 };
 
 /**
+ * 响应式布局参数（阶段 M2：手机端「一屏放几个词」）。
+ *
+ * ★ 为什么必须参数化（用户明确要求）：手机上一屏只显示 10~12 个词，
+ *   而每一个「放不下」的判断都由这里的数字直接决定，硬编码在算法里就没法调。
+ *
+ * 派生量（都不写死，由参数算出来，见 core/layout.ts 的 computeGrid）：
+ * - 格宽 = 平均词宽 × 1.15 + minGapPx（15% 余量留给比平均宽的词）
+ * - 格高 = 行高 + minGapPx
+ * - 底部按钮带高 = 直径 × 3 + max(labelFontPx, 10) + 12 + 安全区
+ *
+ * 手机档为什么是 fontSizePx 16 / minGapPx 8（全部由 390×844 实测算出，不是拍脑袋）：
+ *   可用宽 = 390 − 2×8 = 374，2 列 → 格宽 187；
+ *   平均词宽（字号 16 实测）≈ 57.2 + 点击热区左右 padding 8 = 65.2
+ *     → 需要 65.2×1.15 + 8 = 83.0 ≤ 187 ✓（余量很大）
+ *   最长的 14 字母词 photosunthesis 实测 119.3 + 8 = 127.3 < 187 ✓（塞得进格，不会互相压）
+ *   按钮带高 = 50×3 + 12 + 12 = 174 → 可用高 844 − 8 − 174 = 662；
+ *   一行词实高 = 文字行盒 28.8 + 上下热区 padding 16 = 44.8（★ 真机 DOM 实测值，
+ *     不是「字号×1.45」算出来的 23.2 —— 那个估算让上下两行只差 3.4px，根本放不下 8 行）；
+ *   格高 = 44.8 + 8 = 52.8 → 可放 12 行 → 容量 24 ≥ 目标 16 ✓
+ *   实际落成「2 列 × 8 行 = 16 个」，词间最小空隙 = minGapPx = 8px。
+ */
+const DEFAULT_LAYOUT: Settings['layout'] = {
+  mobile: {
+    edgeMarginPx: 8,
+    minGapPx: 8,
+    fontSizePx: 16,
+    targetCount: 16,
+    button: { diameterPx: 50, gapPx: 16, labelFontPx: 12 },
+  },
+  tablet: {
+    edgeMarginPx: 14,
+    minGapPx: 16,
+    fontSizePx: 22,
+    targetCount: 24,
+    button: { diameterPx: 56, gapPx: 18, labelFontPx: 13 },
+  },
+  desktop: {
+    edgeMarginPx: 24,
+    minGapPx: 20,
+    fontSizePx: 24,
+    targetCount: 40,
+    button: { diameterPx: 44, gapPx: 12, labelFontPx: 12 },
+  },
+};
+
+/**
  * 响应式（移动端适配）参数。
  * 断点：手机 < 768px / 平板 768~1024px / 桌面 > 1024px。
  */
@@ -215,6 +261,8 @@ export const DEFAULT_SETTINGS: Settings = {
     bgColor: '#ffffff',
     animation: true,
   },
+  /** ★ M2：手机/平板/桌面三档布点参数（设置页「布局参数」与调试页都能改） */
+  layout: DEFAULT_LAYOUT,
   // priorityDir 已废弃（来源优先级时代的遗留），保留只为兼容老备份；见 types.ts 的说明
   parse: { fieldSep: 'auto', senseSep: '；;／/|', priorityDir: 'desc' },
   memorize: { position: 'centerTop', offsetY: 0.3 },

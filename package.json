@@ -34,6 +34,7 @@
     "test:kc-e2e": "node api/_dev/test-kc-e2e.mjs",
     "test:ai": "node api/_dev/test-aiproxy.mjs",
     "test:mobile": "node api/_dev/test-mobile.mjs",
+    "test:m2-ui": "node api/_dev/test-m2-ui.mjs",
     "test:pwa": "node api/_dev/test-pwa.mjs",
     "test:about": "node api/_dev/test-about.mjs",
     "test:build": "node api/_dev/test-build.mjs",

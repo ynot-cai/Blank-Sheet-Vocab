@@ -1,10 +1,21 @@
 import { DEVICE, getSettings } from '../../../core/config';
-import type { Placement } from '../../../core/layout';
-import { jitteredGrid, resolvePaperSize, spacingBudget, wordRowHeightPx } from '../../../core/layout';
+import type { LayoutInfo, Placement } from '../../../core/layout';
+import {
+  computeGrid,
+  DEFAULT_GRID_MARGIN,
+  jitteredGrid,
+  layoutWords,
+  resolvePaperSize,
+  spacingBudget,
+  wordBoxPx,
+  WORD_LINE_HEIGHT_RATIO,
+  wordRowHeightPx,
+  type WordMetrics,
+} from '../../../core/layout';
 import { activeSenses, formatSensesBrief } from '../../../core/model';
 import type { Word } from '../../../core/types';
 import { speak } from '../../../services/tts';
-import { controlsAvoidRect, deviceKind } from '../../device';
+import { controlsAvoidRect, controlTier, deviceKind } from '../../device';
 import { h } from '../../dom';
 
 /** 白纸舞台参数 */
@@ -13,6 +24,28 @@ export interface PaperStageOptions {
   onWordClick: (word: Word) => void;
   /** 点击中文意思：打开单词卡 */
   onMeaningClick: (word: Word) => void;
+}
+
+/**
+ * 布点用的视口尺寸。
+ *
+ * 正常情况就是真实的 `window.innerWidth/innerHeight`；**布局调试页**（阶段 M1）
+ * 会注入一个「模拟真机尺寸」：无头浏览器的最小窗宽是 504px，`--window-size=390,844`
+ * 只会得到 504×749，真机列数就永远量不到。注入之后纸张尺寸、字号放大系数、
+ * 按钮避让区全部按注入尺寸算，量出来的才是 390 宽那一版布局。
+ */
+interface LayoutViewport {
+  width: number;
+  height: number;
+}
+
+/**
+ * 取布点用的视口尺寸（调试页注入优先，没有就用真实窗口）。
+ */
+function layoutViewport(): LayoutViewport {
+  const injected = window.__layoutViewport;
+  if (injected && injected.width > 0 && injected.height > 0) return injected;
+  return { width: window.innerWidth, height: window.innerHeight };
 }
 
 /** 白纸舞台：纸张尺寸、布点、单词元素、义项序号、词下中文意思、记忆模式遮罩。 */
@@ -74,11 +107,15 @@ export function createPaperStage(opts: PaperStageOptions): PaperStage {
 
   /**
    * 当前设备上单词的实际字号。
-   * 手机上放大一点，配合「布点密度降低」让每屏词更少、更好点。
+   *
+   * ★ M2：手机上直接用 `layout.mobile.fontSizePx`（用户在设置页/调试页可调），
+   *   不再用「基础字号 × phoneFontScale」推算——布点、渲染、CSS 三处必须同一个值，
+   *   否则量出来的行高与实际渲染对不上，碰撞检测就会失效。
    */
   const effectiveFontSize = (): number => {
-    const s = getSettings();
-    return deviceKind() === 'phone' ? Math.round(s.display.fontSize * DEVICE.phoneFontScale) : s.display.fontSize;
+    const vp = layoutViewport();
+    if (deviceKind(vp.width) === 'phone') return Math.max(10, Math.round(controlTier(vp.width).fontSizePx));
+    return getSettings().display.fontSize;
   };
 
   /** 义项序号的字号：跟随单词字号等比缩小，但不小于可读下限 */
@@ -89,7 +126,7 @@ export function createPaperStage(opts: PaperStageOptions): PaperStage {
     const s = getSettings();
     root.style.background = s.display.bgColor;
     root.classList.toggle('no-anim', !s.display.animation);
-    const size = resolvePaperSize(s.paper, { width: window.innerWidth, height: window.innerHeight });
+    const size = resolvePaperSize(s.paper, layoutViewport());
     sheet.style.width = `${size.width}px`;
     sheet.style.height = `${size.height}px`;
     const fontSize = effectiveFontSize();
@@ -117,60 +154,220 @@ export function createPaperStage(opts: PaperStageOptions): PaperStage {
   let placeCapacity = 0;
 
   /**
-   * 量出本批词里**渲染后最宽**的那个的宽度（像素）。
+   * 量出每个词的**实际占位矩形**（像素）：文字宽（canvas）+ 点击热区 padding。
    *
-   * 为什么要真的量：落点是单词中心，只按字号给间距挡不住长词——
-   * 两个各宽 170px 的词，中心只隔 58px 时会直接叠在一起（用户实测反馈）。
-   * 用 canvas 的 measureText 拿真实宽度，字体与字号跟白纸上的完全一致。
+   * ★ M2 的核心输入：新算法要按「每个词自己的宽度」找格子、做真实矩形碰撞检测。
+   *   两条踩过的坑：
+   *   1. 只取最宽词不行（M1 的瓶颈就是它）；
+   *   2. canvas 量的是**文字**宽度，而占位置的是带 padding 的 `.paper-word`
+   *      元素 —— 不把 padding 算进去，屏幕上词间距会比配置的 minGap 小 8px。
    * @param words 本批词
    */
-  const widestWordPx = (words: Word[]): number => {
-    if (words.length === 0) return 0;
+  /** 量到的「一行文字占多高」缓存（键 = 字号+字体），避免每个词都摸一次 DOM */
+  let textHeightCache: { key: string; heightPx: number } | null = null;
+
+  /**
+   * 量出「一行文字真正占的高度」（像素）。
+   *
+   * ★ 为什么不用 canvas 的 `fontBoundingBox` 估算（M2 实测踩到）：
+   *   它与 CSS 实际渲染高度不是一回事，system-ui 下差 6.7px。
+   *   估小 → 纵向碰撞检测失效（配置 12px 的间隙，DOM 只量到 6.6px）；
+   *   估大 → 一屏少放好几个词。
+   *
+   * 做法：拿**行高 × 字号**作为基准（`.paper-word` 的 line-height 是 1.45），
+   * 再用一个与 `.paper-word` 同样式、同样父级的探测元素**实测**一次取较大值。
+   * 取较大值是有意的：宁可多留 1px 空隙，也不要让词叠在一起。
+   * @param fontSize 当前字号
+   * @param fontFamily 当前字体
+   */
+  const measureTextLineHeightPx = (fontSize: number, fontFamily: string): number => {
+    const key = `${fontSize}|${fontFamily}`;
+    if (textHeightCache && textHeightCache.key === key) return textHeightCache.heightPx;
+    const cssLineHeight = fontSize * WORD_LINE_HEIGHT_RATIO;
+    const probe = h('div', {
+      class: 'paper-word',
+      style: { fontFamily, fontSize: `${fontSize}px`, whiteSpace: 'nowrap', visibility: 'hidden', position: 'absolute' },
+      text: 'Hg',
+    });
+    sheet.appendChild(probe);
+    const measured = probe.getBoundingClientRect().height;
+    probe.remove();
+    const heightPx = Math.max(cssLineHeight, measured > 0 ? measured : 0);
+    textHeightCache = { key, heightPx };
+    return heightPx;
+  };
+
+  const wordMetrics = (words: Word[]): WordMetrics[] => {
+    if (words.length === 0) return [];
+    const fontSize = effectiveFontSize();
+    const isPhone = deviceKind(layoutViewport().width) === 'phone';
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
-    if (!ctx) {
-      // 拿不到 2D 上下文（极罕见）→ 退化成一个保守估计：按最长英文 × 0.6 字号
-      const longest = words.reduce((n, w) => Math.max(n, w.en.length), 0);
-      return longest * effectiveFontSize() * 0.6;
-    }
     const s = getSettings();
-    ctx.font = `${effectiveFontSize()}px ${s.display.fontFamily}`;
-    return words.reduce((max, w) => Math.max(max, ctx.measureText(w.en).width), 0);
+    const lineBoxPx = measureTextLineHeightPx(fontSize, s.display.fontFamily);
+    if (!ctx) {
+      // 退化：英文平均字宽约 0.55 × 字号
+      return words.map((w) => wordBoxPx(w.en.length * fontSize * 0.55, lineBoxPx, isPhone));
+    }
+    ctx.font = `${fontSize}px ${s.display.fontFamily}`;
+    return words.map((w) => wordBoxPx(ctx.measureText(w.en).width, lineBoxPx, isPhone));
+  };
+
+  /**
+   * 本批词的**平均**渲染宽度（像素）= 所有词宽之和 ÷ 词数。
+   * M2 用它定列数（旧算法用的是最宽词，那正是 M1 查出来的瓶颈）。
+   * @param metrics wordMetrics 的结果
+   */
+  const meanWidthPx = (metrics: WordMetrics[]): number => {
+    if (metrics.length === 0) return 0;
+    return metrics.reduce((sum, m) => sum + m.widthPx, 0) / metrics.length;
+  };
+
+  /**
+   * 写一份「本次布点到底按什么在算」的只读快照（阶段 M1 诊断用）。
+   *
+   * 放在 `window.__layoutInfo` 上，供调试页 `#/dev/layout` 的
+   * `window.__layoutProbe()` 附在测量结果里。**纯诊断**：不读回、不参与计算、
+   * 不影响任何落点。报告里的「最宽词 205px → 网格只能 2 列」就是从这里来的。
+   * 网格行列数（cols/rows）不在这里填：那要复刻 `jitteredGrid` 的内部推导，
+   * 复制一份迟早会跟算法本身走偏 —— 由调试页按同一套参数自己算更诚实。
+   * @param info 快照内容（不含网格字段）
+   */
+  const publishLayoutInfo = (info: Omit<LayoutInfo, 'cols' | 'rows' | 'gridCapacity' | 'cellsSkippedByAvoid'>): void => {
+    window.__layoutInfo = { ...info, cols: 0, rows: 0, gridCapacity: 0, cellsSkippedByAvoid: 0 };
   };
 
   const computePlacements = (words: Word[], seed: number): Record<string, Placement> => {
-    const size = resolvePaperSize(settings.paper, { width: window.innerWidth, height: window.innerHeight });
+    const vp = layoutViewport();
+    const size = resolvePaperSize(settings.paper, vp);
     const aspect = size.width / Math.max(1, size.height);
-    // ★ 相邻单词的最小中心距**由字号 + 最宽的那个词共同决定**（见 core/layout.ts 的 spacingBudget）：
-    //   只用字号的话，长词之间必然会叠在一起。
-    const budget = spacingBudget({
-      fontSize: effectiveFontSize(),
-      gapFactor: getSettings().paperWordGapFactor,
-      widestWordPx: widestWordPx(words),
-      rowHeightPx: wordRowHeightPx(effectiveFontSize()),
+    const fontSize = effectiveFontSize();
+    const metrics = wordMetrics(words);
+    const widest = metrics.reduce((m, x) => Math.max(m, x.widthPx), 0);
+    const average = meanWidthPx(metrics);
+    const rowHeight = wordRowHeightPx(fontSize);
+    // 纸张在视口里居中：算出纸面左上角相对视口的偏移，才能把「按钮避让区」换算到纸面坐标
+    const offsetX = (vp.width - size.width) / 2;
+    const offsetY = (vp.height - size.height) / 2;
+    const controls = controlsAvoidRect(vp);
+    const kind = deviceKind(vp.width);
+    const tier = controlTier(vp.width);
+
+    let points: Placement[] = [];
+    let grid: { cols: number; rows: number; capacity: number; cellW: number; cellH: number } | null = null;
+    let gapX = 0;
+    let gapY = 0;
+    let padX = 0;
+    let padY = 0;
+    let phoneArea: { x: number; y: number; width: number; height: number } | null = null;
+
+    if (kind === 'phone') {
+      // ═══ 手机：M2 新算法（按平均词宽定网格 + 真实碰撞检测 + 底部横带避让）═══
+      // 1) 可用区域 = 纸面扣掉四周边距，**下边界 = 避让带的顶边**（相对纸面坐标）。
+      //    ★ 这里踩过一次坑：写成 `size.height - margin - 避让带高度` 是错的
+      //      （那样把带高减了两次：844 − 8 − 174 = 662 会变成 844 − 8 − 670 = 166），
+      //      结果一屏只放得下 7 个词。正确的量是「带顶边到纸面底部的距离」。
+      const margin = tier.edgeMarginPx;
+      const bandTop = controls.y - offsetY;
+      const areaBottom = Math.min(size.height - margin, Math.max(margin + 1, bandTop));
+      const area = {
+        x: margin,
+        y: margin,
+        width: Math.max(1, size.width - margin * 2),
+        height: Math.max(1, areaBottom - margin),
+      };
+      // 2) 网格：列数按**平均词宽**定（旧算法按最宽词，是 M1 查出来的瓶颈）
+      grid = computeGrid({
+        availableW: area.width,
+        availableH: area.height,
+        meanWidthPx: average,
+        rowHeightPx: rowHeight,
+        minGapPx: tier.minGapPx,
+        targetCount: tier.targetCount,
+      });
+      // 3) 落点：每个词按自己的宽度找格子，带真实碰撞检测
+      points = layoutWords({
+        metrics,
+        canvas: { width: size.width, height: size.height },
+        area,
+        grid,
+        minGapPx: tier.minGapPx,
+        seed,
+        avoidPx: {
+          x: controls.x - offsetX,
+          y: controls.y - offsetY,
+          width: controls.width,
+          height: controls.height,
+        },
+      });
+      gapX = tier.minGapPx;
+      gapY = tier.minGapPx;
+      phoneArea = area;
+    } else {
+      // ═══ 平板 / 桌面：保持原算法（M2 明确要求桌面行为不变）═══
+      // ★ 相邻单词的最小中心距**由字号 + 最宽的那个词共同决定**（见 core/layout.ts 的 spacingBudget）：
+      //   只用字号的话，长词之间必然会叠在一起。
+      const budget = spacingBudget({
+        fontSize,
+        gapFactor: getSettings().paperWordGapFactor,
+        widestWordPx: widest,
+        rowHeightPx: rowHeight,
+      });
+      gapX = budget.gapX;
+      gapY = budget.gapY;
+      padX = budget.padX;
+      padY = budget.padY;
+      points = jitteredGrid(words.length, {
+        aspect,
+        seed,
+        minGapW: budget.gapX / Math.max(1, size.width),
+        minGapH: budget.gapY / Math.max(1, size.height),
+        canvas: { width: size.width, height: size.height },
+        // ★ 按钮避让区要**按半个词向外扩**：落点是词的中心，
+        //   中心刚好落在矩形外面时，词的一半仍然压在按钮上（用户实测反馈）。
+        avoidPx: {
+          x: controls.x - offsetX - budget.padX,
+          y: controls.y - offsetY - budget.padY,
+          width: controls.width + budget.padX * 2,
+          height: controls.height + budget.padY * 2,
+        },
+      });
+      grid = {
+        cols: Math.max(1, Math.round(Math.sqrt(words.length * aspect))),
+        rows: 0,
+        capacity: points.length,
+        cellW: 0,
+        cellH: 0,
+      };
+    }
+
+    placeCapacity = points.length; // 约束下纸上实际能放下的数量
+    publishLayoutInfo({
+      wordCountRequested: words.length,
+      capacity: placeCapacity,
+      paperW: size.width,
+      paperH: size.height,
+      sheetOffsetX: Math.round(offsetX),
+      sheetOffsetY: Math.round(offsetY),
+      fontSize,
+      deviceKind: kind,
+      widestWordPx: Math.round(widest * 10) / 10,
+      avgWordPx: Math.round(average * 10) / 10,
+      shortestWordLen: words.reduce((n, w) => Math.min(n, w.en.length), 99),
+      longestWordLen: words.reduce((n, w) => Math.max(n, w.en.length), 0),
+      gapX: Math.round(gapX * 10) / 10,
+      gapY: Math.round(gapY * 10) / 10,
+      // 旧算法靠「半个词」外扩避让区（padX/padY）；新算法直接按真实矩形判交，pad 保持 0
+      padX,
+      padY,
+      marginNorm: kind === 'phone' ? tier.edgeMarginPx / Math.max(1, size.width) : DEFAULT_GRID_MARGIN,
+      aspect: Math.round(aspect * 1000) / 1000,
+      placements: placeCapacity,
+      // 手机新算法的自述（诊断与验收都要看这几个数）
+      algorithm: kind === 'phone' ? 'phone-grid' : 'legacy-jitter',
+      wordsPerRow: grid && grid.rows > 0 ? Math.ceil(placeCapacity / grid.rows) : undefined,
+      phoneArea: phoneArea ?? undefined,
     });
-    const minGapW = budget.gapX / Math.max(1, size.width);
-    const minGapH = budget.gapY / Math.max(1, size.height);
-    // 纸张在视口里居中：算出纸面左上角相对视口的偏移，才能把「右下角按钮区」换算到纸面坐标
-    const offsetX = (window.innerWidth - size.width) / 2;
-    const offsetY = (window.innerHeight - size.height) / 2;
-    const controls = controlsAvoidRect();
-    const points = jitteredGrid(words.length, {
-      aspect,
-      seed,
-      minGapW,
-      minGapH,
-      canvas: { width: size.width, height: size.height },
-      // ★ 按钮避让区要**按半个词向外扩**：落点是词的中心，
-      //   中心刚好落在矩形外面时，词的一半仍然压在按钮上（用户实测反馈）。
-      avoidPx: {
-        x: controls.x - offsetX - budget.padX,
-        y: controls.y - offsetY - budget.padY,
-        width: controls.width + budget.padX * 2,
-        height: controls.height + budget.padY * 2,
-      },
-    });
-    placeCapacity = points.length; // 间距与避让约束下纸上实际能放下的数量
     words.forEach((w, i) => {
       const p = points[i];
       if (p) placements[w.id] = p;
@@ -201,6 +398,9 @@ export function createPaperStage(opts: PaperStageOptions): PaperStage {
   const buildWordZone = (word: Word, placement: Placement): HTMLElement => {
     const zone = h('div', {
       class: 'paper-word-zone',
+      // ★ 测量标记（阶段 M1）：布局调试页按这个属性遍历所有单词元素量真实坐标
+      //   （`window.__layoutProbe()`）。不加类名、不加样式，对渲染结果零影响。
+      dataset: { wordBox: word.en },
       style: { left: `${placement.x * 100}%`, top: `${placement.y * 100}%` },
     });
 

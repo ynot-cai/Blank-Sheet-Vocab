@@ -288,7 +288,12 @@ console.log('\n[6] 保存并退出保留位置/进度/遍数，下次点击直�
   check('LearnPage 启动时总是先找未完成会话', /const existing = await dao\.session\.loadSession\(\)/.test(learn));
   check('词全没了会清掉旧会话（不留死会话）', learn.includes('dao.session.clearSession()'));
   check('每轮记忆结束也落一次库（直接关页面不丢遍数）', read('src/ui/pages/paper/flow.ts').includes('本轮的记忆遍数、未通过情况立刻落库'));
-  check('有「重新开始」出口（续跑自动化后必须能甩掉旧进度）', read('src/ui/pages/paper/flow.ts').includes("button('重新开始'"));
+  // ★ M2：按钮统一走 labeledButton()（圆按钮要靠 data-full-label 找回自己的原按钮），
+  //   所以这里断言「有『重新开始』这个出口」，不再绑定某一种建按钮的写法。
+  check(
+    '有「重新开始」出口（续跑自动化后必须能甩掉旧进度）',
+    /labeledButton\('重新开始'|button\('重新开始'/.test(read('src/ui/pages/paper/flow.ts')),
+  );
   check('首页不再对「背诵」弹「继续上次」询问框', !/path === '\/learn' && existing\.type === 'learn'/.test(read('src/ui/pages/HomePage.ts')));
 }
 

@@ -29,7 +29,9 @@ globalThis.removeEventListener = (type, fn) => {
 };
 
 const { DEVICE, getSettings } = await import('../../src/core/config.ts');
-const { jitteredGrid } = await import('../../src/core/layout.ts');
+const { computeGrid, controlBandHeight, jitteredGrid, layoutWords, wordBoxPx, wordRowHeightPx } = await import(
+  '../../src/core/layout.ts'
+);
 const { deviceKind, controlsAvoidRect } = await import('../../src/ui/device.ts');
 
 let passed = 0;
@@ -82,7 +84,7 @@ console.log('[1] 断点：手机 < 768 / 平板 768~1024 / 桌面 > 1024');
   check('桌面宽度 → desktop', deviceKind() === 'desktop');
 }
 
-// ─────────────────────────────────────────── 2. 右下角避让区
+// ─────────────────────────────────────────── 2. 按钮避让区（M2：手机改成底部横带）
 console.log('\n[2] 布点避让：按钮区里不能有词');
 {
   const cases = [
@@ -93,16 +95,32 @@ console.log('\n[2] 布点避让：按钮区里不能有词');
   for (const c of cases) {
     setViewport(c.w, c.h);
     const rect = controlsAvoidRect();
-    check(
-      `${c.name}：避让区按设备取尺寸`,
-      rect.width === c.expected.width && rect.height === c.expected.height,
-      JSON.stringify(rect),
-    );
-    check(
-      `${c.name}：避让区贴右下角`,
-      rect.x + rect.width <= c.w && rect.y + rect.height <= c.h && rect.x > c.w / 2,
-      JSON.stringify(rect),
-    );
+    if (c.name === '手机') {
+      // ★ M2：手机避让区从「右下角方块」改成「底部横带」——
+      //   这样横带以上的左侧/中间/右侧全部可布点，解决用户说的「词进不了按钮左侧」。
+      const tier = getSettings().layout.mobile;
+      const band = controlBandHeight(tier);
+      check('手机：避让区是底部横带（贴左右两边）', rect.x === 0 && rect.width === c.w, JSON.stringify(rect));
+      check('手机：避让带高度按参数算出来', Math.abs(rect.height - band) < 0.001, `${rect.height} vs ${band}`);
+      check('手机：避让带贴底', Math.abs(rect.y + rect.height - c.h) < 0.001, JSON.stringify(rect));
+      check('手机：按钮直径×4 + 间距 能一行放下', tier.button.diameterPx * 4 + tier.button.gapPx * 3 <= c.w, '放不下会换行');
+      check(
+        '手机：横带以外的区域比旧方块大（词能进按钮左侧）',
+        rect.y * c.w > DEVICE.controlsPhone.width * DEVICE.controlsPhone.height,
+        `${rect.y * c.w} px² vs ${DEVICE.controlsPhone.width * DEVICE.controlsPhone.height} px²`,
+      );
+    } else {
+      check(
+        `${c.name}：避让区按设备取尺寸`,
+        rect.width === c.expected.width && rect.height === c.expected.height,
+        JSON.stringify(rect),
+      );
+      check(
+        `${c.name}：避让区贴右下角`,
+        rect.x + rect.width <= c.w && rect.y + rect.height <= c.h && rect.x > c.w / 2,
+        JSON.stringify(rect),
+      );
+    }
 
     // 撒满一屏词（200 个，远超容量），检查有没有落进按钮区
     const points = jitteredGrid(200, {
@@ -135,6 +153,75 @@ console.log('\n[2] 布点避让：按钮区里不能有词');
       `${points.length} vs ${withoutAvoid.length}`,
     );
   }
+}
+
+// ─────────────────────────────────────────── 2b. M2 手机布点算法
+console.log('\n[2b] M2：按平均词宽定网格（不再是「最宽词决定一切」）');
+{
+  const tier = getSettings().layout.mobile;
+  const rowHeight = wordRowHeightPx(tier.fontSizePx);
+  // 390×844 真机实测参数：可用宽 374、可用高 662（扣掉 174 的按钮带与 8 边距）
+  const grid = computeGrid({
+    availableW: 374,
+    availableH: 662,
+    meanWidthPx: 65.1,
+    rowHeightPx: rowHeight,
+    minGapPx: tier.minGapPx,
+    targetCount: tier.targetCount,
+  });
+  check('390×844：列数 ≥ 2（不再被最宽词压成 1 列）', grid.cols >= 2, `cols=${grid.cols}`);
+  check('390×844：容量 ≥ 目标 16', grid.capacity >= tier.targetCount, `capacity=${grid.capacity}`);
+  check('格高 ≥ 行高 + 最小空隙', grid.cellH >= rowHeight + tier.minGapPx - 0.001, `${grid.cellH} vs ${rowHeight + tier.minGapPx}`);
+
+  // 对照实验（这才是 M1 查出来的真正差别）：
+  //   把「最宽词」换成长词，看列数会不会跟着塌。
+  //   旧口径的格宽 = 最宽词 + 字号×2.4 → 列数与最宽词**直接挂钩**；
+  //   新口径只看平均词宽 → 一两个长词不该改变列数。
+  const shortWidest = 81.8; // 常规词表（5~9 字母）在最宽处实测
+  const longWidest = 127.3; // 长词对照表（含 14 字母的 photosynthesis）实测
+  const oldColsShort = Math.floor(374 / (shortWidest + tier.fontSizePx * 2.4));
+  const oldColsLong = Math.floor(374 / (longWidest + tier.fontSizePx * 2.4));
+  check(
+    '对照：旧口径的列数会被一个长词改变',
+    oldColsLong < oldColsShort,
+    `常规 ${oldColsShort} 列 → 长词 ${oldColsLong} 列`,
+  );
+  const longGrid = computeGrid({
+    availableW: 374,
+    availableH: 662,
+    meanWidthPx: 74.5, // 长词对照表的平均词宽（实测 120.2 是字号 28 下的值，此处按 16 折算）
+    rowHeightPx: rowHeight,
+    minGapPx: tier.minGapPx,
+    targetCount: tier.targetCount,
+  });
+  check(
+    '新口径：长词表列数与常规词表一致（不塌列）',
+    longGrid.cols === grid.cols,
+    `常规 ${grid.cols} 列 vs 长词 ${longGrid.cols} 列`,
+  );
+
+  // 真实落点：长词不能把整屏容量拖垮
+  const words = [
+    { en: 'photosynthesis', w: 119.3 },
+    { en: 'infrastructure', w: 106.4 },
+    { en: 'onion', w: 41.5 },
+    { en: 'milk', w: 34.2 },
+  ];
+  const metrics = words.map((w) => wordBoxPx(w.w, rowHeight, true));
+  const points = layoutWords({
+    metrics,
+    canvas: { width: 390, height: 844 },
+    area: { x: 8, y: 8, width: 374, height: 662 },
+    grid,
+    minGapPx: tier.minGapPx,
+    seed: 20260501,
+    avoidPx: { x: 0, y: 670, width: 390, height: 174 },
+  });
+  check('长词表也能全部放下（不再被最宽词拖垮）', points.length === words.length, `${points.length}/${words.length}`);
+  const inBand = points.filter((p) => p.y * 844 >= 670);
+  check('长词表：没有词落进按钮带', inBand.length === 0, `${inBand.length} 个`);
+  const leftOfBand = points.filter((p) => p.x * 390 < 390);
+  check('长词表：词可以出现在按钮带上方整片区域', leftOfBand.length === points.length);
 }
 
 // ─────────────────────────────────────────── 3. 布点可复现

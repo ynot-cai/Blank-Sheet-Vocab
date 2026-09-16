@@ -248,6 +248,43 @@ export interface CloudSettings {
   lastError: string;
 }
 
+/**
+ * 一档设备形态的布局参数（阶段 M2：手机布点重构）。
+ *
+ * 所有影响「一屏放几个词」的数字都在这里，**不许散落成魔法数字**：
+ * 布点（core/layout.ts 的 computeGrid / layoutWords）+ 避让区（ui/device.ts）
+ * + 底部圆形按钮（styles/paper.css）三方都读这一份。
+ */
+export interface LayoutTier {
+  /** 布点边距（像素）：与纸张边界的最小距离 */
+  edgeMarginPx: number;
+  /** 相邻单词的最小空隙（像素，字号之外再留的） */
+  minGapPx: number;
+  /** 单词字号（像素，手机档直接就是渲染字号） */
+  fontSizePx: number;
+  /** 期望一屏放几个词（算法尽量逼近；放不下就按实际最大值） */
+  targetCount: number;
+  /** 底部圆形按钮 */
+  button: {
+    /** 直径（像素） */
+    diameterPx: number;
+    /** 按钮之间的横向间距（像素） */
+    gapPx: number;
+    /** 圆形按钮下方小字的字号（像素） */
+    labelFontPx: number;
+  };
+}
+
+/** 响应式布局参数（按断点分三档，见 core/config.ts 的 DEFAULT_LAYOUT） */
+export interface LayoutSettings {
+  /** 手机（< 768px） */
+  mobile: LayoutTier;
+  /** 平板（768~1024px） */
+  tablet: LayoutTier;
+  /** 桌面（> 1024px）：桌面沿用旧的抖动网格算法，这一档只用于避让区尺寸 */
+  desktop: LayoutTier;
+}
+
 /** 全局设置（结构对应 config.ts 的 DEFAULT_SETTINGS） */
 export interface Settings {
   memorizeMaxPick: number;
@@ -258,6 +295,8 @@ export interface Settings {
   paperWordGapFactor: number;
   paper: PaperSettings;
   display: DisplaySettings;
+  /** ★ M2：布点与按钮的响应式参数（手机一屏放几个词就靠它） */
+  layout: LayoutSettings;
   parse: ParseSettings;
   memorize: MemorizeSettings;
   priority: PrioritySettings;

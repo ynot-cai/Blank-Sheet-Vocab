@@ -257,6 +257,34 @@ export async function openSession(port, url, opts = {}) {
       await send('DOM.setFileInputFiles', { nodeId: found.nodeId, files });
       return true;
     },
+    /**
+     * 把视口**精确**设成指定尺寸（手机适配验收必须）。
+     *
+     * 为什么不能用 `--window-size`：Windows 无头 Chromium 的最小窗宽是 504px，
+     * 而且真实视口高度 = 窗口高度 − 95px。要验「390×844 真机上的一屏几个词」，
+     * 只能走 CDP 的 `Emulation.setDeviceMetricsOverride`（它直接改布局视口，
+     * 与真机开发者工具里的设备模拟是同一套机制）。
+     * @param width 视口宽（CSS 像素）
+     * @param height 视口高（CSS 像素）
+     * @param deviceScaleFactor 设备像素比，默认 1
+     */
+    async setViewport(width, height, deviceScaleFactor = 1) {
+      await send('Emulation.setDeviceMetricsOverride', {
+        width,
+        height,
+        deviceScaleFactor,
+        mobile: width <= 1024,
+      });
+      // 让页面按新尺寸重排（resize 事件会触发 applySettings/重新布点）
+      await this.evaluate('window.dispatchEvent(new Event("resize"))');
+      await new Promise((r) => setTimeout(r, 300));
+    },
+    /** 取消视口模拟（回到真实窗口尺寸） */
+    async clearViewport() {
+      await send('Emulation.clearDeviceMetricsOverride');
+      await this.evaluate('window.dispatchEvent(new Event("resize"))');
+      await new Promise((r) => setTimeout(r, 300));
+    },
   };
 }
 

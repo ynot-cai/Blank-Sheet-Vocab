@@ -25,6 +25,7 @@ import { renderKcExamPage } from './ui/pages/KcExamPage';
 import { renderKcReviewPage } from './ui/pages/KcReviewPage';
 import { renderKcSettingsPage } from './ui/pages/KcSettingsPage';
 import { renderKcBankPage } from './ui/pages/KcBankPage';
+import { renderDevLayoutPage } from './ui/pages/DevLayoutPage';
 
 /**
  * 顶部导航按钮（全部点亮）。
@@ -69,6 +70,10 @@ function registerRoutes(): void {
   registerRoute('/kc/review', (ctx) => renderKcReviewPage(ctx));
   registerRoute('/kc/settings', () => renderKcSettingsPage());
   registerRoute('/kc/bank', () => renderKcBankPage());
+  // 布局调试页（阶段 M1 手机适配诊断）：#/dev/layout
+  // 保留在生产构建里（`?probe=1` 会被 probeLayout.mjs 用无头浏览器打），
+  // 顶栏没有入口，只有知道地址才进得来；它只读不写，不改任何用户数据。
+  registerRoute('/dev/layout', (ctx) => renderDevLayoutPage(ctx.query));
   setFallback('/home');
 }
 

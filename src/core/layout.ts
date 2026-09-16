@@ -1,4 +1,4 @@
-import type { PaperSettings } from './types';
+import type { LayoutTier, PaperSettings } from './types';
 
 /** 白纸上的一个落点（归一化 0~1 的相对坐标，换尺寸后位置不变） */
 export interface Placement {
@@ -56,6 +56,15 @@ export function seedFromString(text: string): number {
 }
 
 /**
+ * 布点的默认边距（相对纸张宽度的比例，0.06 = 左右各留 6%）。
+ *
+ * ★ 单独抽成常量是为了诊断（阶段 M1）：调试页与 `PaperStage` 都要报「边距是多少」，
+ *   值散在两个文件里迟早对不上。**注意**：改这个值会改变线上布点结果，
+ *   M1 只读阶段**不许改**（手机端要降到 8px 是 M2 的事）。
+ */
+export const DEFAULT_GRID_MARGIN = 0.06;
+
+/**
  * 白纸布点算法（抖动网格）：
  * 1. 按 count 和宽高比算出最接近正方形的网格行列数（给了 minGapW/minGapH 时格子不会小于最小间距）；
  * 2. 每格内抖动（随机偏移，保留格宽 20% 边距）；
@@ -72,7 +81,7 @@ export function seedFromString(text: string): number {
 export function jitteredGrid(count: number, opts: JitteredGridOptions = {}): Placement[] {
   if (count <= 0) return [];
   const aspect = opts.aspect ?? 16 / 9;
-  const margin = opts.margin ?? 0.06;
+  const margin = opts.margin ?? DEFAULT_GRID_MARGIN;
   const minGapCells = opts.minGapCells ?? 0.7;
   const random = mulberry32(opts.seed ?? 1);
   const usable = 1 - margin * 2;
@@ -180,6 +189,261 @@ function clamp01(v: number): number {
   return Math.min(1, Math.max(0, v));
 }
 
+/* ═══════════════ 阶段 M2：手机端布点核心（按平均词宽定网格 + 真实碰撞检测）═══════════════
+ *
+ * 为什么另起一套（M1 诊断结论，都是实测数字）：
+ *   旧算法把「最小中心距」定成 `最宽的那个词 + 字号 × 2.4`，再用它去夹列数：
+ *     390×844、字号 28 时 minGapW = 196.4/390 = 0.5036 → cols = floor(0.88/0.5036) = 1
+ *     → 一屏只剩 1 列 5~6 个词（`capacity=5`）。
+ *   而且它给的是**中心距**（词宽 + 字号系数），对平均词宽 100px 的词表来说，
+ *   196.4px 的中心距等于每对相邻词之间白白扔掉 96px。
+ *
+ * 新算法三件事：
+ *   ① 列数按**平均词宽**定（`mean × 1.15 + minGapPx`），不再按最宽词；
+ *   ② 每个词按**自己的宽度**在格子里找位置，放不下就换一个格子（试满为止）；
+ *   ③ 每次落点都做**真实矩形碰撞检测**（长词塞不进格子时会被挡下来，不会叠字）。
+ * 结果：长词不再拖垮整屏容量，而「不重叠 / 不进按钮区 / 不越界」由 ③ 硬保证。
+ */
+
+/** 一个单词在纸上的实际占位（像素） */
+export interface WordMetrics {
+  /** 渲染宽度（像素） */
+  widthPx: number;
+  /** 渲染高度（行高，像素） */
+  heightPx: number;
+}
+
+/** 网格推导结果 */
+export interface GridResult {
+  /** 列数（按平均词宽定） */
+  cols: number;
+  /** 行数（按可放下的行数定，够了就停） */
+  rows: number;
+  /** 列数 × 行数 */
+  capacity: number;
+  /** 格宽（像素） */
+  cellW: number;
+  /** 格高（像素） */
+  cellH: number;
+}
+
+/**
+ * 算布点网格：列数按**平均词宽**定，行数按可用高度定，容量不够就加行。
+ *
+ * 与旧 `jitteredGrid` 的关键差别：这里不再用「最宽词」推导列数
+ * （那正是 M1 查出来的瓶颈：最宽词 129.2px → 最小中心距 196.4px → 只能 1 列）。
+ * @param opts.availableW 可用宽度（已扣边距，像素）
+ * @param opts.availableH 可用高度（已扣边距与底部按钮带，像素）
+ * @param opts.meanWidthPx 本批词的**平均**渲染宽度（像素）
+ * @param opts.rowHeightPx 一行词的实际高度（像素，含上下内边距）
+ * @param opts.minGapPx 相邻单词的最小空隙（像素）
+ * @param opts.targetCount 期望一屏放几个词
+ */
+export function computeGrid(opts: {
+  availableW: number;
+  availableH: number;
+  meanWidthPx: number;
+  rowHeightPx: number;
+  minGapPx: number;
+  targetCount: number;
+}): GridResult {
+  const availableW = Math.max(1, opts.availableW);
+  const availableH = Math.max(1, opts.availableH);
+  // 格宽 = 平均词宽 × 1.15（15% 余量给比平均宽的词）+ 最小空隙
+  const cellWidthPx = Math.max(1, opts.meanWidthPx * 1.15 + opts.minGapPx);
+  // 格高 = 行高 + 最小空隙；**不能再低**于行高，否则上下两行的词直接叠在一起
+  const cellHeightPx = Math.max(1, opts.rowHeightPx + opts.minGapPx);
+  const maxCols = Math.max(1, Math.floor(availableW / cellWidthPx));
+  const rowsPerCols = (cols: number): number => Math.max(1, Math.floor(availableH / cellHeightPx));
+  const target = Math.max(1, Math.floor(opts.targetCount));
+
+  let best: GridResult | null = null;
+  for (let cols = 1; cols <= maxCols; cols += 1) {
+    const rows = rowsPerCols(cols);
+    const capacity = cols * rows;
+    const candidate: GridResult = { cols, rows, capacity, cellW: availableW / cols, cellH: cellHeightPx };
+    // 取「第一个满足目标」的（列数从小到大 = 先横着铺，不是竖列）
+    if (capacity >= target) return candidate;
+    if (!best || capacity > best.capacity) best = candidate;
+  }
+  if (best) return best;
+  const cols = 1;
+  const rows = rowsPerCols(cols);
+  return { cols, rows, capacity: cols * rows, cellW: availableW, cellH: cellHeightPx };
+}
+
+/**
+ * 底部圆形按钮带的高度（像素）。
+ *
+ * 由参数算出，不写死：
+ *   按钮带 = 直径（圆）+ max(小字字号, 10) + 小字上下的空隙（12）
+ *   再乘 3 是因为「带高」要覆盖「圆 + 小字 + 一点余量」，同时给布点留出
+ *   与按钮之间的一条安全空隙（M1 实测：避让区画小了，词会压在按钮上）。
+ * @param tier 当前档位的布局参数
+ * @param safeAreaBottom 底部安全区（iPhone 横条，像素）
+ */
+export function controlBandHeight(tier: LayoutTier, safeAreaBottom = 0): number {
+  const label = Math.max(tier.button.labelFontPx, 10);
+  return tier.button.diameterPx * 3 + label + 12 + Math.max(0, safeAreaBottom);
+}
+
+/** layoutWords 的入参 */
+export interface WordLayoutOptions {
+  /** 单词的实际尺寸（像素），顺序与要上纸的词一致 */
+  metrics: WordMetrics[];
+  /** 纸张像素尺寸 */
+  canvas: { width: number; height: number };
+  /** 可用区域（像素，相对纸张左上角）：已扣边距、已扣底部按钮带 */
+  area: { x: number; y: number; width: number; height: number };
+  /** 网格（computeGrid 的结果） */
+  grid: GridResult;
+  /** 相邻单词的最小空隙（像素，碰撞检测用） */
+  minGapPx: number;
+  /** 随机种子：同一 seed 结果完全稳定，便于调试与续跑 */
+  seed?: number;
+  /** 抖动幅度与格宽的比例（0 = 完全对齐网格），默认 0.22 */
+  jitterRatio?: number;
+  /**
+   * 要避开的像素矩形（纸张坐标）。给了就按**真实矩形**判交，
+   * 而不是只判中心点（M1 实测：只判中心点时，词的一半仍会压在按钮上）。
+   */
+  avoidPx?: { x: number; y: number; width: number; height: number };
+}
+
+/** 两个矩形是否相交（留 gap 的间隙；边界相接不算相交） */
+function rectsOverlap(
+  a: { x: number; y: number; w: number; h: number },
+  b: { x: number; y: number; w: number; h: number },
+  gap: number,
+): boolean {
+  return a.x < b.x + b.w + gap && b.x < a.x + a.w + gap && a.y < b.y + b.h + gap && b.y < a.y + a.h + gap;
+}
+
+/**
+ * 把一批词放进网格（**每个词按自己的宽度**找格子，带真实碰撞检测）。
+ *
+ * 返回的落点是**归一化坐标**（相对纸张），与旧的 `jitteredGrid` 一致，
+ * 所以上层（会话存档、续跑）不用改数据结构。
+ *
+ * 保证（由构造方式硬保证，不靠概率）：
+ * - 任意两个落点上的词矩形不相交（含 `minGapPx` 间隙）；
+ * - 每个词的完整矩形都在 `area` 内（不越界）；
+ * - 每个词的完整矩形都不与 `avoidPx`（底部按钮带）相交。
+ * 代价：容量受「试格次数」限制；实在放不下的词会从末尾开始被丢掉
+ * （调用方用返回长度当容量，与旧行为一致）。
+ * @param opts 见 WordLayoutOptions
+ */
+export function layoutWords(opts: WordLayoutOptions): Placement[] {
+  const { canvas, area, grid, metrics, minGapPx } = opts;
+  if (metrics.length === 0 || area.width <= 0 || area.height <= 0) return [];
+  const random = mulberry32(opts.seed ?? 1);
+  const jitterRatio = Math.max(0, opts.jitterRatio ?? 0.22);
+  // 抖动幅度不超过「格子里剩的余量」，避免把词抖出格外
+  const maxJitterX = Math.max(0, Math.min(grid.cellW * jitterRatio, Math.max(0, grid.cellW - 1)));
+  const maxJitterY = Math.max(0, Math.min(grid.cellH * jitterRatio, Math.max(0, grid.cellH - 1)));
+
+  // 格子顺序打乱（避免总是从左上角开始，词分布更自然）
+  const order = shuffledIndexes(grid.cols * grid.rows, random);
+  const placed: { x: number; y: number; w: number; h: number }[] = [];
+  const out: Placement[] = [];
+
+  for (const idx of order) {
+    if (out.length >= metrics.length) break;
+    const col = idx % grid.cols;
+    const row = Math.floor(idx / grid.cols);
+    // ★ 不做「列间交错（stagger）」：交错会让相邻两列的词落进同一个水平带，
+    //   而它们既不在同一行也不在同一列 —— 碰撞检测管不到，屏幕上就出现
+    //   「明明配置了 8px 空隙，实际只有 5.6px」这种量得出来、却查不到原因的缝隙。
+    //   视觉上的自然感交给「格子顺序打乱 + 格内抖动」，不靠交错。
+    const cellLeft = area.x + col * grid.cellW;
+    const cellTop = area.y + row * grid.cellH;
+    const metric = metrics[out.length];
+    if (!metric) break;
+    // 这个格子放不下整块词（越出可用高度）→ 换下一格，而不是硬塞
+    if (cellTop < area.y || cellTop + metric.heightPx > area.y + area.height) continue;
+    // 词在格内随机偏移（偏移空间 = 格宽 − 词宽）
+    const slackX = Math.max(0, grid.cellW - metric.widthPx);
+    const slackY = Math.max(0, grid.cellH - metric.heightPx);
+    const jitterX = (random() - 0.5) * 2 * Math.min(maxJitterX, slackX / 2);
+    const jitterY = (random() - 0.5) * 2 * Math.min(maxJitterY, slackY / 2);
+    const rect = {
+      x: cellLeft + slackX / 2 + jitterX,
+      y: cellTop + slackY / 2 + jitterY,
+      w: metric.widthPx,
+      h: metric.heightPx,
+    };
+
+    // ★ ① 夹回可用区域（不越界）：整块矩形都必须在 area 内
+    rect.x = Math.min(Math.max(rect.x, area.x), area.x + area.width - rect.w);
+    rect.y = Math.min(Math.max(rect.y, area.y), area.y + area.height - rect.h);
+
+    // ★ ② 不能进底部按钮带
+    if (opts.avoidPx && rectsOverlap(rect, { ...opts.avoidPx, w: opts.avoidPx.width, h: opts.avoidPx.height }, 0)) {
+      continue; // 这个格子被按钮占了 → 换下一个空格（不是把词丢掉）
+    }
+    // ★ ③ 真实碰撞检测 + **推开**（不是直接换格子）。
+    //   为什么必须推开：格高只比词高多出 minGap（手机档 44.8 → 52.6），
+    //   抖动几次就会压到邻居；直接 `continue` 换格子的话，格子被跳过几次就少放几个词
+    //   （M2 实测：目标 16 只放得下 13）。推开是确定性的，不靠运气。
+    const resolved = resolveOverlaps(rect, placed, area, minGapPx);
+    if (!resolved) continue; // 这个格子真的放不下 → 换下一个空格
+    placed.push(resolved);
+    out.push({
+      x: clamp01((resolved.x + resolved.w / 2) / Math.max(1, canvas.width)),
+      y: clamp01((resolved.y + resolved.h / 2) / Math.max(1, canvas.height)),
+    });
+  }
+  return out;
+}
+
+/** 一个已确定的矩形（像素，纸张坐标） */
+interface PixelRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * 把一个候选矩形从已放好的词中间「推开」，推到不重叠为止。
+ *
+ * 规则（简单、确定、可复现）：
+ * 1. 与谁相交，就把自己移到它**下方** `minGap` 处；下方出界就移到**上方**；
+ * 2. 上下都出界 → 这个格子放不下，返回 null；
+ * 3. 每次移动后再夹回可用区域，并重新检查（最多 `maxRounds` 轮）。
+ *
+ * 为什么要这样而不是「相交就换格子」：格子数有限（手机档 2 列 × 12 行），
+ * 换几次就没格子了，用户看到的就是「明明还有空白，却少放了几个词」。
+ * @param start 候选矩形
+ * @param placed 已经放好的矩形
+ * @param area 可用区域
+ * @param gap 最小空隙
+ * @param maxRounds 最多推几轮
+ */
+function resolveOverlaps(
+  start: PixelRect,
+  placed: PixelRect[],
+  area: { x: number; y: number; width: number; height: number },
+  gap: number,
+  maxRounds = 8,
+): PixelRect | null {
+  let rect: PixelRect = { ...start };
+  for (let round = 0; round < maxRounds; round += 1) {
+    const hit = placed.find((p) => rectsOverlap(rect, p, gap));
+    if (!hit) return rect;
+    const below = hit.y + hit.h + gap;
+    const above = hit.y - rect.h - gap;
+    const canBelow = below + rect.h <= area.y + area.height + 0.001;
+    const canAbove = above >= area.y - 0.001;
+    if (canBelow) rect = { ...rect, y: below };
+    else if (canAbove) rect = { ...rect, y: above };
+    else return null;
+  }
+  // 推了 maxRounds 轮还在撞 → 判定放不下
+  return placed.some((p) => rectsOverlap(rect, p, gap)) ? null : rect;
+}
+
+
 /** 布点的间距预算（像素） */
 export interface SpacingBudget {
   /** 相邻单词落点之间的**最小中心距**（横向）—— 落点即单词的中心 */
@@ -230,11 +494,114 @@ export function spacingBudget(opts: {
   };
 }
 
-/** 词行的行高系数（与 paper.css 的 .paper-word line-height 对应） */
-export const WORD_LINE_HEIGHT_RATIO = 1.45;
+/**
+ * 词行的行高系数（与 CSS 实际生效的 line-height 对应）。
+ *
+ * ★ 值必须等于 `global.css` 里 `body { line-height: 1.6 }`：
+ *   `.paper-word` 自己没有写 line-height，所以它继承 body 的 1.6。
+ *   原来这里写 1.45（想要的 44px 热区），而 CSS 实际是 1.6 ——
+ *   两者差 `字号 × 0.15`（16px 字号下 2.4px）。M2 实测后果：
+ *   算法以为一行词高 39.2，实际渲染 41.6，每行少算 2.4px，
+ *   屏幕上配置 8px 的空隙只剩 5.6px（probe 直接量出来）。
+ *   改常量而不是改 CSS：CSS 一动会连带影响桌面与 `.paper-meaning` 的行距。
+ *   改这个值之前先用调试页量一次 `wordMetrics.lineHeight`。
+ */
+export const WORD_LINE_HEIGHT_RATIO = 1.6;
 
 /** 词行上下内边距之和（与 paper.css 的 .paper-word padding 对应） */
 export const WORD_ROW_PADDING_PX = 12;
+
+/**
+ * 单词元素的**点击热区内边距**（与 paper.css 的 `.paper-word` padding 对应）。
+ *
+ * ★ 为什么碰撞检测必须把它算进去（M2 实测踩到）：
+ *   canvas 的 `measureText` 量的是**文字**宽度，而真正占位置的是
+ *   `.paper-word` 这个带 padding 的元素。手机上 padding 是 `8px 4px`，
+ *   也就是每个词的矩形比文字宽 **8px**、高 **16px**。
+ *   不算进去的话，屏幕上词与词的间距会比配置的 minGap 小 8px
+ *   （实测：配置 12px，DOM 量出来 6.76px）。
+ *   桌面 padding 是 `6px 2px`（手机媒体查询只改手机）。
+ */
+export const WORD_H_PADDING_PHONE_PX = 8;
+export const WORD_V_PADDING_PHONE_PX = 16;
+export const WORD_H_PADDING_DESKTOP_PX = 4;
+export const WORD_V_PADDING_DESKTOP_PX = 12;
+
+/**
+ * 一个词在纸上**真正占的矩形**（像素，含点击热区内边距）。
+ * @param textWidthPx canvas 量出的文字宽度
+ * @param textHeightPx 文字行盒高度（行高 × 字号）
+ * @param isPhone 是否手机（手机的 padding 更大）
+ */
+export function wordBoxPx(
+  textWidthPx: number,
+  textHeightPx: number,
+  isPhone: boolean,
+): { widthPx: number; heightPx: number } {
+  return {
+    widthPx: Math.max(0, textWidthPx) + (isPhone ? WORD_H_PADDING_PHONE_PX : WORD_H_PADDING_DESKTOP_PX),
+    heightPx: Math.max(0, textHeightPx) + (isPhone ? WORD_V_PADDING_PHONE_PX : WORD_V_PADDING_DESKTOP_PX),
+  };
+}
+
+/**
+ * 一次布点的**自述信息**（只读诊断数据，不参与任何计算）。
+ *
+ * 用途：手机端布局诊断（阶段 M1）要回答「算法到底按什么在算」——
+ * 字号、最宽词、最小中心距、网格行列数、被按钮避让吃掉的格子数。
+ * 这些数字原本只存在于函数内部，靠读代码反推容易算错，
+ * 所以在这里定一份结构：`PaperStage.computePlacements()` 布完点后写一份快照，
+ * 调试页的 `window.__layoutProbe()` 把它附在测量结果里一起输出。
+ */
+export interface LayoutInfo {
+  /** 实际参与布点的单词数 */
+  wordCountRequested: number;
+  /** 避让后真正放得下的数量（= jitteredGrid 返回值长度，≤ wordCountRequested） */
+  capacity: number;
+  /** 纸张像素尺寸 */
+  paperW: number;
+  paperH: number;
+  /** 纸张在视口里的居中偏移 */
+  sheetOffsetX: number;
+  sheetOffsetY: number;
+  /** 布点用的字号（手机上含 phoneFontScale 放大系数） */
+  fontSize: number;
+  /** 设备形态 phone / tablet / desktop */
+  deviceKind: string;
+  /** 本批词里渲染最宽的一个（像素，canvas measureText 实测） */
+  widestWordPx: number;
+  /** 本批词的平均宽度（像素，canvas measureText 实测） */
+  avgWordPx: number;
+  shortestWordLen: number;
+  longestWordLen: number;
+  /** 横向 / 纵向最小中心距（像素，spacingBudget 的输出） */
+  gapX: number;
+  gapY: number;
+  /** 避让按钮区时向外扩的半个词宽 / 半个词行高（像素） */
+  padX: number;
+  padY: number;
+  /** 网格行列数 */
+  cols: number;
+  rows: number;
+  /** 不考虑避让时的容量（cols × rows） */
+  gridCapacity: number;
+  /** 因为落进按钮避让区而被跳过的格子数 */
+  cellsSkippedByAvoid: number;
+  /** 布点边距（归一化，0.06 = 纸张宽度的 6%） */
+  marginNorm: number;
+  aspect: number;
+  /** 实际落点数 */
+  placements: number;
+  /**
+   * 以下三个只有**手机**（M2 新算法）会填：
+   * - `algorithm`：本次用的是哪套布点（phone-grid / legacy-jitter）
+   * - `wordsPerRow`：实际每行几个词（= ceil(容量 ÷ 行数)）
+   * - `phoneArea`：可用区域像素（扣掉边距与底部按钮横带之后的那块）
+   */
+  algorithm?: 'phone-grid' | 'legacy-jitter';
+  wordsPerRow?: number;
+  phoneArea?: { x: number; y: number; width: number; height: number };
+}
 
 /**
  * 一个词行的高度（像素）：字号 × 行高系数 + 上下内边距。

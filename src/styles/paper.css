@@ -1,6 +1,14 @@
 /* 白纸相关样式：阶段 05（背诵白纸页）/ 06（记忆 + 拼写）/ 07（复习）共用。
    变量（字体 / 字号 / 单词颜色 / 背景色 / 动效）在设置页可调。 */
 
+/* 底部安全区（iPhone 横条）的像素高度，供**布点避让区**读取。
+   ★ 为什么要有这个变量：避让带必须与按钮的实际位置完全一致，
+     否则最下面一行词会被横条压住。CSS 在这里算一次，JS 读 `--safe-bottom`
+     （见 ui/device.ts 的 readSafeAreaBottomPx），两边就不会各算一套。 */
+:root {
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
 /* —— 白纸舞台 —— */
 .paper-stage {
   position: fixed;
@@ -139,6 +147,97 @@
   background: rgba(255, 255, 255, 0.75);
   border-radius: 8px;
   padding: 3px 8px;
+}
+
+/* —— 底部圆形按钮带（阶段 M2：**只在手机**用）——
+   为什么改成横排圆形（用户实测反馈）：
+   原来 4 个按钮竖排在右下角，占掉约 1/4 屏幕，而且「单词无法出现在按钮左侧」；
+   改成底部一条横带后，避让区就是横带本身，横带以上的左侧/中间/右侧全都能放词。
+   尺寸全部来自 CSS 变量（由 PaperStage 按 settings.layout.mobile.button 注入）：
+     --btn-d   直径
+     --btn-gap 按钮之间的横向间距
+     --btn-lf  圆下方小字字号
+   避让带高度在 core/layout.ts 的 controlBandHeight() 用同一份参数算，两边对得上。 */
+.paper-controls-round {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(12px + var(--safe-bottom, 0px));
+  z-index: 45;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: var(--btn-gap, 16px);
+  pointer-events: none; /* 容器不吃点击，只有按钮吃 */
+}
+
+.paper-controls-round .paper-round-btn {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.paper-controls-round .paper-round-circle {
+  width: var(--btn-d, 50px);
+  height: var(--btn-d, 50px);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 半透明 + 阴影：万一与单词重叠也能看见底下的字（布点已避让，这里是双保险） */
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--line);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14);
+  font-size: calc(var(--btn-d, 50px) * 0.32);
+  font-weight: 600;
+  color: var(--fg);
+}
+
+/* 主按钮（再背一个 / 背完了）：深底白字，一眼看出该点哪个 */
+.paper-controls-round .paper-round-btn.is-primary .paper-round-circle {
+  background: var(--fg);
+  border-color: var(--fg);
+  color: #fff;
+}
+
+/* 不可用状态：半透明 + 不再响应点击 */
+.paper-controls-round .paper-round-btn:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.paper-controls-round .paper-round-label {
+  font-size: var(--btn-lf, 12px);
+  line-height: 1.1;
+  color: var(--fg-dim);
+  white-space: nowrap;
+}
+
+.paper-controls-round .paper-round-progress {
+  position: absolute;
+  bottom: calc(var(--btn-d, 50px) + 26px);
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 11px;
+  color: var(--fg-dim);
+}
+
+.paper-controls-round .paper-round-progress:empty {
+  display: none;
+}
+
+/* 「重新开始」是破坏性操作，视觉上降一格 */
+.paper-controls-round .paper-round-btn.is-restart .paper-round-circle {
+  font-size: calc(var(--btn-d, 50px) * 0.26);
+  color: var(--fg-dim);
 }
 
 /* —— iOS 语音解锁引导层 —— */

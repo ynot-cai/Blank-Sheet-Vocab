@@ -1,0 +1,43 @@
+﻿M1+M2: 手机端一屏 5~6 个词 → 15~16 个（布点算法重构 + 底部圆形按钮 + 避让带）
+
+M1（只测不改，先建测量设施再诊断）
+- 新增 probeLayout.mjs（根目录）：无头浏览器打开调试页抓测量 JSON 并判 PASS/FAIL
+- 新增 src/dev/layoutProbe.ts：window.__layoutProbe() 用真实 getBoundingClientRect
+  量词数/行列/重叠对/越界/最小间距/与按钮区相交，结果写 console 与 <pre id="probe-result">
+- 新增 src/ui/pages/DevLayoutPage.ts（#/dev/layout）：真实 PaperStage + 包围盒可视化
+  + 红色避让区 + 六个参数滑块（可一键写进设置）
+- PaperStage：加 data-word-box 测量标记、__layoutInfo 只读诊断快照、视口可注入
+- 测量环境两个坑（都写进注释与 HANDOVER）：
+  1. Windows 无头 Chromium 最小窗宽 504px，--window-size=390,844 量不到真机尺寸
+     → dvw/dvh 注入 + test:m2-ui 用 CDP Emulation.setDeviceMetricsOverride 精确设视口
+  2. 真实视口高度 = 窗口高度 − 95px → probeLayout.mjs 加 --window-height
+
+M1 诊断结论（390×844、字号 28、实测）
+- wordCount=5，算法网格 1 列 × 6 行，gridCapacity=6，widestWordPx=129.2，gapX=196.4
+- 瓶颈在 core/layout.ts:83：cols = min(3, floor(0.88 / (196.4/390))) = 1
+  「最小中心距 = 最宽词 + 字号×2.4」被拿来夹列数，一个长词就把整屏压成 1 列
+- 附带发现：抖动幅度公式把间距减了两次；避让区被 padX 放大 2.4 倍
+
+M2（改完复测：16 个词、0 重叠、0 越界、0 压按钮、minGap=8）
+- core/layout.ts 新增 computeGrid / layoutWords / controlBandHeight：
+  列数按平均词宽定（平均×1.15 + minGap），每个词按自己的宽度找格子，
+  落点做真实矩形碰撞检测，撞了就推开（不是换格子）
+- flow.ts 新增 buildRoundControls()：手机底部横排圆形按钮（尺寸来自参数，注入 CSS 变量），
+  点击转交原按钮，状态由 syncRoundControls() 单向同步；桌面/平板保持右下角竖排不变
+- device.ts：手机避让区从「右下角方块」改成「底部横带」→ 词可以出现在按钮左侧
+- settings.layout.{mobile,tablet,desktop} 三档 6 参数（types/config 新增），
+  设置页新增 C2 布局参数（LayoutSection.ts），调试页也能改
+- 手机档参数：边距 8 / 间距 8 / 字号 16 / 目标 16 / 按钮直径 50 间距 16
+
+★ M2 最大的坑（已写进 WORD_LINE_HEIGHT_RATIO 注释）
+- CSS 实际行高是 1.6（body 的 line-height），代码里常量写的是 1.45
+  → 算法以为一行词高 39.2px，实际渲染 41.6px，每行少算 2.4px
+  → 屏幕上配置 8px 的空隙实测只剩 5.6px
+- 同类：canvas.measureText 量的是文字宽度，占位置的是带 padding 的 .paper-word
+  → 新增 wordBoxPx() 把热区 padding 算进碰撞矩形
+
+验收（全部真实 DOM / 真机视口）
+- 390×844：16 词、列 6、minGap 8.00、重叠 0、越界 0、压按钮 0
+- 360×800：15 词；430×932：15 词；长词表（含 photosynthesis）：容量 16（改前 4）
+- test:mobile 59 项、test:m2-ui 20 项（CDP 精确视口）、test:build 52 项、rules:check 全绿
+- 桌面：仍是 legacy-jitter 算法 + 右下角方块避让（有断言守着）

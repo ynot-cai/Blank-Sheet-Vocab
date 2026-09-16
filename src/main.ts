@@ -5,6 +5,7 @@ import './styles/kc.css';
 import { DEFAULT_SETTINGS, setSettingsCache } from './core/config';
 import { openDB } from './core/db';
 import { setClockFloorLoader as setKcClockFloorLoader } from './core/kcClock';
+import { attachLayoutProbe } from './dev/layoutProbe';
 import * as dao from './dao';
 import { onDataChanged, appStore } from './state/store';
 import * as localfile from './services/localfile';
@@ -12,6 +13,20 @@ import { emitDataChanged } from './state/store';
 import { renderApp, setBackupSettingsSnapshot } from './App';
 import { mountErrorBoundary } from './ui/components/ErrorBoundary';
 import { showToast, toastError } from './ui/components/Toast';
+
+/**
+ * 当前 hash 是不是布局调试页。
+ *
+ * 为什么要在 boot 最前面判一次：调试页**完全不碰数据库**，而 `openDB()` 在
+ * 无头浏览器里会被 `--virtual-time-budget` 打乱（虚拟时间把 8 秒超时瞬间推到底，
+ * 而 IndexedDB 的真实异步还没回来）→ 页面停在「数据库打不开」的兜底页，
+ * 测量脚本抓不到任何数据。跳过数据库既让测量跑得通，也没有副作用：
+ * 这一页本来就只读布局参数，不读词库。
+ */
+function isDevLayoutRoute(): boolean {
+  const raw = window.location.hash.replace(/^#/, '');
+  return raw.split('?')[0] === '/dev/layout';
+}
 
 /**
  * 启动顺序：装错误边界 → 初始化本地文件夹连接 → 打开 DB → 载入设置 → 挂载 App。
@@ -25,6 +40,12 @@ async function boot(): Promise<void> {
 
   // 先把默认设置填进缓存，保证任何同步调用都有值
   setSettingsCache(DEFAULT_SETTINGS);
+
+  if (isDevLayoutRoute()) {
+    renderApp(root);
+    console.info('[main] 已挂载布局调试页（未打开数据库）');
+    return;
+  }
 
   try {
     await openDB();
@@ -95,6 +116,13 @@ async function boot(): Promise<void> {
     const { attachKcSelfTest } = await import('./dev/kcSelftest');
     attachKcSelfTest();
   }
+
+  // 布局测量入口（阶段 M1）：`window.__layoutProbe()` 量白纸上的真实 DOM 坐标。
+  // 生产构建也挂 —— 无头浏览器打的是线上构建（`#/dev/layout?probe=1`），
+  // 只读测量，不改数据、不加可见界面。
+  // 注意：这里是**静态**导入（不是 dynamic import）：layoutProbe 已被调试页
+  // 静态引用，再动态导入一次只会让 rollup 报「dynamic import 不能拆分 chunk」。
+  attachLayoutProbe();
 
   renderApp(root);
   console.info('[main] 已挂载主界面');

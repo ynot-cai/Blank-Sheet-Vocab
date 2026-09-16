@@ -1,6 +1,6 @@
 // RULES-R1: 此处禁止任何强制时间限制（无倒计时 / 无超时提交 / 无超时判错）
 import { getSettings } from '../../../core/config';
-import { seedFromString } from '../../../core/layout';
+import { controlBandHeight, seedFromString } from '../../../core/layout';
 import { pickForMemorize } from '../../../core/pick';
 import type { Session, Word } from '../../../core/types';
 import * as dao from '../../../dao';
@@ -11,6 +11,7 @@ import { mountSpeechGate } from '../../components/SpeechGate';
 import { showUndoToast, toastError, toastOk, toastWarn } from '../../components/Toast';
 import { renderWordCard } from '../../components/WordCard';
 import { navigate } from '../../router';
+import { controlTier, deviceKind } from '../../device';
 import { createPaperStage } from './PaperStage';
 import type { AnswerCardActions } from './AnswerCard';
 import type { RoundHost } from './rounds';
@@ -46,6 +47,92 @@ export interface PaperFlow {
 }
 
 /**
+ * 手机上的短文案（圆里只放得下 2~3 个字）。
+ * 与按钮文案的对应关系写死在这里，避免「圆里一个词、下面是另一个词」。
+ */
+const ROUND_LABELS: Record<string, string> = {
+  '背完了': '完',
+  '保存并退出': '存',
+  '再次记忆': '忆',
+  '再背一个 (Enter)': '背',
+  '重新开始': '重',
+};
+
+/** 圆下方的小字（比圆里的字更完整，但仍要短） */
+const ROUND_SUB_LABELS: Record<string, string> = {
+  '背完了': '背完了',
+  '保存并退出': '保存',
+  '再次记忆': '记忆',
+  '再背一个 (Enter)': '再背',
+  '重新开始': '重开',
+};
+
+/**
+ * 圆下方小字的动态文案：原按钮的文案会变（「再背一个」↔「记忆（新词 N 个）」↔
+ * 「纸上放不下了」），圆下方的小字也要跟着变，否则会出现「圆里写背、按钮其实在提示放不下」。
+ * @param btn 原按钮
+ * @returns 小字文案（空串表示不改）
+ */
+function shortNextLabel(btn: HTMLButtonElement): string {
+  const text = btn.textContent ?? '';
+  if (text.startsWith('记忆')) return '记忆';
+  if (text.startsWith('纸上放不下')) return '纸满';
+  if (text.startsWith('已全部出现')) return '已满';
+  if (text.startsWith('再背一个')) return '再背';
+  return ROUND_SUB_LABELS[btn.dataset.fullLabel ?? ''] ?? '';
+}
+
+/** 建一个带 data-full-label 的按钮（圆按钮靠它找回自己的原按钮） */
+function labeledButton(
+  text: string,
+  onClick: (ev: MouseEvent) => void,
+  opts: { variant?: 'primary' | 'danger' | 'ghost'; class?: string } = {},
+): HTMLButtonElement {
+  const btn = button(text, onClick, opts);
+  btn.dataset.fullLabel = text;
+  return btn;
+}
+
+/**
+ * 组装手机版底部圆形按钮带（导出供 `#/dev/layout` 复用）。
+ *
+ * 尺寸来自 `settings.layout.mobile.button`（直径 / 间距 / 小字字号），
+ * 通过 CSS 变量注入 —— 这样「避让带高度」（core/layout.ts 的 controlBandHeight，
+ * 用同一份参数算）与按钮的实际位置永远对得上。
+ *
+ * 为什么按钮文字要换短文案：直径只有 50px，`再背一个 (Enter)` 塞不进去。
+ * 完整文案保留在 `title` 上（长按可见），`data-full-label` 供测试与后续调整。
+ * @param progress 进度条元素（放在横带上方居中）
+ * @param buttons 按钮（顺序即显示顺序）
+ */
+export function buildRoundControls(progress: HTMLElement, buttons: HTMLButtonElement[]): HTMLElement {
+  const tier = controlTier();
+  const box = h('div', { class: 'paper-controls-round' });
+  box.style.setProperty('--btn-d', `${tier.button.diameterPx}px`);
+  box.style.setProperty('--btn-gap', `${tier.button.gapPx}px`);
+  box.style.setProperty('--btn-lf', `${Math.max(tier.button.labelFontPx, 10)}px`);
+  // 供 probe / 测试核对「避让带高度」与按钮带一致
+  box.dataset.bandHeight = String(controlBandHeight(tier));
+  box.appendChild(progress);
+  for (const btn of buttons) {
+    const full = btn.dataset.fullLabel ?? btn.textContent ?? '';
+    const circle = h('span', { class: 'paper-round-circle', text: ROUND_LABELS[full] ?? full.slice(0, 1) });
+    const label = h('span', { class: 'paper-round-label', text: ROUND_SUB_LABELS[full] ?? full });
+    const wrap = h('button', { class: 'paper-round-btn', type: 'button', title: full });
+    wrap.dataset.fullLabel = full;
+    // 视觉权重跟着原按钮走（主按钮深底白字）
+    if (btn.classList.contains('btn-primary')) wrap.classList.add('is-primary');
+    if (btn.classList.contains('paper-restart')) wrap.classList.add('is-restart');
+    wrap.appendChild(circle);
+    wrap.appendChild(label);
+    // 点击转交给原按钮：所有流程逻辑只有一份（原来那些 btn 的 onClick 不动）
+    wrap.addEventListener('click', () => btn.click());
+    box.appendChild(wrap);
+  }
+  return box;
+}
+
+/**
  * 创建白纸流程。
  * 所有按钮集中在右下角：进度 →（背完了）→ 保存并退出 → 再次记忆 → 再背一个（每 memorizeEvery 个
  * 新词自动变成「记忆」）。单词点击切换词下中文意思；点中文意思开单词卡。
@@ -76,18 +163,22 @@ export function createPaperFlow(opts: FlowOptions): PaperFlow {
     onMeaningClick: (word) => openCard(word),
   });
 
-  // —— 右下角按钮组 ——
-  const progress = h('div', { class: 'paper-progress', text: '' });
-  const btnDone = button('背完了', () => void finishAll(), { variant: 'primary', class: 'paper-done hidden' });
-  const btnSave = button('保存并退出', () => void saveAndExit());
-  const btnAgain = button('再次记忆', () => startMemorize());
-  const btnNext = button('再背一个 (Enter)', () => nextAction(), { variant: 'primary', class: 'paper-next' });
+  // ── 按钮组 ──
+  // ★ M2：手机上是**底部横排圆形按钮**（等大圆 + 圆下方小字），
+  //   平板/桌面保持原来的右下角竖排（用户明确要求桌面不变）。
+  const onPhone = deviceKind() === 'phone';
+  const progress = h('div', { class: onPhone ? 'paper-round-progress' : 'paper-progress', text: '' });
+  const btnDone = labeledButton('背完了', () => void finishAll(), { variant: 'primary', class: 'paper-done hidden' });
+  const btnSave = labeledButton('保存并退出', () => void saveAndExit());
+  const btnAgain = labeledButton('再次记忆', () => startMemorize());
+  const btnNext = labeledButton('再背一个 (Enter)', () => nextAction(), { variant: 'primary', class: 'paper-next' });
   // ★ 用户要求「下次点击直接开始」之后，续跑是自动的，于是必须有一个显式的
   //   「把这一轮丢掉、从零开始」入口，否则保存过的进度就再也甩不掉了。
   //   这是**破坏性**操作（丢掉位置与每词记忆遍数），所以保留二次确认——
   //   RULES-R3 的「不弹确认」只管「斩」，不管这里。
-  const btnRestart = button('重新开始', () => void restartRound(), { class: 'paper-restart' });
-  const controls = h('div', { class: 'paper-controls' }, progress, btnDone, btnSave, btnAgain, btnRestart, btnNext);
+  const btnRestart = labeledButton('重新开始', () => void restartRound(), { class: 'paper-restart' });
+  const roundControls = onPhone ? buildRoundControls(progress, [btnDone, btnSave, btnAgain, btnNext, btnRestart]) : null;
+  const controls = roundControls ?? h('div', { class: 'paper-controls' }, progress, btnDone, btnSave, btnAgain, btnRestart, btnNext);
   const root = h('div', { class: 'paper-flow' }, stage.root, controls);
 
   // iOS：语音首次必须在用户手势里启动，所以先盖一层「点击开始」（非 iOS 自动跳过）。
@@ -105,6 +196,27 @@ export function createPaperFlow(opts: FlowOptions): PaperFlow {
     const target = settings().memorizeTargetCount;
     const alive = words.filter((w) => session.shownIds.includes(w.id));
     return alive.length > 0 && alive.every((w) => (session.memorizeCount[w.id] ?? 0) >= target);
+  };
+
+  /**
+   * 手机版：把圆按钮的状态/文案同步成原按钮的当前值。
+   *
+   * 为什么需要同步而不是各写一套：`refreshUi()` 会改 `btnNext.textContent`
+   * （「再背一个」↔「记忆（新词 N 个）」↔「纸上放不下了」）、改 `disabled`、
+   * 切换「背完了」的 hidden。圆按钮只是显示层，**状态的唯一来源仍是原按钮**
+   * ——两处各判一次迟早会出现「按钮能点但显示灰的」这类不一致。
+   */
+  const syncRoundControls = (): void => {
+    if (!onPhone) return;
+    for (const btn of [btnDone, btnSave, btnAgain, btnNext, btnRestart]) {
+      const wrap = roundControls?.querySelector<HTMLButtonElement>(`[data-full-label="${btn.dataset.fullLabel ?? ''}"]`);
+      if (!wrap) continue;
+      wrap.disabled = btn.disabled;
+      wrap.classList.toggle('hidden', btn.classList.contains('hidden'));
+      const label = wrap.querySelector<HTMLElement>('.paper-round-label');
+      const short = shortNextLabel(btn);
+      if (label && short !== '') label.textContent = short;
+    }
   };
 
   /** 刷新右下角按钮与进度 */
@@ -137,6 +249,7 @@ export function createPaperFlow(opts: FlowOptions): PaperFlow {
           ? '纸上放不下了'
           : '已全部出现'
         : '再背一个 (Enter)';
+    syncRoundControls();
   };
 
   /**

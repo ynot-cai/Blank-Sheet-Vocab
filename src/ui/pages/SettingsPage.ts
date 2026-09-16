@@ -3,6 +3,7 @@ import { renderAiSection } from './settings/AiSection';
 import { renderCloudSection } from './settings/CloudSection';
 import { renderDataSection } from './settings/DataSection';
 import { renderDisplaySection } from './settings/DisplaySection';
+import { renderLayoutSection } from './settings/LayoutSection';
 import { renderPracticeSection } from './settings/PracticeSection';
 import { renderPrioritySection } from './settings/PrioritySection';
 import { renderStarParamsSection } from './settings/StarParamsSection';
@@ -20,6 +21,8 @@ export function renderSettingsPage(): HTMLElement {
   page.appendChild(details('A. 星号参数（背诵 / 记忆 / 复习的规模）', [renderStarParamsSection()], true));
   page.appendChild(details('B. AI 解析（接口地址 / 模型名 / 密钥自己填）', [renderAiSection()], false));
   page.appendChild(details('C. 画面与纸张', [renderDisplaySection()], false));
+  // ★ M2：布局参数独立成一节（手机一屏放几个词就靠它）
+  page.appendChild(details('C2. 布局参数（手机一屏放几个词 / 按钮大小）', [renderLayoutSection()], false));
   page.appendChild(details('D. 记忆与练习', [renderPracticeSection()], false));
   page.appendChild(details('E. 复习优先度', [renderPrioritySection()], false));
   page.appendChild(details('F. 云同步（多设备共用一份数据，可选）', [renderCloudSection()], false));
