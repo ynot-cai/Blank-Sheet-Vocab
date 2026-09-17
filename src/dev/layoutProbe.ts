@@ -48,7 +48,17 @@ export type { LayoutInfo } from '../core/layout';
 
 /** `window.__layoutProbe()` 的返回结构 */
 export interface LayoutProbeResult {
+  /** 真实窗口尺寸（无头浏览器里会被物理屏幕限制，仅作参考） */
   viewport: [number, number];
+  /**
+   * ★ S3：**布点实际用的视口尺寸**。
+   *
+   * 调试页注入「模拟真机尺寸」（`dvw/dvh`）时，纸张尺寸 / 字号 / 避让区全部按它算，
+   * 所以「越界」这类几何判定也必须按它算 —— 用 `window.innerWidth` 的话，
+   * Windows 无头窗口宽受物理屏幕限制（本机 1707px），量 1920 宽的真机布局时
+   * 会凭空多出一堆「越界」假失败。
+   */
+  layoutViewport: [number, number];
   /** 设备像素比 / 视口里的单词元素数 */
   dpr: number;
   wordCount: number;
@@ -78,6 +88,29 @@ export interface LayoutProbeResult {
   smallestGaps: GapPair[];
   boxes: WordBox[];
   avoidRects: ({ label: string } & Rect)[];
+  /**
+   * ★ S3：词在纸上的**散布程度**（验收「均匀散布全屏、不许全挤在顶部两行」用）。
+   *
+   * 为什么单列一项：`columns` 只能说明「横向分了几簇」，说明不了「纵向铺开了多少」。
+   * M2 之后出现过「桌面 16 个词全挤在顶部两行、下面一大片空白」这类问题，
+   * 光看列数完全看不出来，必须量 y 的覆盖比例。
+   */
+  spread: {
+    /** 所有词盒子的 x / y 包围盒（视口坐标） */
+    xMin: number;
+    xMax: number;
+    yMin: number;
+    yMax: number;
+    /** 纸面尺寸（覆盖比例的分母） */
+    sheetW: number;
+    sheetH: number;
+    /** (xMax−xMin)/纸宽、(yMax−yMin)/纸高：1 = 铺满整张纸 */
+    xCoverage: number;
+    yCoverage: number;
+    /** 横向 / 纵向聚成几带（纵向带数 ≈ 实际占了几行） */
+    xBands: number;
+    yBands: number;
+  } | null;
   /** 算法自述信息（可能为 null：还没布点） */
   layout: LayoutInfo | null;
   /**
@@ -235,8 +268,10 @@ export function collectLayoutProbe(avoidRects: ({ label: string } & Rect)[]): La
     : null;
 
   // 越界与避让区
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
+  // ★ 判定用「布点视口」（注入的模拟真机尺寸优先），见 LayoutProbeResult.layoutViewport 的注释
+  const injected = window.__layoutViewport;
+  const vw = injected && injected.width > 0 ? injected.width : window.innerWidth;
+  const vh = injected && injected.height > 0 ? injected.height : window.innerHeight;
   const sheet = document.querySelector<HTMLElement>('.paper-sheet')?.getBoundingClientRect() ?? null;
   const outOfBoundsList: string[] = [];
   let outOfSheet = 0;
@@ -263,8 +298,31 @@ export function collectLayoutProbe(avoidRects: ({ label: string } & Rect)[]): La
     }
   }
 
+  // 散布程度：词的包围盒相对纸面铺开了多少 + 纵向聚成几带
+  const spread = ((): LayoutProbeResult['spread'] => {
+    if (boxes.length === 0 || !sheet || sheet.width <= 0 || sheet.height <= 0) return null;
+    const round2 = (v: number): number => Math.round(v * 100) / 100;
+    const xMin = Math.min(...boxes.map((b) => b.x));
+    const xMax = Math.max(...boxes.map((b) => b.x + b.w));
+    const yMin = Math.min(...boxes.map((b) => b.y));
+    const yMax = Math.max(...boxes.map((b) => b.y + b.h));
+    return {
+      xMin: round2(xMin),
+      xMax: round2(xMax),
+      yMin: round2(yMin),
+      yMax: round2(yMax),
+      sheetW: round2(sheet.width),
+      sheetH: round2(sheet.height),
+      xCoverage: round2((xMax - xMin) / sheet.width),
+      yCoverage: round2((yMax - yMin) / sheet.height),
+      xBands: clusterCount(boxes, 'cx').groups.length,
+      yBands: clusterCount(boxes, 'cy').groups.length,
+    };
+  })();
+
   return {
-    viewport: [vw, vh],
+    viewport: [window.innerWidth, window.innerHeight],
+    layoutViewport: [vw, vh],
     dpr: Math.round((window.devicePixelRatio || 1) * 100) / 100,
     wordCount: boxes.length,
     columns: cols.groups.length,
@@ -282,6 +340,7 @@ export function collectLayoutProbe(avoidRects: ({ label: string } & Rect)[]): La
     smallestGaps: gaps.slice(0, GAP_LIST_LIMIT),
     boxes,
     avoidRects,
+    spread,
     layout: readLayoutInfo(),
     placements: window.__layoutPlacements ?? [],
     wordMetrics: wordMetricsSnapshot,

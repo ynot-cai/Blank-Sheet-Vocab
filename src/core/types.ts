@@ -281,9 +281,19 @@ export interface LayoutSettings {
   mobile: LayoutTier;
   /** 平板（768~1024px） */
   tablet: LayoutTier;
-  /** 桌面（> 1024px）：桌面沿用旧的抖动网格算法，这一档只用于避让区尺寸 */
+  /** 桌面（> 1024px） */
   desktop: LayoutTier;
 }
+
+/**
+ * ★ S3：手动列数覆盖。
+ * `'auto'` = 按屏幕宽度自然推导；`3 | 4 | 5 | 6 | 8 | 10` = 强制用该列数
+ * （可选值见 core/config.ts 的 `LAYOUT_COLS_OPTIONS`）。
+ *
+ * 为什么要有：自动算法再周全也可能在某个尺寸/某批词上不合适，
+ * 用户自己选一个列数就能立刻用起来 —— 算法兜底 + 人工兜底。
+ */
+export type LayoutColsOverride = 'auto' | 3 | 4 | 5 | 6 | 8 | 10;
 
 /** 全局设置（结构对应 config.ts 的 DEFAULT_SETTINGS） */
 export interface Settings {
@@ -297,6 +307,8 @@ export interface Settings {
   display: DisplaySettings;
   /** ★ M2：布点与按钮的响应式参数（手机一屏放几个词就靠它） */
   layout: LayoutSettings;
+  /** ★ S3：手动列数覆盖（'auto' 之外的取值直接决定列数，见 LayoutColsOverride） */
+  layoutColsOverride: LayoutColsOverride;
   parse: ParseSettings;
   memorize: MemorizeSettings;
   priority: PrioritySettings;

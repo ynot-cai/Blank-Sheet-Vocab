@@ -1,17 +1,17 @@
 /**
- * 设置页 · 布局参数（阶段 M2）。
+ * 设置页 · 布局参数（阶段 M2 建立，S3 扩展）。
  *
- * 为什么要有这一节：手机上一屏放几个词，完全由这几个数字决定——
- * 边距 / 间距 / 字号 / 目标数 / 按钮直径 / 按钮间距。
- * 之前它们散在算法和 CSS 里，用户觉得「手机上词太少」时**没有任何地方能调**；
- * 现在全部集中在这里（并且和 `#/dev/layout` 调试页读写同一份 `settings.layout.mobile`）。
+ * 为什么要有这一节：一屏放几个词、怎么排，完全由这几个数字决定——
+ * 边距 / 间距 / 字号 / 目标数 / 按钮直径 / 按钮间距，外加 S3 的**列数覆盖**。
+ * 之前它们散在算法和 CSS 里，用户觉得「词太少 / 排得像手机」时**没有任何地方能调**；
+ * 现在全部集中在这里（并且和 `#/dev/layout` 调试页读写同一份 `settings.layout`）。
  *
  * 改完即时生效：`patchSettings` 会刷新 core 的内存缓存，背诵页下次布点就用新值。
  */
-import { DEFAULT_SETTINGS } from '../../../core/config';
+import { coerceColsOverride, DEFAULT_SETTINGS, LAYOUT_COLS_OPTIONS } from '../../../core/config';
 import { controlBandHeight } from '../../../core/layout';
 import type { LayoutTier } from '../../../core/types';
-import { button, h, numberInput } from '../../dom';
+import { button, h, numberInput, select } from '../../dom';
 import { currentSettings, patchSettings } from './ctx';
 
 /** 可调项的说明（写在输入框下方，避免用户不知道该调大还是调小） */
@@ -27,9 +27,14 @@ const HINTS = {
 /** 档位元信息 */
 const TIERS: { key: 'mobile' | 'tablet' | 'desktop'; label: string; note: string }[] = [
   { key: 'mobile', label: '手机（<768px）', note: '★ M2 重构的就是这一档：按平均词宽定列数 + 底部圆形按钮' },
-  { key: 'tablet', label: '平板（768~1024px）', note: '平板与桌面仍用原来的抖动网格算法，这里只影响避让区尺寸' },
-  { key: 'desktop', label: '桌面（>1024px）', note: '桌面布局**故意保持原样**（用户要求），这一档基本不用动' },
+  { key: 'tablet', label: '平板（768~1024px）', note: 'S3 起手机/平板/桌面共用同一套自然列数算法（下限 4 列）' },
+  { key: 'desktop', label: '桌面（>1024px）', note: 'S3 起桌面也用自然列数（下限 4 列）；右下角按钮布局不变' },
 ];
+
+/** 列数选项的文案（'auto' 之外显示成「N 列」） */
+function colsOptionText(value: (typeof LAYOUT_COLS_OPTIONS)[number]): string {
+  return value === 'auto' ? '自动（按屏幕宽度推导）' : `${value} 列`;
+}
 
 /**
  * 渲染「布局参数」折叠块。
@@ -43,6 +48,37 @@ export function renderLayoutSection(): HTMLElement {
       '这些数字直接决定「一屏能放几个词」。想边看边调就用调试页：地址栏访问 #/dev/layout（能同时看到包围盒与避让区）。',
     ),
   );
+
+  // ── ★ S3：列数覆盖（算法兜底之外的人工兜底）──
+  const colsBox = h('div', { class: 'stack' });
+  const drawCols = (): void => {
+    colsBox.replaceChildren();
+    const current = currentSettings().layoutColsOverride;
+    colsBox.appendChild(
+      h(
+        'label',
+        { class: 'field' },
+        h('span', { class: 'field-label', text: '列数' }),
+        select(
+          LAYOUT_COLS_OPTIONS.map((v) => ({ value: String(v), label: colsOptionText(v) })),
+          String(current),
+          // 选项值来自 LAYOUT_COLS_OPTIONS，用 coerce 再校一次（脏值一律回 'auto'）
+          (v) => {
+            void patchSettings({ layoutColsOverride: coerceColsOverride(Number(v)) }).then(drawCols);
+          },
+        ),
+        h(
+          'span',
+          { class: 'field-hint' },
+          '自动 = 按屏幕宽度自然推导（手机 ≥3 列 / 平板与桌面 ≥4 列）。' +
+            '万一自动布局不合适（列太少、太挤、排得像手机），在这里指定列数即可 —— 背诵页右下角（手机上在底部按钮带左侧）也有一个 ⊞ 快捷按钮。',
+        ),
+      ),
+    );
+  };
+  drawCols();
+  wrap.appendChild(h('h4', { class: 'sub-title', text: '列数（覆盖自动布局）' }));
+  wrap.appendChild(colsBox);
 
   for (const tier of TIERS) {
     const box = h('div', { class: 'stack' });

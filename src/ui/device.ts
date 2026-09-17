@@ -39,6 +39,19 @@ export function controlTier(width?: number): LayoutTier {
   return kind === 'phone' ? layout.mobile : kind === 'tablet' ? layout.tablet : layout.desktop;
 }
 
+/**
+ * ★ S3：本设备形态的**列数硬下限**（防退化，参数在 `DEVICE.minCols*`）。
+ *
+ * 为什么单独抽出来：布点（PaperStage → computeGrid）与验收口径（探针 `--min-columns`）
+ * 必须读同一份数字，否则「算法以为下限是 3、验收按 4 判」这种不一致根本查不出来。
+ * @param kind 设备形态
+ */
+export function minColsFor(kind: DeviceKind): number {
+  if (kind === 'phone') return DEVICE.minColsPhone;
+  if (kind === 'tablet') return DEVICE.minColsTablet;
+  return DEVICE.minColsDesktop;
+}
+
 /** 当前手机按钮带的高度（像素，含底部安全区） */
 export function mobileBandHeightPx(tier: LayoutTier): number {
   const safe = readSafeAreaBottomPx();

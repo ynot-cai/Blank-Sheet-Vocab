@@ -65,7 +65,15 @@ export function seedFromString(text: string): number {
 export const DEFAULT_GRID_MARGIN = 0.06;
 
 /**
- * 白纸布点算法（抖动网格）：
+ * 白纸布点算法（抖动网格）—— **旧算法，S3 起背诵页不再使用**。
+ *
+ * ⚠️ 保留原因：`paperLayout()`（兼容旧签名）与 `dev/selftest`、`test-mobile` 仍在用它，
+ * 而且它的「最小中心距夹列数」正是 M1/M2/S3 三代诊断的对照物。
+ * **不要**再拿它给真实白纸布点：它用「最宽词 + 字号×2.4」当最小中心距去夹列数，
+ * 一个长词就能把整屏压成 1~2 列（见文件顶部 S3 注释）。真实布点走
+ * `computeGrid()` + `layoutWords()`。
+ *
+ * 算法：
  * 1. 按 count 和宽高比算出最接近正方形的网格行列数（给了 minGapW/minGapH 时格子不会小于最小间距）；
  * 2. 每格内抖动（随机偏移，保留格宽 20% 边距）；
  * 3. 格子多于需求时随机抽掉多余的；不够时一格放两个（第二个偏移到格子右下角）；
@@ -189,20 +197,29 @@ function clamp01(v: number): number {
   return Math.min(1, Math.max(0, v));
 }
 
-/* ═══════════════ 阶段 M2：手机端布点核心（按平均词宽定网格 + 真实碰撞检测）═══════════════
+/* ═══════════════ 布点核心：自然列数网格 + 真实碰撞检测（M2 起，S3 起全端统一）═══════════════
  *
- * 为什么另起一套（M1 诊断结论，都是实测数字）：
+ * 为什么不用 `jitteredGrid` 那一套（M1 诊断结论，都是实测数字）：
  *   旧算法把「最小中心距」定成 `最宽的那个词 + 字号 × 2.4`，再用它去夹列数：
  *     390×844、字号 28 时 minGapW = 196.4/390 = 0.5036 → cols = floor(0.88/0.5036) = 1
  *     → 一屏只剩 1 列 5~6 个词（`capacity=5`）。
  *   而且它给的是**中心距**（词宽 + 字号系数），对平均词宽 100px 的词表来说，
  *   196.4px 的中心距等于每对相邻词之间白白扔掉 96px。
  *
- * 新算法三件事：
- *   ① 列数按**平均词宽**定（`mean × 1.15 + minGapPx`），不再按最宽词；
- *   ② 每个词按**自己的宽度**在格子里找位置，放不下就换一个格子（试满为止）；
- *   ③ 每次落点都做**真实矩形碰撞检测**（长词塞不进格子时会被挡下来，不会叠字）。
- * 结果：长词不再拖垮整屏容量，而「不重叠 / 不进按钮区 / 不越界」由 ③ 硬保证。
+ * M2 修了手机（`computeGrid` + `layoutWords`），但**平板/桌面仍在走旧算法**，
+ * 于是同一个病在桌面留下：最宽词 177.9px（photosynthesis，字号 24）→
+ * minGapW = (177.9 + 24×2.4)/屏宽 → 900px 窗口只能 3 列、800px 窗口只能 2 列
+ * ——用户实测原话「电脑上出现的单词像手机一样只排成两列」。
+ * S3 因此把两端合一：**所有设备**都用下面的自然列数网格。
+ *
+ * 新算法四件事：
+ *   ① 列数按**平均词宽**自然推导（`mean × 1.15 + minGapPx` = 一个格子的自然宽度），
+ *      不再按最宽词、也不再「够放 target 个就停」（那正是退化成 2 列的原因）；
+ *   ② 行数按**目标词数**反推（`ceil(target / cols)`），并夹进可用高度能放下的行数；
+ *   ③ 格子**撑满**整个可用区域（格宽 = 可用宽/列数、格高 = 可用高/行数），
+ *      N 个词**随机**落在 cols×rows 个格子里 → 均匀散布全屏，不会全挤在顶部；
+ *   ④ 每个词按**自己的宽度**找位置，每次落点做**真实矩形碰撞检测**。
+ * 结果：长词不再拖垮整屏容量，而「不重叠 / 不进按钮区 / 不越界」由 ④ 硬保证。
  */
 
 /** 一个单词在纸上的实际占位（像素） */
@@ -215,29 +232,48 @@ export interface WordMetrics {
 
 /** 网格推导结果 */
 export interface GridResult {
-  /** 列数（按平均词宽定） */
+  /** 列数（由可用宽度自然推导，或用户手动覆盖） */
   cols: number;
-  /** 行数（按可放下的行数定，够了就停） */
+  /** 行数（按目标词数反推，且不超过可用高度放得下的行数） */
   rows: number;
-  /** 列数 × 行数 */
+  /** 列数 × 行数 = 格子数（= 纸上最多能放几个词） */
   capacity: number;
-  /** 格宽（像素） */
+  /** 格宽（像素）= 可用宽 / 列数：格子横向撑满可用区域 */
   cellW: number;
-  /** 格高（像素） */
+  /** 格高（像素）= 可用高 / 行数：格子纵向撑满可用区域 */
   cellH: number;
+  /** 诊断：宽度自然能放下几个格子（自动推导的列数上限） */
+  maxCols: number;
+  /** 诊断：高度自然能放下几行（行数上限） */
+  maxRows: number;
+  /** 诊断：本次请求的列数（自动推导值，或用户手动指定的值） */
+  colsRequested: number;
+  /** 诊断：列数是否来自手动覆盖（设置里的「列数」） */
+  colsOverridden: boolean;
+  /** 诊断：手动覆盖被可用宽度夹住了（用户要的列数放不下，实际少一些） */
+  colsClamped: boolean;
 }
 
 /**
- * 算布点网格：列数按**平均词宽**定，行数按可用高度定，容量不够就加行。
+ * 算布点网格：**列数由宽度自然推导**（或用户手动覆盖），行数由目标词数反推。
  *
- * 与旧 `jitteredGrid` 的关键差别：这里不再用「最宽词」推导列数
- * （那正是 M1 查出来的瓶颈：最宽词 129.2px → 最小中心距 196.4px → 只能 1 列）。
+ * ★ 关键改动（S3）：**不再「够放 target 个就停」**。
+ *   旧实现 `for (cols = 1..maxCols) { if (cols*rows >= target) return cols; }`
+ *   里的 `rows` 只由格高决定、与 cols 无关，因此 `cols×rows` 随 cols 单调增 →
+ *   「第一个够用的 cols」永远是**最小**的那个。宽屏行数多，于是 `cols=2` 就够放
+ *   十几个词 → 宽屏永远 2 列。现在改成：列数直接由宽度算（自然列数），
+ *   行数再由列数与目标词数反推，最后让格子撑满可用区域。
+ *
  * @param opts.availableW 可用宽度（已扣边距，像素）
  * @param opts.availableH 可用高度（已扣边距与底部按钮带，像素）
  * @param opts.meanWidthPx 本批词的**平均**渲染宽度（像素）
  * @param opts.rowHeightPx 一行词的实际高度（像素，含上下内边距）
  * @param opts.minGapPx 相邻单词的最小空隙（像素）
- * @param opts.targetCount 期望一屏放几个词
+ * @param opts.targetCount 期望一屏放几个词（决定行数与容量）
+ * @param opts.minCols 列数硬下限（防退化：手机 3 / 平板 4 / 桌面 4，见 core/config.ts 的 DEVICE）
+ * @param opts.colsOverride 手动列数覆盖（null / undefined = 自动）。给了就**忽略自动推导与 minCols**
+ *   （「自动布局失效时用户自己指定」是永久兜底），但仍受可用宽度限制：放不下的列数会被夹住，
+ *   否则词会互相压住（这一条会在 `colsClamped` 里如实报告）。
  */
 export function computeGrid(opts: {
   availableW: number;
@@ -246,30 +282,53 @@ export function computeGrid(opts: {
   rowHeightPx: number;
   minGapPx: number;
   targetCount: number;
+  minCols?: number;
+  colsOverride?: number | null;
 }): GridResult {
-  const availableW = Math.max(1, opts.availableW);
-  const availableH = Math.max(1, opts.availableH);
-  // 格宽 = 平均词宽 × 1.15（15% 余量给比平均宽的词）+ 最小空隙
-  const cellWidthPx = Math.max(1, opts.meanWidthPx * 1.15 + opts.minGapPx);
-  // 格高 = 行高 + 最小空隙；**不能再低**于行高，否则上下两行的词直接叠在一起
-  const cellHeightPx = Math.max(1, opts.rowHeightPx + opts.minGapPx);
-  const maxCols = Math.max(1, Math.floor(availableW / cellWidthPx));
-  const rowsPerCols = (cols: number): number => Math.max(1, Math.floor(availableH / cellHeightPx));
-  const target = Math.max(1, Math.floor(opts.targetCount));
+  // ── 输入净化：脏参数（NaN / Infinity / 负数）不许传播成 NaN 落点 ──
+  const num = (v: number, fallback: number, min: number): number =>
+    Number.isFinite(v) ? Math.max(min, v) : fallback;
+  const availableW = num(opts.availableW, 1, 1);
+  const availableH = num(opts.availableH, 1, 1);
+  const minGapPx = num(opts.minGapPx, 0, 0);
+  const meanWidthPx = num(opts.meanWidthPx, 0, 0);
+  const rowHeightPx = num(opts.rowHeightPx, 0, 0);
+  const target = Math.max(1, Math.floor(num(opts.targetCount, 1, 1)));
 
-  let best: GridResult | null = null;
-  for (let cols = 1; cols <= maxCols; cols += 1) {
-    const rows = rowsPerCols(cols);
-    const capacity = cols * rows;
-    const candidate: GridResult = { cols, rows, capacity, cellW: availableW / cols, cellH: cellHeightPx };
-    // 取「第一个满足目标」的（列数从小到大 = 先横着铺，不是竖列）
-    if (capacity >= target) return candidate;
-    if (!best || capacity > best.capacity) best = candidate;
-  }
-  if (best) return best;
-  const cols = 1;
-  const rows = rowsPerCols(cols);
-  return { cols, rows, capacity: cols * rows, cellW: availableW, cellH: cellHeightPx };
+  // 一个格子的**自然**尺寸：词永远塞得进（15% 余量给比平均宽的词）+ 最小空隙
+  const naturalCellW = Math.max(1, meanWidthPx * 1.15 + minGapPx);
+  // 格高**不能再低**于行高，否则上下两行的词直接叠在一起
+  const naturalCellH = Math.max(1, rowHeightPx + minGapPx);
+  const maxCols = Math.max(1, Math.floor(availableW / naturalCellW));
+  const maxRows = Math.max(1, Math.floor(availableH / naturalCellH));
+  const minCols = Math.max(1, Math.floor(num(opts.minCols ?? 1, 1, 1)));
+
+  const override = opts.colsOverride === null || opts.colsOverride === undefined
+    ? null
+    : Math.floor(num(opts.colsOverride, 1, 1));
+  // 自动推导：让「cols×rows 的格子整体」尽量接近可用区域的宽高比（撒得开、不像竖列）
+  const autoCols = Math.round(Math.sqrt(target * (availableW / availableH)));
+  const colsRequested = override ?? autoCols;
+  const cols = override !== null
+    // 手动覆盖：minCols 让路（用户说了算），但宽度放不下时必须夹住（否则必然叠字）
+    ? Math.max(1, Math.min(maxCols, override))
+    // 自动：minCols 是硬下限（防退化），maxCols 是宽度上限
+    : Math.max(1, Math.min(maxCols, Math.max(minCols, autoCols)));
+  const rows = Math.max(1, Math.min(maxRows, Math.ceil(target / cols)));
+  return {
+    cols,
+    rows,
+    capacity: cols * rows,
+    // 格子撑满可用区域：格宽 = 可用宽/列数、格高 = 可用高/行数
+    // （于是「N 个词随机落格子」就是「均匀散布整张纸」，不会全挤在顶部几行）
+    cellW: availableW / cols,
+    cellH: availableH / rows,
+    maxCols,
+    maxRows,
+    colsRequested,
+    colsOverridden: override !== null,
+    colsClamped: override !== null && cols !== override,
+  };
 }
 
 /**
@@ -322,13 +381,18 @@ function rectsOverlap(
 /**
  * 把一批词放进网格（**每个词按自己的宽度**找格子，带真实碰撞检测）。
  *
+ * 落点分布是「**均匀随机**」而不是「顺序填前 N 格」：
+ * `shuffledIndexes(cols×rows)` 先把格子顺序打乱，再按打乱后的顺序取格子，
+ * 于是 N 个词落在 cols×rows 个格子里是一个**随机子集** ——
+ * 宽屏上 16 个词不会挤在顶部两行，而是散布整张纸（这才是「白纸撒词」的原设计）。
+ *
  * 返回的落点是**归一化坐标**（相对纸张），与旧的 `jitteredGrid` 一致，
  * 所以上层（会话存档、续跑）不用改数据结构。
  *
  * 保证（由构造方式硬保证，不靠概率）：
  * - 任意两个落点上的词矩形不相交（含 `minGapPx` 间隙）；
  * - 每个词的完整矩形都在 `area` 内（不越界）；
- * - 每个词的完整矩形都不与 `avoidPx`（底部按钮带）相交。
+ * - 每个词的完整矩形都不与 `avoidPx`（按钮/按钮带）相交。
  * 代价：容量受「试格次数」限制；实在放不下的词会从末尾开始被丢掉
  * （调用方用返回长度当容量，与旧行为一致）。
  * @param opts 见 WordLayoutOptions
@@ -382,7 +446,7 @@ export function layoutWords(opts: WordLayoutOptions): Placement[] {
       continue; // 这个格子被按钮占了 → 换下一个空格（不是把词丢掉）
     }
     // ★ ③ 真实碰撞检测 + **推开**（不是直接换格子）。
-    //   为什么必须推开：格高只比词高多出 minGap（手机档 44.8 → 52.6），
+    //   为什么必须推开：格子只是**抖动范围**，格内 slack（格高 − 词高）在窄屏上可能不大，
     //   抖动几次就会压到邻居；直接 `continue` 换格子的话，格子被跳过几次就少放几个词
     //   （M2 实测：目标 16 只放得下 13）。推开是确定性的，不靠运气。
     const resolved = resolveOverlaps(rect, placed, area, minGapPx);
@@ -457,7 +521,11 @@ export interface SpacingBudget {
 }
 
 /**
- * 算白纸布点的间距预算。
+ * 算白纸布点的间距预算 —— **旧口径，S3 起真实布点不再使用**。
+ *
+ * ⚠️ 保留原因：它是 M1/S3 两代诊断的对照物（「最宽词 + 字号×2.4 = 最小中心距」
+ * 正是把桌面夹成 2~3 列的元凶），`test-paper` 也在拿它做回归。
+ * 真实布点现在按 `computeGrid` 的格子 + `tier.minGapPx` 保证间距（见文件顶部 S3 注释）。
  *
  * ★ 用户明确要求（2026-09）：「确保单词与单词之间，单词与按钮之间有一个
  *   **最低距离（由字号决定）**，不能重合。」
@@ -585,22 +653,37 @@ export interface LayoutInfo {
   rows: number;
   /** 不考虑避让时的容量（cols × rows） */
   gridCapacity: number;
-  /** 因为落进按钮避让区而被跳过的格子数 */
-  cellsSkippedByAvoid: number;
+  /**
+   * 没放上词的格子数（**不只是**被按钮避让吃掉的）：
+   * 避让区相交 / 与已放好的词撞了推不开 / 越出可用区域，都会让一个格子空着。
+   * 用途：`gridCapacity − placements` 与它对照，能立刻判断「少放的词是格子不够还是被占了」。
+   */
+  cellsUnused: number;
   /** 布点边距（归一化，0.06 = 纸张宽度的 6%） */
   marginNorm: number;
   aspect: number;
   /** 实际落点数 */
   placements: number;
   /**
-   * 以下三个只有**手机**（M2 新算法）会填：
-   * - `algorithm`：本次用的是哪套布点（phone-grid / legacy-jitter）
-   * - `wordsPerRow`：实际每行几个词（= ceil(容量 ÷ 行数)）
-   * - `phoneArea`：可用区域像素（扣掉边距与底部按钮横带之后的那块）
+   * 以下字段描述**这次用的是什么网格**（S3 起所有设备都用同一套自然列数算法）：
+   * - `algorithm`：'natural-grid'（自然列数 + 真实碰撞检测）/ 'legacy-jitter'（旧抖动网格，仅历史存档）
+   * - `wordsPerRow`：每行几个词（= 网格列数）
+   * - `area`：可用布点区像素（已扣边距、已扣底部按钮带/避让区）
+   * - `minCols`：本设备的列数硬下限；`colsRequested`：请求的列数（自动推导或手动覆盖）
+   * - `maxCols` / `maxRows`：宽度/高度自然放得下的上限（诊断「为什么只有这么几列」用）
+   * - `colsOverridden` / `colsClamped`：是否手动覆盖 / 覆盖被宽度夹住
    */
-  algorithm?: 'phone-grid' | 'legacy-jitter';
+  algorithm?: 'natural-grid' | 'legacy-jitter';
   wordsPerRow?: number;
-  phoneArea?: { x: number; y: number; width: number; height: number };
+  area?: { x: number; y: number; width: number; height: number };
+  minCols?: number;
+  maxCols?: number;
+  maxRows?: number;
+  colsRequested?: number;
+  colsOverridden?: boolean;
+  colsClamped?: boolean;
+  /** 本次布点用的目标词数（settings.layout.<档位>.targetCount） */
+  targetCount?: number;
 }
 
 /**

@@ -1,12 +1,9 @@
-import { DEVICE, getSettings } from '../../../core/config';
+import { DEVICE, getSettings, parseColsOverride } from '../../../core/config';
 import type { LayoutInfo, Placement } from '../../../core/layout';
 import {
   computeGrid,
-  DEFAULT_GRID_MARGIN,
-  jitteredGrid,
   layoutWords,
   resolvePaperSize,
-  spacingBudget,
   wordBoxPx,
   WORD_LINE_HEIGHT_RATIO,
   wordRowHeightPx,
@@ -15,7 +12,7 @@ import {
 import { activeSenses, formatSensesBrief } from '../../../core/model';
 import type { MemorizeSettings, Word } from '../../../core/types';
 import { speak } from '../../../services/tts';
-import { controlsAvoidRect, controlTier, deviceKind } from '../../device';
+import { controlsAvoidRect, controlTier, deviceKind, minColsFor } from '../../device';
 import { h } from '../../dom';
 
 /** 白纸舞台参数 */
@@ -100,6 +97,15 @@ export interface PaperStage {
   applySettings(): void;
   /** 为一组词计算落点（写入内部表并返回） */
   computePlacements(words: Word[], seed: number): Record<string, Placement>;
+  /**
+   * 按**当前设置**重新布点，并把已经上纸的词**就地移到新落点**
+   * （不重建 DOM 元素，也就不闪、不丢点击态）。
+   *
+   * 用途：S3 的手动列数覆盖 —— 用户在背诵页点 ⊞ 选 6 列，当场就要看到重排结果。
+   * @param words 当前队列（与 computePlacements 同一份）
+   * @param seed 同一个种子（保证「同一批词、同一 seed」结果稳定）
+   */
+  relayout(words: Word[], seed: number): Record<string, Placement>;
   /** 纸上最多能放下的词数（由「字号 + 最宽的词 + 按钮避让」约束出来的容量） */
   capacity(): number;
   /** 用已保存的落点恢复（续跑用） */
@@ -291,17 +297,40 @@ export function createPaperStage(opts: PaperStageOptions): PaperStage {
    * 放在 `window.__layoutInfo` 上，供调试页 `#/dev/layout` 的
    * `window.__layoutProbe()` 附在测量结果里。**纯诊断**：不读回、不参与计算、
    * 不影响任何落点。报告里的「最宽词 205px → 网格只能 2 列」就是从这里来的。
-   * 网格行列数（cols/rows）不在这里填：那要复刻 `jitteredGrid` 的内部推导，
-   * 复制一份迟早会跟算法本身走偏 —— 由调试页按同一套参数自己算更诚实。
-   * @param info 快照内容（不含网格字段）
+   * ★ S3 起 cols / rows / gridCapacity 由**算法自己报**（不再由调试页按参数复刻一份）：
+   *   复制一份推导迟早会跟算法本身走偏，而「报告与 DOM 对不上」正是最难查的一类问题。
+   * @param info 完整快照
    */
-  const publishLayoutInfo = (info: Omit<LayoutInfo, 'cols' | 'rows' | 'gridCapacity' | 'cellsSkippedByAvoid'>): void => {
-    window.__layoutInfo = { ...info, cols: 0, rows: 0, gridCapacity: 0, cellsSkippedByAvoid: 0 };
+  const publishLayoutInfo = (info: LayoutInfo): void => {
+    window.__layoutInfo = info;
   };
 
+  /**
+   * 把某个词的元素移到新落点（落点变了**就地移动**，不重建 DOM 元素）。
+   * 用途：手动列数覆盖后重新布点（`relayout()`）。
+   */
+  const applyPlacement = (id: string, p: Placement): void => {
+    const el = wordEls.get(id);
+    if (!el) return;
+    el.style.left = `${p.x * 100}%`;
+    el.style.top = `${p.y * 100}%`;
+  };
+
+  /**
+   * 为一组词算落点（写入内部落点表并返回）。
+   *
+   * ★ S3 起**所有设备形态共用一套算法**：`computeGrid`（自然列数 + 目标行数）
+   *   + `layoutWords`（随机落格 + 真实矩形碰撞检测）。
+   *   为什么要统一：M2 只把手机换成了这套，平板/桌面仍在走 `jitteredGrid`，
+   *   而后者用「最宽词 + 字号×2.4」当最小中心距去夹列数 —— 一个长词就能把
+   *   桌面压成 2~3 列（用户实测：「电脑上出现的单词像手机一样只排成两列」）。
+   * @param words 要布点的词（通常是整个队列）
+   * @param seed 随机种子（同一 seed 结果稳定，续跑位置不变）
+   */
   const computePlacements = (words: Word[], seed: number): Record<string, Placement> => {
+    const s = getSettings();
     const vp = layoutViewport();
-    const size = resolvePaperSize(settings.paper, vp);
+    const size = resolvePaperSize(s.paper, vp);
     const aspect = size.width / Math.max(1, size.height);
     const fontSize = effectiveFontSize();
     const metrics = wordMetrics(words);
@@ -314,94 +343,56 @@ export function createPaperStage(opts: PaperStageOptions): PaperStage {
     const controls = controlsAvoidRect(vp);
     const kind = deviceKind(vp.width);
     const tier = controlTier(vp.width);
+    const margin = tier.edgeMarginPx;
 
-    let points: Placement[] = [];
-    let grid: { cols: number; rows: number; capacity: number; cellW: number; cellH: number } | null = null;
-    let gapX = 0;
-    let gapY = 0;
-    let padX = 0;
-    let padY = 0;
-    let phoneArea: { x: number; y: number; width: number; height: number } | null = null;
+    // ── 可用布点区 ──
+    // 手机：下边界 = 底部按钮**横带**的顶边（M2 口径，横带以上整片都能放词）。
+    //   写成 `size.height − margin − 带高` 是错的（带高会减两次，一屏只剩 7 个词），
+    //   正确的量是「带顶边到纸面顶部的距离」。
+    // 平板/桌面：整张纸扣掉四周边距 —— 右下角按钮是个**方块**，
+    //   由 layoutWords 按真实矩形判交避开即可，不该把整条底部横带都封掉
+    //   （否则按钮左边那一大片空白永远放不了词）。
+    const bandTop = controls.y - offsetY;
+    const areaBottom =
+      kind === 'phone' ? Math.min(size.height - margin, Math.max(margin + 1, bandTop)) : size.height - margin;
+    const area = {
+      x: margin,
+      y: margin,
+      width: Math.max(1, size.width - margin * 2),
+      height: Math.max(1, areaBottom - margin),
+    };
 
-    if (kind === 'phone') {
-      // ═══ 手机：M2 新算法（按平均词宽定网格 + 真实碰撞检测 + 底部横带避让）═══
-      // 1) 可用区域 = 纸面扣掉四周边距，**下边界 = 避让带的顶边**（相对纸面坐标）。
-      //    ★ 这里踩过一次坑：写成 `size.height - margin - 避让带高度` 是错的
-      //      （那样把带高减了两次：844 − 8 − 174 = 662 会变成 844 − 8 − 670 = 166），
-      //      结果一屏只放得下 7 个词。正确的量是「带顶边到纸面底部的距离」。
-      const margin = tier.edgeMarginPx;
-      const bandTop = controls.y - offsetY;
-      const areaBottom = Math.min(size.height - margin, Math.max(margin + 1, bandTop));
-      const area = {
-        x: margin,
-        y: margin,
-        width: Math.max(1, size.width - margin * 2),
-        height: Math.max(1, areaBottom - margin),
-      };
-      // 2) 网格：列数按**平均词宽**定（旧算法按最宽词，是 M1 查出来的瓶颈）
-      grid = computeGrid({
-        availableW: area.width,
-        availableH: area.height,
-        meanWidthPx: average,
-        rowHeightPx: rowHeight,
-        minGapPx: tier.minGapPx,
-        targetCount: tier.targetCount,
-      });
-      // 3) 落点：每个词按自己的宽度找格子，带真实碰撞检测
-      points = layoutWords({
-        metrics,
-        canvas: { width: size.width, height: size.height },
-        area,
-        grid,
-        minGapPx: tier.minGapPx,
-        seed,
-        avoidPx: {
-          x: controls.x - offsetX,
-          y: controls.y - offsetY,
-          width: controls.width,
-          height: controls.height,
-        },
-      });
-      gapX = tier.minGapPx;
-      gapY = tier.minGapPx;
-      phoneArea = area;
-    } else {
-      // ═══ 平板 / 桌面：保持原算法（M2 明确要求桌面行为不变）═══
-      // ★ 相邻单词的最小中心距**由字号 + 最宽的那个词共同决定**（见 core/layout.ts 的 spacingBudget）：
-      //   只用字号的话，长词之间必然会叠在一起。
-      const budget = spacingBudget({
-        fontSize,
-        gapFactor: getSettings().paperWordGapFactor,
-        widestWordPx: widest,
-        rowHeightPx: rowHeight,
-      });
-      gapX = budget.gapX;
-      gapY = budget.gapY;
-      padX = budget.padX;
-      padY = budget.padY;
-      points = jitteredGrid(words.length, {
-        aspect,
-        seed,
-        minGapW: budget.gapX / Math.max(1, size.width),
-        minGapH: budget.gapY / Math.max(1, size.height),
-        canvas: { width: size.width, height: size.height },
-        // ★ 按钮避让区要**按半个词向外扩**：落点是词的中心，
-        //   中心刚好落在矩形外面时，词的一半仍然压在按钮上（用户实测反馈）。
-        avoidPx: {
-          x: controls.x - offsetX - budget.padX,
-          y: controls.y - offsetY - budget.padY,
-          width: controls.width + budget.padX * 2,
-          height: controls.height + budget.padY * 2,
-        },
-      });
-      grid = {
-        cols: Math.max(1, Math.round(Math.sqrt(words.length * aspect))),
-        rows: 0,
-        capacity: points.length,
-        cellW: 0,
-        cellH: 0,
-      };
-    }
+    // 列数：自然推导（或用户在设置页/背诵页手动覆盖）；行数：按目标词数反推
+    const colsOverride = parseColsOverride(s.layoutColsOverride);
+    const minCols = minColsFor(kind);
+    const grid = computeGrid({
+      availableW: area.width,
+      availableH: area.height,
+      meanWidthPx: average,
+      rowHeightPx: rowHeight,
+      minGapPx: tier.minGapPx,
+      targetCount: tier.targetCount,
+      minCols,
+      colsOverride,
+    });
+
+    // 落点：每个词按自己的宽度找格子，随机落格 + 真实碰撞检测
+    const points = layoutWords({
+      metrics,
+      canvas: { width: size.width, height: size.height },
+      area,
+      grid,
+      minGapPx: tier.minGapPx,
+      seed,
+      // 避让区一律按**真实矩形**判交：手机是整条横带，平板/桌面是右下角方块。
+      // 旧算法要按「半个词」外扩是因为它只判中心点；新算法判整块矩形，不需要外扩。
+      avoidPx: {
+        x: controls.x - offsetX,
+        y: controls.y - offsetY,
+        width: controls.width,
+        height: controls.height,
+      },
+    });
 
     placeCapacity = points.length; // 约束下纸上实际能放下的数量
     publishLayoutInfo({
@@ -417,19 +408,33 @@ export function createPaperStage(opts: PaperStageOptions): PaperStage {
       avgWordPx: Math.round(average * 10) / 10,
       shortestWordLen: words.reduce((n, w) => Math.min(n, w.en.length), 99),
       longestWordLen: words.reduce((n, w) => Math.max(n, w.en.length), 0),
-      gapX: Math.round(gapX * 10) / 10,
-      gapY: Math.round(gapY * 10) / 10,
-      // 旧算法靠「半个词」外扩避让区（padX/padY）；新算法直接按真实矩形判交，pad 保持 0
-      padX,
-      padY,
-      marginNorm: kind === 'phone' ? tier.edgeMarginPx / Math.max(1, size.width) : DEFAULT_GRID_MARGIN,
+      // 保证值：任意两个词的中心距/边缘距都不会小于它（真实矩形碰撞检测按它判）
+      gapX: Math.round(tier.minGapPx * 10) / 10,
+      gapY: Math.round(tier.minGapPx * 10) / 10,
+      // 新算法直接按真实矩形判交，不需要「半个词」的外扩量
+      padX: 0,
+      padY: 0,
+      cols: grid.cols,
+      rows: grid.rows,
+      gridCapacity: grid.capacity,
+      cellsUnused: grid.capacity - points.length,
+      marginNorm: Math.round((margin / Math.max(1, size.width)) * 1000) / 1000,
       aspect: Math.round(aspect * 1000) / 1000,
       placements: placeCapacity,
-      // 手机新算法的自述（诊断与验收都要看这几个数）
-      algorithm: kind === 'phone' ? 'phone-grid' : 'legacy-jitter',
-      wordsPerRow: grid && grid.rows > 0 ? Math.ceil(placeCapacity / grid.rows) : undefined,
-      phoneArea: phoneArea ?? undefined,
+      // 网格自述（诊断与验收都要看这几个数）
+      algorithm: 'natural-grid',
+      wordsPerRow: grid.cols,
+      area,
+      minCols,
+      maxCols: grid.maxCols,
+      maxRows: grid.maxRows,
+      colsRequested: grid.colsRequested,
+      colsOverridden: grid.colsOverridden,
+      colsClamped: grid.colsClamped,
+      targetCount: tier.targetCount,
     });
+    // 落点表按新结果**整体重算**（清掉旧 key，避免换词/改列数后残留上批的落点）
+    for (const key of Object.keys(placements)) delete placements[key];
     words.forEach((w, i) => {
       const p = points[i];
       if (p) placements[w.id] = p;
@@ -536,6 +541,11 @@ export function createPaperStage(opts: PaperStageOptions): PaperStage {
     sheet,
     applySettings,
     computePlacements,
+    relayout(words, seed) {
+      const next = computePlacements(words, seed);
+      for (const [id, p] of Object.entries(next)) applyPlacement(id, p);
+      return next;
+    },
     restorePlacements,
     addWord,
     capacity,

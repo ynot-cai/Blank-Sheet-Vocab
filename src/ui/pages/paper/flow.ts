@@ -1,10 +1,11 @@
 // RULES-R1: 此处禁止任何强制时间限制（无倒计时 / 无超时提交 / 无超时判错）
-import { getSettings } from '../../../core/config';
+import { coerceColsOverride, getSettings, LAYOUT_COLS_OPTIONS, mergeSettingsPatch, setSettingsCache } from '../../../core/config';
 import { controlBandHeight, seedFromString } from '../../../core/layout';
 import { pickForMemorize } from '../../../core/pick';
-import type { Session, Word } from '../../../core/types';
+import type { LayoutColsOverride, Session, Word } from '../../../core/types';
 import * as dao from '../../../dao';
 import { cancelSpeak } from '../../../services/tts';
+import { appStore, emitDataChanged } from '../../../state/store';
 import { button, h } from '../../dom';
 import { openModal, confirmModal, type ModalHandle } from '../../components/Modal';
 import { mountSpeechGate } from '../../components/SpeechGate';
@@ -179,6 +180,82 @@ export function createPaperFlow(opts: FlowOptions): PaperFlow {
   const btnRestart = labeledButton('重新开始', () => void restartRound(), { class: 'paper-restart' });
   const roundControls = onPhone ? buildRoundControls(progress, [btnDone, btnSave, btnAgain, btnNext, btnRestart]) : null;
   const controls = roundControls ?? h('div', { class: 'paper-controls' }, progress, btnDone, btnSave, btnAgain, btnRestart, btnNext);
+
+  /**
+   * 布点种子：同一会话 + 同一组 → 固定不变。
+   * 续跑时位置不跳、切列数重排时也是「同一套随机风格」，便于对照。
+   */
+  const layoutSeed = seedFromString(`${session.id}#${opts.groupIndex}`);
+
+  /**
+   * ★ S3：手动列数快捷入口（永久兜底）——一个 32×32 的 ⊞ 按钮 + 轻量选择条。
+   *
+   * 为什么要有（用户原话）：「如果做不到自动适配，请加一个手动切换的按钮」。
+   * 自动修复是主，手动是**永久兜底**：以后算法再出问题（列太少 / 排得像手机 /
+   * 某个尺寸下挤在一起），用户自己选个列数立刻就能用，不必等版本更新。
+   *
+   * 位置：手机在**底部按钮带左侧**（那条带子本来就是布点避让区，压不到单词）；
+   * 平板/桌面在右下角按钮列的最上面（同理，属于避让区）。两处都是 32×32。
+   */
+  const colsBar = h('div', { class: 'paper-cols-bar hidden' });
+  const colsTrigger = h('button', {
+    class: 'paper-cols-btn',
+    type: 'button',
+    title: '手动指定列数（自动布局不合适时的兜底）',
+    text: '⊞',
+  });
+  const colsControl = h('div', { class: 'paper-cols' }, colsBar, colsTrigger);
+  if (roundControls) roundControls.appendChild(colsControl);
+  else controls.insertBefore(colsControl, controls.firstChild);
+
+  /** 重画选择条（每次打开都按最新设置标出当前档） */
+  const drawColsBar = (): void => {
+    colsBar.replaceChildren();
+    const current = coerceColsOverride(getSettings().layoutColsOverride);
+    for (const value of LAYOUT_COLS_OPTIONS) {
+      const item = h('button', {
+        class: `paper-cols-item${value === current ? ' is-active' : ''}`,
+        type: 'button',
+        text: value === 'auto' ? '自动' : String(value),
+        title: value === 'auto' ? '自动（按屏幕宽度推导列数）' : `固定 ${value} 列`,
+      });
+      item.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        applyColsOverride(value);
+        colsBar.classList.add('hidden');
+      });
+      colsBar.appendChild(item);
+    }
+  };
+
+  /**
+   * 应用列数覆盖：**立刻重排** + 记住选择（写设置，下次打开还是它）。
+   * @param value 'auto' 或具体列数
+   */
+  const applyColsOverride = (value: LayoutColsOverride): void => {
+    const merged = mergeSettingsPatch({ layoutColsOverride: value });
+    setSettingsCache(merged); // 布点现读缓存 → 下一次布点立刻用新列数
+    appStore.set({ settings: merged });
+    emitDataChanged();
+    void dao.settings.set({ layoutColsOverride: value }); // 落库：记住选择
+    if (words.length > 0) {
+      // 重排：同一批词、同一个种子重新布点；**已经上纸的词就地移动**（不重建 DOM）
+      session.placements = stage.relayout(words, layoutSeed);
+      void dao.session.saveSession(session);
+    }
+    refreshUi();
+    toastOk(value === 'auto' ? '已切回自动布局' : `已固定 ${value} 列`);
+  };
+
+  colsTrigger.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    drawColsBar();
+    colsBar.classList.toggle('hidden');
+  });
+  /** 点别处收起选择条（不拦事件：只是顺手关掉，不影响背词流程） */
+  const onDocumentClick = (): void => colsBar.classList.add('hidden');
+  document.addEventListener('click', onDocumentClick);
+
   const root = h('div', { class: 'paper-flow' }, stage.root, controls);
 
   // iOS：语音首次必须在用户手势里启动，所以先盖一层「点击开始」（非 iOS 自动跳过）。
@@ -642,6 +719,8 @@ export function createPaperFlow(opts: FlowOptions): PaperFlow {
     // 路由切走前把待写库的卡片编辑落盘（不等它返回：IndexedDB 写入不随路由销毁）
     void flushEdits();
     window.removeEventListener('keydown', onKey);
+    // ★ S3：选择条的「点别处收起」监听也要撤掉，否则换页后它还挂在 document 上
+    document.removeEventListener('click', onDocumentClick);
     stage.destroy();
     root.remove();
     opts.onDestroy?.();
@@ -676,7 +755,7 @@ export function createPaperFlow(opts: FlowOptions): PaperFlow {
     // 只要落点齐（正常「保存并退出」之后就是齐的），就原样恢复，**位置一个都不变**。
     const needNewPlacements = words.some((w) => session.placements[w.id] === undefined);
     if (needNewPlacements) {
-      session.placements = stage.computePlacements(words, seedFromString(`${session.id}#${opts.groupIndex}`));
+      session.placements = stage.computePlacements(words, layoutSeed);
     } else {
       stage.restorePlacements(session.placements);
     }

@@ -14,9 +14,9 @@
  *
  * ⚠️ 本页只改**布局参数**，不动任何业务数据（词库 / 会话 / 云同步一概不碰）。
  */
-import { DEFAULT_SETTINGS, setSettingsCache } from '../../core/config';
+import { DEFAULT_SETTINGS, isColsOverrideValue, LAYOUT_COLS_OPTIONS, setSettingsCache } from '../../core/config';
 import { controlBandHeight } from '../../core/layout';
-import type { LayoutTier, Word } from '../../core/types';
+import type { LayoutColsOverride, LayoutTier, Word } from '../../core/types';
 import * as dao from '../../dao';
 import { appStore, emitDataChanged } from '../../state/store';
 import {
@@ -109,6 +109,8 @@ interface DevState {
   /** 模拟的真机视口尺寸 */
   /** 模拟的真机视口尺寸；null = 不做模拟，直接用真实窗口 */
   deviceViewport: DeviceViewport | null;
+  /** ★ S3：手动列数覆盖（'auto' = 自动推导；数字 = 强制列数） */
+  colsOverride: LayoutColsOverride;
 }
 
 /**
@@ -116,7 +118,7 @@ interface DevState {
  *
  * 这些开关必须能进 URL，因为验收是**机器跑的**（无头浏览器），不可能靠人点滑块：
  *
- *   `#/dev/layout?probe=1&words=long&count=16&font=18&dvw=390&dvh=844`
+ *   `#/dev/layout?probe=1&words=long&count=16&font=18&dvw=390&dvh=844&cols=6`
  *
  * @param query 路由查询串
  * @param state 待预置的状态
@@ -136,6 +138,17 @@ function applyQueryOverrides(query: URLSearchParams | undefined, state: DevState
     return Number.isFinite(n) ? n : null;
   };
 
+  // ★ 档位必须**最先**处理：`tier=desktop` 要连那一档的参数一起换。
+  //   踩过的坑：只改 `tierName` 不换 `tier`，于是探针传 `tier=desktop` 时
+  //   量到的其实是**手机档**的参数（边距 8 / 目标 16 / 间距 8），
+  //   而报告里写着 desktop —— 「报告与实际不符」是最难查的一类问题。
+  //   放在最前面是为了让后面的 font/edge/gap/target 覆盖仍然生效。
+  const tierName = query.get('tier');
+  if (tierName === 'mobile' || tierName === 'tablet' || tierName === 'desktop') {
+    state.tierName = tierName;
+    state.tier = cloneTier(dao.settings.readMirror()?.layout[tierName] ?? DEFAULT_SETTINGS.layout[tierName]);
+  }
+
   const words = query.get('words');
   if (words === 'long' || words === 'normal') state.wordSet = words;
   const count = num('count');
@@ -152,8 +165,11 @@ function applyQueryOverrides(query: URLSearchParams | undefined, state: DevState
   if (diameter !== null && diameter > 0) state.tier.button.diameterPx = diameter;
   const btnGap = num('btnGap');
   if (btnGap !== null && btnGap > 0) state.tier.button.gapPx = btnGap;
-  const tierName = query.get('tier');
-  if (tierName === 'mobile' || tierName === 'tablet' || tierName === 'desktop') state.tierName = tierName;
+  // ★ S3：手动列数覆盖（`cols=6`）——探针 `--cols-override` 就是把它塞进 URL 的。
+  //   非法值（不在选项表里）一律忽略，避免把脏值带进布点。
+  const colsParam = num('cols');
+  const colsValue = colsParam === null ? null : Math.floor(colsParam);
+  if (isColsOverrideValue(colsValue)) state.colsOverride = colsValue;
   const dvw = num('dvw');
   const dvh = num('dvh');
   if (dvw !== null && dvh !== null && dvw > 0 && dvh > 0) {
@@ -351,6 +367,7 @@ export function renderDevLayoutPage(query?: URLSearchParams): HTMLElement {
     wordCount: 16,
     showBoxes: true,
     deviceViewport: { ...DEFAULT_DEVICE_VIEWPORT },
+    colsOverride: 'auto',
   };
   applyQueryOverrides(query, state);
 
@@ -432,6 +449,8 @@ export function renderDevLayoutPage(query?: URLSearchParams): HTMLElement {
       ...DEFAULT_SETTINGS,
       layout: { ...DEFAULT_SETTINGS.layout, [state.tierName]: cloneTier(state.tier) },
       display: { ...DEFAULT_SETTINGS.display, animation: false },
+      // ★ S3：列数覆盖也要进缓存（PaperStage 现读它；探针靠它验手动覆盖）
+      layoutColsOverride: state.colsOverride,
     });
     // null = 不注入，PaperStage 就会用真实 window.innerWidth/innerHeight（= 走桌面旧算法）
     window.__layoutViewport = state.deviceViewport ? { ...state.deviceViewport } : undefined;
@@ -514,24 +533,31 @@ export function renderDevLayoutPage(query?: URLSearchParams): HTMLElement {
     //   钩子：window.__devOverlay('centered' | 'origin' | 'originBottom' | 'hide')
     if (autoProbe) installOverlayProbe(stage, words);
 
-    const layoutInfo: LayoutInfo = { ...published, cols: 0, rows: 0, gridCapacity: 0, cellsSkippedByAvoid: 0 };
+    // ★ S3：网格行列数由**算法自己报**（PaperStage 写进 __layoutInfo），
+    //   调试页不再按参数复刻一份推导 —— 复刻迟早会跟算法走偏，而「报告与 DOM 对不上」
+    //   正是最难查的一类问题（M1 时就吃过这个亏）。
+    const layoutInfo: LayoutInfo = published;
     window.__layoutInfo = layoutInfo;
 
-    const perRow = layoutInfo.wordsPerRow ?? 0;
-    const rows = perRow > 0 ? Math.ceil(layoutInfo.capacity / perRow) : 0;
+    const cols = layoutInfo.cols;
+    const rows = layoutInfo.rows;
     const band = Math.round(controlBandHeight(state.tier));
     infoLine.textContent =
       `模拟视口 ${viewport.width}×${viewport.height} · ${layoutInfo.deviceKind} · 字号 ${layoutInfo.fontSize}px · ` +
       `纸面 ${layoutInfo.paperW}×${layoutInfo.paperH} · 最宽词 ${layoutInfo.widestWordPx}px · 平均 ${layoutInfo.avgWordPx}px · ` +
       `算法 ${layoutInfo.algorithm ?? '-'} · 容量 ${layoutInfo.capacity} 个 · 传入 ${words.length} 个`;
+    const colsLabel = layoutInfo.colsOverridden
+      ? `手动覆盖 ${layoutInfo.colsRequested} 列${layoutInfo.colsClamped ? '（宽度放不下，已被夹住）' : ''}`
+      : `自动推导（下限 ${layoutInfo.minCols ?? '-'} 列，宽度上限 ${layoutInfo.maxCols ?? '-'} 列）`;
     derivedBox.replaceChildren(
-      h('div', { text: `每行 ${perRow} 个 × ${rows} 行 = ${layoutInfo.capacity} 个（目标 ${state.tier.targetCount}）` }),
+      h('div', { text: `网格 ${cols} 列 × ${rows} 行 = ${layoutInfo.gridCapacity} 个格子，放下 ${layoutInfo.capacity} 个（目标 ${layoutInfo.targetCount ?? state.tier.targetCount}）` }),
+      h('div', { text: `列数：${colsLabel} · 每行 ${layoutInfo.wordsPerRow ?? cols} 个 · 空着的格子 ${layoutInfo.cellsUnused ?? 0} 个` }),
       h('div', { text: `单词间最小空隙 ${layoutInfo.gapX}px（参数 minGapPx=${state.tier.minGapPx}）` }),
       h('div', { text: `底部按钮带高 ${band}px（避让区 y=${Math.round(controls.y)}，高 ${Math.round(controls.height)}）` }),
       h('div', {
-        text: layoutInfo.phoneArea
-          ? `可用布点区 ${Math.round(layoutInfo.phoneArea.width)}×${Math.round(layoutInfo.phoneArea.height)} @(${Math.round(layoutInfo.phoneArea.x)},${Math.round(layoutInfo.phoneArea.y)})`
-          : '（非手机档：沿用旧的抖动网格算法）',
+        text: layoutInfo.area
+          ? `可用布点区 ${Math.round(layoutInfo.area.width)}×${Math.round(layoutInfo.area.height)} @(${Math.round(layoutInfo.area.x)},${Math.round(layoutInfo.area.y)})`
+          : '（没有可用布点区数据）',
       }),
     );
 
@@ -637,6 +663,22 @@ export function renderDevLayoutPage(query?: URLSearchParams): HTMLElement {
     probeAfterLayout();
   });
 
+  // ── ★ S3：列数覆盖（自动 / 3 / 4 / 5 / 6 / 8 / 10）──
+  //    与背诵页那个 32×32 的 ⊞ 快捷按钮、设置页的下拉读同一份设置。
+  const colsSelect = h('select', { class: 'input' });
+  for (const value of LAYOUT_COLS_OPTIONS) {
+    const opt = h('option', { value: String(value), text: value === 'auto' ? '自动（按宽度推导）' : `${value} 列` });
+    if (value === state.colsOverride) opt.selected = true;
+    colsSelect.appendChild(opt);
+  }
+  colsSelect.addEventListener('change', () => {
+    const raw = colsSelect.value;
+    const numeric = Number(raw);
+    state.colsOverride = raw === 'auto' ? 'auto' : isColsOverrideValue(numeric) ? numeric : 'auto';
+    relayout();
+    probeAfterLayout();
+  });
+
   // ── 按钮 ──
   actionRow.appendChild(
     button('重新布局', () => {
@@ -692,6 +734,7 @@ export function renderDevLayoutPage(query?: URLSearchParams): HTMLElement {
     derivedBox,
     h('h4', { text: '设置页里的那一档参数' }),
     h('div', { class: 'dev-row' }, h('label', { text: '档位' }), tierSelect),
+    h('div', { class: 'dev-row' }, h('label', { text: '列数' }), colsSelect),
     sliderHost,
     h('h4', { text: '词表' }),
     h('div', { class: 'dev-row' }, h('label', { text: '词数' }), countInput, countVal),

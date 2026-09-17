@@ -227,13 +227,23 @@ console.log('\n[2] 布点：最低距离由字号决定，且不许重合');
   check('★ 而且没有一个落点落进按钮避让区里', inside === 0, `${inside} 个点压在按钮区`);
 }
 
-// 2e. 按钮避让：中心贴边也不算安全，必须按半个词外扩
+// 2e. ★ S3：全端共用「自然列数 + 真实碰撞检测」；旧的「半个词外扩 + 最宽词夹列数」已退役
 {
   const stage = read('src/ui/pages/paper/PaperStage.ts');
-  check('PaperStage 用 canvas measureText 量最宽的词', stage.includes('measureText'));
-  check('PaperStage 调 spacingBudget 算间距', stage.includes('spacingBudget('));
-  check('按钮避让矩形按 padX/padY 外扩', /controls\.x - offsetX - budget\.padX/.test(stage) && /width: controls\.width \+ budget\.padX \* 2/.test(stage));
-  check('间距系数仍然来自设置（不写死）', stage.includes('paperWordGapFactor'));
+  check('PaperStage 用 canvas measureText 量词宽', stage.includes('measureText'));
+  check('★ 全端共用自然列数算法：调 computeGrid', stage.includes('computeGrid('));
+  check('★ 全端共用真实碰撞布点：调 layoutWords', stage.includes('layoutWords('));
+  check(
+    '★ 不再用旧抖动网格给白纸布点（jitteredGrid 只留给对照与测试）',
+    !stage.includes('jitteredGrid('),
+    '桌面/平板曾经走它，S3 已统一',
+  );
+  check('★ 列数硬下限来自 minColsFor（不写死数字）', stage.includes('minColsFor('));
+  check('★ 手动列数覆盖来自设置（parseColsOverride 校验后使用）', stage.includes('parseColsOverride('));
+  check(
+    '★ 按钮避让区按**真实矩形**判交（不再按半个词外扩）',
+    /avoidPx: \{\s*x: controls\.x - offsetX/.test(stage) && !stage.includes('budget.padX'),
+  );
 }
 
 // ═══════════════════════════════ [3] Enter 逐格切换

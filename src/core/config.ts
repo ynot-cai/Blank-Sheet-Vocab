@@ -7,8 +7,9 @@ export const DEFAULTS = {
   memorizeEvery: 3, // 每背几个新词，「再背一个」按钮自动变成「记忆」
   failCountCap: 2, // 属性② 未通过次数上限
   reviewGroupSize: 30, // 复习每组上限
-  // 相邻单词的最低空隙 = 字号 × 这个系数；布点时实际用的最小中心距还会加上
-  // 「本批最宽的那个词」（否则长词之间必然重叠，见 core/layout.ts 的 spacingBudget）
+  // ★ S3：这个系数只影响已退役的 `spacingBudget` 口径（见 core/layout.ts），
+  //   真实布点的最小空隙现在由 settings.layout.<档位>.minGapPx 决定。
+  //   保留默认值只为兼容老备份（设置页没有暴露它）。
   paperWordGapFactor: 2.4,
 };
 
@@ -67,6 +68,18 @@ export const DEVICE = {
   phoneMaxWidth: 767,
   /** 平板断点（小于等于它算平板） */
   tabletMaxWidth: 1024,
+  /**
+   * ★ S3：各设备形态的**列数硬下限**（防退化）。
+   *
+   * 为什么需要硬下限：M2 的网格推导是「够放 target 个就停」，宽屏行数多，
+   * 于是 2 列就够放十几个词 —— 桌面因此退化成「像手机一样两列」。
+   * 光把「够用就停」换成自然列数还不够：极端参数（超大字号、超长词）下
+   * 自然列数仍可能算出 2，所以再加一道硬下限兜底。
+   * 桌面 4 / 平板 4 / 手机 3，与验收口径一致（探针 `--min-columns`）。
+   */
+  minColsPhone: 3,
+  minColsTablet: 4,
+  minColsDesktop: 4,
   /** 右下角按钮区尺寸（像素）：手机 */
   controlsPhone: { width: 140, height: 220 },
   /** 右下角按钮区尺寸（像素）：平板 */
@@ -90,6 +103,52 @@ export const DEVICE = {
   /** 义项序号颜色（浅灰，不抢单词的视觉） */
   senseBadgeColor: '#bbb',
 };
+
+/**
+ * ★ S3：手动列数覆盖的可选值（设置页下拉与背诵页快捷选择条共用这一份）。
+ *
+ * `'auto'` = 按屏幕宽度自然推导；具体数字 = **强制**用这个列数（自动推导与 minCols 让路）。
+ * 为什么要有：自动算法再周全也可能在某个尺寸/某批词上不合适，
+ * 用户自己选一个列数就能立刻用起来 —— 这是「算法兜底 + 人工兜底」的双保险。
+ */
+export const LAYOUT_COLS_OPTIONS = ['auto', 3, 4, 5, 6, 8, 10] as const;
+
+/** 手动列数覆盖的取值类型 */
+export type LayoutColsOverride = (typeof LAYOUT_COLS_OPTIONS)[number];
+
+/**
+ * 把设置里的 `layoutColsOverride` 解析成 `computeGrid` 要的 `colsOverride`。
+ *
+ * ★ 为什么要过一道校验：设置是从 localStorage/老备份读回来的，可能被手改成
+ *   任意字符串（"abc" / 0 / 负数 / null）。脏值不许传进布局计算 ——
+ *   非 `'auto'` 且不是合法数字时一律按「自动」处理（与 R4/稳健性口径一致）。
+ * @param value 设置里的原始值
+ * @returns 合法列数，或 null（= 自动）
+ */
+export function parseColsOverride(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  const n = Math.floor(value);
+  return n >= 2 && n <= 24 ? n : null;
+}
+
+/**
+ * 判断一个值是否是**合法的列数覆盖取值**（`'auto'` 或选项表里的数字）。
+ *
+ * 用途：URL 参数 / 老设置 / 备份文件里的值都要先过这一关，
+ * 才有资格写进 `settings.layoutColsOverride`（类型收窄，不用 `as` 硬转）。
+ * @param v 待判断的值
+ */
+export function isColsOverrideValue(v: unknown): v is LayoutColsOverride {
+  return v === 'auto' || (typeof v === 'number' && (LAYOUT_COLS_OPTIONS as readonly unknown[]).includes(v));
+}
+
+/**
+ * 把任意输入解析成合法的列数覆盖取值（非法一律 `'auto'`）。
+ * @param raw 原始输入（URL 参数 / 设置里的值）
+ */
+export function coerceColsOverride(raw: unknown): LayoutColsOverride {
+  return isColsOverrideValue(raw) ? raw : 'auto';
+}
 
 /**
  * IndexedDB 相关的固定参数。
@@ -263,6 +322,11 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   /** ★ M2：手机/平板/桌面三档布点参数（设置页「布局参数」与调试页都能改） */
   layout: DEFAULT_LAYOUT,
+  /**
+   * ★ S3：手动列数覆盖（'auto' = 按屏幕宽度自然推导）。
+   * 自动布局在任何设备上失效时，用户都能在这里（或背诵页的 ⊞ 快捷按钮）指定列数。
+   */
+  layoutColsOverride: 'auto' satisfies LayoutColsOverride,
   // priorityDir 已废弃（来源优先级时代的遗留），保留只为兼容老备份；见 types.ts 的说明
   parse: { fieldSep: 'auto', senseSep: '；;／/|', priorityDir: 'desc' },
   memorize: { position: 'centerTop', offsetY: 0.3 },

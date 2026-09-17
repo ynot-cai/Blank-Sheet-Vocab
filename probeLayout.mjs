@@ -1,11 +1,18 @@
 #!/usr/bin/env node
 /**
- * probeLayout.mjs —— 手机端布局测量与断言脚本（零依赖）
+ * probeLayout.mjs —— 白纸布局测量与断言脚本（零依赖）
  *
  * 用法：
  *   node probeLayout.mjs --viewport 390x844 --expect-count 16
  *   node probeLayout.mjs --viewport 390x844 --url http://localhost:5173
  *   node probeLayout.mjs --viewport 390x844 --json-only
+ *
+ * ★ S3 新增（桌面端 2 列回归验收用）：
+ *   --min-columns N      断言 columns（DOM 聚类列数）≥ N（默认 3）
+ *   --cols-override N    手动列数覆盖（自动 / 3 / 4 / 5 / 6 / 8 / 10），透传给页面的 `cols=N`
+ *   --min-y-coverage R   断言词在纵向铺开的比例 ≥ R（默认 0.5 = 至少铺满半张纸）
+ *   --preset NAME        预设名（compact / balanced / loose）。本仓库尚未实现 S1 的预设系统，
+ *                        传了只会打印一行提示并**按当前默认档位**测量（不做假通过）
  *
  * 原理：
  *   1. 用本机 Edge/Chrome 无头模式打开 #/dev/layout?probe=1
@@ -37,7 +44,30 @@ const expectCount = Number(arg('expect-count', '16'));
 const countMin = Number(arg('count-min', '15'));
 const countMax = Number(arg('count-max', '18'));
 const minGapRequired = Number(arg('min-gap', '8'));
+/**
+ * ★ S3：DOM 聚类列数的下限（防退化）。
+ * 口径：手机 ≥3 / 平板 ≥4 / 桌面 ≥5 / 大屏 ≥6（由调用方按场景传）。
+ */
+const minColumns = Number(arg('min-columns', '3'));
+/** ★ S3：词在纵向铺开的比例下限（1 = 整张纸；默认 0.5 = 至少铺满半张纸） */
+const minYCoverage = Number(arg('min-y-coverage', '0.5'));
+/** ★ S3：手动列数覆盖（不传 = 自动）。合法值见 core/config.ts 的 LAYOUT_COLS_OPTIONS */
+const colsOverrideRaw = arg('cols-override', '');
+const colsOverride = colsOverrideRaw === '' ? null : Number(colsOverrideRaw);
+const preset = arg('preset', '');
 const jsonOnly = flag('json-only');
+
+if (colsOverride !== null && ![3, 4, 5, 6, 8, 10].includes(colsOverride)) {
+  console.error(`✗ --cols-override 只支持 3 / 4 / 5 / 6 / 8 / 10（收到 ${colsOverrideRaw}）`);
+  console.error('  可选值见 src/core/config.ts 的 LAYOUT_COLS_OPTIONS');
+  process.exit(1);
+}
+if (preset !== '') {
+  console.log(
+    `! --preset ${preset}：本仓库尚未实现 S1 的预设系统（settings 里没有 layoutPreset），` +
+      '按当前默认档位测量（不做假通过）。',
+  );
+}
 /**
  * 额外透传给调试页的查询参数（形如 `words=long&dvw=390&dvh=844`）。
  *
@@ -48,6 +78,8 @@ const jsonOnly = flag('json-only');
  * 用法：`--page-args "dvw=390&dvh=844"`（会拼在 `probe=1` 后面）。
  */
 const pageArgs = arg('page-args', '');
+/** ★ S3：手动列数覆盖要透传给页面（调试页读 `cols=` 后写进设置缓存） */
+const colsArg = colsOverride === null ? '' : `cols=${colsOverride}`;
 
 const [vw, vh] = viewport.split('x').map(Number);
 
@@ -86,7 +118,8 @@ const browser = findBrowser();
 // ───────────────────────── 执行 dump-dom ─────────────────────────
 const profile = mkdtempSync(join(tmpdir(), 'probe-profile-'));
 const dumpFile = join(mkdtempSync(join(tmpdir(), 'probe-dump-')), 'dom.html');
-const target = `${url}/#/dev/layout?probe=1&vw=${vw}&vh=${vh}${pageArgs ? `&${pageArgs}` : ''}`;
+const extra = [pageArgs, colsArg].filter((s) => s !== '').join('&');
+const target = `${url}/#/dev/layout?probe=1&vw=${vw}&vh=${vh}${extra ? `&${extra}` : ''}`;
 
 let html = '';
 try {
@@ -168,8 +201,9 @@ const checks = [];
 const ck = (name, actual, pred, expectText) =>
   checks.push({ name, actual, ok: pred, expectText });
 
-ck('viewport', `${probe.viewport?.[0]}x${probe.viewport?.[1]}`,
-  probe.viewport?.[0] === vw && probe.viewport?.[1] === vh, `${vw}x${vh}`);
+ck('layoutViewport', `${probe.layoutViewport?.[0]}x${probe.layoutViewport?.[1]}`,
+  probe.layoutViewport?.[0] === vw && probe.layoutViewport?.[1] === vh,
+  `${vw}x${vh}（布点实际用的尺寸 = 注入的模拟真机尺寸）`);
 
 ck('wordCount', probe.wordCount,
   probe.wordCount >= countMin && probe.wordCount <= countMax,
@@ -183,25 +217,85 @@ ck('outOfBounds', probe.outOfBounds, probe.outOfBounds === 0, '0');
 
 ck('minGap', probe.minGap, probe.minGap >= minGapRequired, `>= ${minGapRequired}`);
 
-ck('columns', probe.columns, probe.columns >= 3, '>= 3（不能是 1 竖列）');
+// ★ S3：列数下限按场景传（手机 3 / 平板 4 / 桌面 5 / 大屏 6）
+ck('columns', probe.columns, probe.columns >= minColumns, `>= ${minColumns}`);
 
-// 可选：避让区合理性 —— 单词不应全挤在避让区同侧
-if (probe.avoidRects && probe.boxes) {
-  const avoidTop = Math.min(...probe.avoidRects.map(r => r.y));
-  const wordsBelowAvoid = probe.boxes.filter(b => b.y > avoidTop).length;
-  ck('wordsBelowAvoidBand', wordsBelowAvoid, wordsBelowAvoid === 0,
-    '0（避让带内不应有单词）');
+// ★ S3：手动列数覆盖是否真的生效（网格列数 = 用户指定值）
+if (colsOverride !== null) {
+  ck('grid.cols=覆盖值', probe.layout?.cols, probe.layout?.cols === colsOverride, `= ${colsOverride}`);
+  ck('colsOverridden', probe.layout?.colsOverridden, probe.layout?.colsOverridden === true, 'true');
+}
+
+/**
+ * ★ S3：DOM 与网格的一致性检查 —— 每个词的落点都必须落在**声明的网格列**里。
+ *
+ * 为什么不能只数 `columns`（20px 容差的 DOM 聚类）：格内抖动会让同一列的词被拆成
+ * 好几簇，于是「6 列」被数成 11 簇。这条按**列距**（可用宽 ÷ 列数）反算每个词
+ * 属于哪一列，能直接证明「屏幕上真的是 6 列」，而不是靠簇数猜。
+ */
+if (probe.layout?.area && probe.layout.cols > 0 && probe.boxes.length > 0) {
+  const { area, cols: gridCols } = probe.layout;
+  const offX = probe.layout.sheetOffsetX ?? 0;
+  const pitch = area.width / gridCols;
+  const used = new Set();
+  let outside = 0;
+  for (const b of probe.boxes) {
+    const slot = Math.floor((b.cx - offX - area.x) / pitch);
+    if (slot < 0 || slot >= gridCols) outside += 1;
+    else used.add(slot);
+  }
+  ck(
+    'grid.cols↔DOM',
+    `${used.size}/${gridCols} 列有词，越列 ${outside}`,
+    outside === 0 && used.size <= gridCols,
+    '每个词都落在声明的网格列内',
+  );
+}
+
+// ★ S3：均匀散布 —— 词在纵向要铺开（不许全挤在顶部几行）
+if (probe.spread) {
+  ck(
+    'spread.yCoverage',
+    probe.spread.yCoverage,
+    probe.spread.yCoverage >= minYCoverage,
+    `>= ${minYCoverage}（1 = 铺满整张纸）`,
+  );
+}
+
+// 可选：避让区合理性 —— **整条横带**式的避让区里不许有单词。
+//   ★ 为什么要先判形状：手机的避让区是「整条底部横带」（横带里当然不许有词），
+//     而平板/桌面的按钮是**右下角方块** —— 词本来就可以在它左边、甚至它下面
+//     （方块右边的区域也是可用纸面）。拿横带的口径去判方块，会凭空多出假失败
+//     （实测：820×1180 平板报「避让带内 2 个词」，而那 2 个词离按钮还有一大截）。
+//     方块形状的避让由 buttonOverlaps 的真实矩形判交负责，这里不重复判。
+const bandRects = (probe.avoidRects ?? []).filter(
+  (r) => r.width >= (probe.layoutViewport?.[0] ?? 0) * 0.95,
+);
+if (bandRects.length > 0 && probe.boxes) {
+  const bandTop = Math.min(...bandRects.map(r => r.y));
+  const wordsInBand = probe.boxes.filter(b => b.y + b.h > bandTop + 0.5).length;
+  ck('wordsInAvoidBand', wordsInBand, wordsInBand === 0,
+    '0（底部横带里不应有单词）');
 }
 
 // ───────────────────────── 输出 ─────────────────────────
 console.log('\n=== 布局测量 ===');
-console.log(`viewport      : ${probe.viewport?.[0]}x${probe.viewport?.[1]}`);
+console.log(`viewport      : 布点 ${probe.layoutViewport?.[0]}x${probe.layoutViewport?.[1]}（真实窗口 ${probe.viewport?.[0]}x${probe.viewport?.[1]}，无头窗口受物理屏幕限制）`);
 console.log(`wordCount     : ${probe.wordCount}`);
-console.log(`columns/rows  : ${probe.columns} / ${probe.rows}`);
+console.log(`columns/rows  : ${probe.columns} / ${probe.rows}（DOM 聚类）`);
+console.log(`grid          : ${probe.layout?.cols} 列 × ${probe.layout?.rows} 行 = ${probe.layout?.gridCapacity} 格，放下 ${probe.layout?.capacity} 个`);
+console.log(`算法/设备     : ${probe.layout?.algorithm} / ${probe.layout?.deviceKind}（字号 ${probe.layout?.fontSize}px）`);
+console.log(`列数来源      : ${probe.layout?.colsOverridden ? `手动覆盖 ${probe.layout?.colsRequested}` : `自动（下限 ${probe.layout?.minCols} 列，宽度上限 ${probe.layout?.maxCols} 列）`}`);
 console.log(`overlapPairs  : ${probe.overlapPairs}`);
 console.log(`buttonOverlaps: ${probe.buttonOverlaps}`);
 console.log(`outOfBounds   : ${probe.outOfBounds}`);
 console.log(`minGap        : ${probe.minGap}`);
+if (probe.spread) {
+  console.log(
+    `散布          : y 覆盖 ${(probe.spread.yCoverage * 100).toFixed(1)}%（y ${probe.spread.yMin}~${probe.spread.yMax} / 纸高 ${probe.spread.sheetH}）` +
+      ` · x 覆盖 ${(probe.spread.xCoverage * 100).toFixed(1)}% · y 带数 ${probe.spread.yBands}`,
+  );
+}
 if (probe.avoidRects) {
   console.log(`avoidRects    : ${JSON.stringify(probe.avoidRects)}`);
 }

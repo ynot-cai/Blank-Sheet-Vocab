@@ -240,6 +240,97 @@
   color: var(--fg-dim);
 }
 
+/* —— ★ S3：手动列数快捷入口（⊞ + 轻量选择条）——
+   为什么放在按钮带/按钮列里：这两块本来就是**布点避让区**，放在这里永远不会压住单词。
+   - 手机：底部按钮带的最左侧（该带子整条都是避让区）
+   - 平板/桌面：右下角按钮列的最上面（同样在避让区里）
+   触发按钮固定 32×32；选择条是轻量一排（不是全屏弹窗），朝上展开。 */
+.paper-cols {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  pointer-events: auto; /* 按钮带容器是 pointer-events:none，这里要单独特例打开 */
+}
+
+.paper-cols-btn {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--fg-dim);
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.paper-cols-btn:hover {
+  color: var(--fg);
+}
+
+.paper-cols-bar {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 47; /* 高于按钮带（45），低于题干遮罩（50） */
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.16);
+  white-space: nowrap;
+}
+
+.paper-cols-bar.hidden {
+  display: none;
+}
+
+/* 桌面/平板：按钮列在右侧，选择条朝左展开，别顶出屏幕 */
+.paper-controls .paper-cols {
+  align-items: flex-end;
+}
+
+.paper-controls .paper-cols-bar {
+  left: auto;
+  right: 0;
+}
+
+.paper-cols-item {
+  min-width: 40px;
+  height: 30px;
+  padding: 0 8px;
+  font-size: 13px;
+  color: var(--fg);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.paper-cols-item.is-active {
+  background: var(--fg);
+  border-color: var(--fg);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* 手机：⊞ 贴按钮带最左侧，与圆按钮顶部对齐 */
+.paper-controls-round .paper-cols {
+  position: absolute;
+  left: 12px;
+  top: 0;
+}
+
 /* —— iOS 语音解锁引导层 —— */
 .speech-gate {
   position: fixed;

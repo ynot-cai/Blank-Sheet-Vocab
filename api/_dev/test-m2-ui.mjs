@@ -166,11 +166,27 @@ try {
       ov.y >= -0.6 && ov.bottom <= 844 + 0.6,
       `y=${ov.y.toFixed(1)} bottom=${ov.bottom.toFixed(1)}`,
     );
-    check(
-      `遮罩-${label}：不与底部按钮带相交`,
-      ov.bottom <= bandTop + 0.6,
-      `bottom=${ov.bottom.toFixed(1)} vs 按钮带顶 ${bandTop.toFixed(1)}`,
-    );
+    // ★ 按钮带相交这一条只在**默认模式**（居中偏上）上严格要求。
+    //   为什么：「弹在原落点」是**可选**模式（settings.memorize.position），而且
+    //   S3 之后词铺满整个可用区域（最下面一行就在按钮带上方 8px 处，实测 pre/post
+    //   布的纵向范围都是 27~651，没有变低），弹在靠下的词上时**必然**要压到按钮带。
+    //   产品上的解不是硬夹住卡片（那样卡片会离它标注的词很远），而是让卡片盖在按钮带上
+    //   —— 遮罩 z-index 50 > 按钮带 45，且整块被夹在视口内（上面两条已断言），
+    //   所以「卡片看不见了」那个真 bug 不会复发。
+    const overlapsBand = ov.bottom > bandTop + 0.6;
+    if (mode === 'centered') {
+      check(
+        `遮罩-${label}：不与底部按钮带相交`,
+        !overlapsBand,
+        `bottom=${ov.bottom.toFixed(1)} vs 按钮带顶 ${bandTop.toFixed(1)}`,
+      );
+    } else {
+      check(
+        `遮罩-${label}：压到按钮带时层级必须更高（压住也看得见）`,
+        !overlapsBand || Number(ov.zIndex) > 45,
+        `bottom=${ov.bottom.toFixed(1)} vs 按钮带顶 ${bandTop.toFixed(1)}，z-index=${ov.zIndex}`,
+      );
+    }
     check(`遮罩-${label}：层级高于按钮带（45）`, Number(ov.zIndex) > 45, `z-index=${ov.zIndex}`);
     check(`遮罩-${label}：fixed 定位（不受纸面滚动影响）`, ov.position === 'fixed', ov.position);
   }
@@ -197,14 +213,18 @@ try {
   await page.close();
 
   // ───────────────────────── 桌面 1280×800 ─────────────────────────
-  console.log('\n[M2-UI] 桌面 1280×800（不许被误改）');
+  // ★ S3 之后这里换口径了：桌面**不再**走旧的抖动网格（那正是「像手机一样两列」的根源），
+  //   改用与手机同一套自然列数算法 + 列数硬下限。手机部分的断言一个字没动。
+  console.log('\n[M2-UI] 桌面 1280×800（S3 起与手机同一套算法）');
   const desktop = await openSession(CDP_PORT, `${DEV_URL}/#/dev/layout?probe=1&words=normal&count=16&dvw=0`, {
     waitMs: 2500,
   });
   await desktop.setViewport(1280, 800);
   await new Promise((r) => setTimeout(r, 1000));
   const dResult = await desktop.evaluate('window.__layoutProbe()');
-  check('桌面用的是旧算法', dResult.layout?.algorithm === 'legacy-jitter', String(dResult.layout?.algorithm));
+  check('桌面用的是自然列数算法（S3）', dResult.layout?.algorithm === 'natural-grid', String(dResult.layout?.algorithm));
+  check('桌面列数 ≥ 5（不是退化的 2 列）', dResult.columns >= 5, `columns=${dResult.columns}`);
+  check('桌面网格列数 ≥ 4（硬下限）', (dResult.layout?.cols ?? 0) >= 4, `grid=${dResult.layout?.cols}`);
   const dAvoid = dResult.avoidRects?.[0];
   const dW = dResult.viewport?.[0] ?? 0;
   if (dW > 1100) {
