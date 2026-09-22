@@ -57,8 +57,14 @@ export interface ExamController {
   getCards: () => KnowledgeCard[];
   /** 一口气出完所有题，然后载入当前这一题 */
   start: () => Promise<void>;
-  /** 提交答案 → 评分 → 存档 */
-  submit: (answer: string) => Promise<void>;
+  /**
+   * 提交答案 → 评分 → 存档。
+   *
+   * ★ T3：第二个参数是「这道题有没有用过『朗诵一遍』提示」。
+   *   设置项 `practice.hintFails` 为「是」时，用过提示的题一律压到「未通过」档
+   *   （哪怕 AI 给了高分）—— 对应一期的场景 C 语义。
+   */
+  submit: (answer: string, hintUsed: boolean) => Promise<void>;
   /** 手动改分 */
   regrade: (score: number) => Promise<void>;
   /** 下一题 / 结束 */

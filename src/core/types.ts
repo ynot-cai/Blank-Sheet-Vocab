@@ -260,6 +260,17 @@ export interface PracticeSettings {
   autoSpeak: boolean;
   speakRate: number;
   speakLang: string;
+  /**
+   * ★ T3：**提示后算不算未通过**。
+   *
+   * `true` = 用了「朗诵一遍」提示就记一次未通过（哪怕答案本身是对的）；
+   * `false`（默认）= 提示只是辅助，仍然看答案对错。
+   *
+   * ⚠️ 这一项**只对开启之后的考核生效**，不回填、不追溯任何历史次数
+   *   （用户明确要求：不许写迁移、不许因为拨开关而改动已记录的 failCount / examCount）。
+   *   所以它没有任何配套的迁移代码 —— 这是有意为之，不是漏了。
+   */
+  hintFails: boolean;
 }
 
 /** 备份设置 */

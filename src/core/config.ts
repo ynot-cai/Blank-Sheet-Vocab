@@ -465,7 +465,9 @@ export const DEFAULT_SETTINGS: Settings = {
     key: '',
     forceProxy: false,
   },
-  practice: { autoSpeak: true, speakRate: 1, speakLang: 'en-US' },
+  // ★ T3：hintFails 默认 false —— 「提示只是辅助，看答案对错」。
+  //   拨到 true 之后，用了「朗诵一遍」的考核一律记未通过（哪怕答案本身是对的）。
+  practice: { autoSpeak: true, speakRate: 1, speakLang: 'en-US', hintFails: false },
   backup: { remindOnClose: true, lastManualExportAt: null },
   cloud: DEFAULT_CLOUD,
   kc: DEFAULT_KC,

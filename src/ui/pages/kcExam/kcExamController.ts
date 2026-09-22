@@ -21,10 +21,14 @@ import type { KcSession, KnowledgeCard } from '../../../core/kcTypes';
 import * as dao from '../../../dao';
 import { aiConfigFromSettings } from '../../../services/ai';
 import { gradeAnswer } from '../../../services/kcExamAi';
+import { resolvePass } from '../../components/HintButton';
 import { regradeRecord, saveExamRecord } from './kcExamFlow';
 import { buildSlots, locateSlot, prepareQuestions, type ExamSlot } from './kcExamPrepare';
 import type { ExamController, ExamState } from './kcExamState';
 import { finishReview } from '../kcReview/kcReviewFlow';
+
+/** 二期的「通过」口径：评分 1 = 不会（= 未通过），2/3 都算通过 */
+const PASS_SCORE = 1;
 
 // 类型从这里再导出一次：界面/测试的 `from './kcExamController'` 不用改
 export type { ExamController, ExamPhase, ExamState } from './kcExamState';
@@ -144,7 +148,7 @@ export function createExamController(opts: {
       await load();
     },
 
-    async submit(answer: string): Promise<void> {
+    async submit(answer: string, hintUsed: boolean): Promise<void> {
       // 评分中再按一次 Enter 不能重复提交（否则同一题会落两条记录、扣两次分）
       if (state.phase === 'grading') return;
       const at = locateSlot(cards, state.questionIndex);
@@ -169,6 +173,28 @@ export function createExamController(opts: {
         state.error = `${res.error ?? 'AI 评分失败'}；你可以手动打分后继续。`;
       } else {
         state.grade = res.grade;
+      }
+
+      /**
+       * ★ T3：「提示后算作未通过」在二期的落地。
+       *
+       * 二期的判定不是布尔值，而是 AI 给的 1~3 分（1 = 不会 / 2 = 模糊 / 3 = 会了），
+       * 所以规则翻译成：**设置开启且用过提示时，把分数压到「不会」档**
+       * （与一期的场景 C 同义：哪怕答对，用了提示也算未通过）。
+       *
+       * 为什么直接改 `state.grade.score` 而不是另外记一个标记：
+       *   分数会流进 `ExamRecord` 与卡片的 `attrs.lastExamScore`，掌握度也按它算 ——
+       *   只记标记的话，「未通过」这件事到不了掌握度那里，规则等于没生效。
+       *   压分之后用户在评分卡上仍然可以手动改分（那是用户自己的判断，规则不覆盖它）。
+       */
+      const answerCorrect = state.grade.score > PASS_SCORE;
+      if (!resolvePass(answerCorrect, hintUsed, settings.practice.hintFails)) {
+        state.grade = {
+          score: PASS_SCORE,
+          reason:
+            (hintUsed ? '（用了提示，按设置记为未通过）' : '') +
+            (state.grade.reason === '' ? '未通过' : state.grade.reason),
+        };
       }
 
       state.recordId = await saveExamRecord({

@@ -15,6 +15,7 @@ import type { KnowledgeCard } from '../../core/kcTypes';
 import * as dao from '../../dao';
 import { renderKcExamTaker } from '../components/ExamTaker';
 import { isConfirmKey, readExamControls, resolveEnterAction, shouldYieldToNative } from '../components/examKeys';
+import { hintUsedIn } from '../components/HintButton';
 import { toastOk, toastWarn } from '../components/Toast';
 import { button, h } from '../dom';
 import { navigate, registerCleanup } from '../router';
@@ -105,7 +106,7 @@ export function renderKcExamPage(ctx?: { query: URLSearchParams }): HTMLElement 
           error: s.error === '' ? undefined : s.error,
         },
         {
-          onSubmit: (a) => void controller?.submit(a),
+          onSubmit: (a, hintUsed) => void controller?.submit(a, hintUsed),
           onRegrade: (score) => void controller?.regrade(score),
           onNext: () => void controller?.next(),
           onRetry: () => void controller?.retry(),
@@ -236,8 +237,16 @@ export function renderKcExamPage(ctx?: { query: URLSearchParams }): HTMLElement 
     const action = resolveEnterAction(s.phase, readExamControls(page.querySelector<HTMLElement>('.kc-exam')));
     if (action.kind === 'none') return;
     ev.preventDefault();
-    if (action.kind === 'submit') void controller?.submit(action.value);
-    else if (action.kind === 'next') void controller?.next();
+    if (action.kind === 'submit') {
+      /**
+       * ★ T3：Enter 提交也要带上「这道题用过提示没有」。
+       *
+       * 键盘走的是 `examKeys` 的统一处理，拿不到答题组件的实例，
+       * 所以从 DOM 上读（`hintUsedIn`）。不这么做的话，同一个设置下
+       * 「点提交」判未通过、「按 Enter」判通过 —— 用户会觉得规则时灵时不灵。
+       */
+      void controller?.submit(action.value, hintUsedIn(page.querySelector<HTMLElement>('.kc-exam') ?? document));
+    } else if (action.kind === 'next') void controller?.next();
     else if (action.kind === 'retry') void controller?.retry();
     else navigate('/kc');
   };

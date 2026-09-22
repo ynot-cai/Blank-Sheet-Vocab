@@ -14,6 +14,7 @@
 // RULES-R1: 此处禁止任何强制时间限制（无倒计时 / 无超时提交 / 无超时判错）
 import { EXAM_TYPES } from '../../core/kcTypes';
 import { button, h } from '../dom';
+import { createHintButton, hintNoteEl, shouldShowHint, type HintButton } from './HintButton';
 import { nextOptionIndex } from './examKeys';
 
 /** 一道待作答的题 */
@@ -36,8 +37,16 @@ export interface KcGradeResult {
 
 /** 答题组件的回调 */
 export interface KcExamTakerHandlers {
-  /** 提交答案（调用方去调 AI 评分） */
-  onSubmit: (answer: string) => void;
+  /**
+   * 提交答案（调用方去调 AI 评分）。
+   *
+   * ★ T3：第二个参数是「这道题有没有用过『朗诵一遍』提示」。
+   *   为什么由组件回调传出去而不是让调用方自己读 DOM：
+   *   hintUsed 是**每道题的内存态**（题目结束即丢弃，不落库），
+   *   它的生命周期正好和这个组件实例一致 —— 放在组件里最不容易记漏。
+   *   调用方结合设置项 `practice.hintFails` 决定要不要判未通过。
+   */
+  onSubmit: (answer: string, hintUsed: boolean) => void;
   /** 用户手动改分 */
   onRegrade: (score: number) => void;
   /** 点「继续」（下一题） */
@@ -112,7 +121,30 @@ export function renderKcExamTaker(
  */
 function renderAnswerInput(q: KcQuestion, answer: string, handlers: KcExamTakerHandlers): HTMLElement {
   const box = h('div', { class: 'kc-exam-input' });
-  const submit = (value: string): void => handlers.onSubmit(value);
+
+  /**
+   * ★ T3：本道题的「朗诵一遍」提示（**只对需要拼写的题型显示**）。
+   *
+   * 用户明确要求：语法填空 / 写句子显示，**选择题与判断正误不显示**
+   * （那两种题型的选项已经给出来了，念一遍帮不上忙）。
+   * 判据集中在 `shouldShowHint()`，本文件不自己写题型分支判断。
+   *
+   * 念什么：`contextWord`（这道题关联的那个英文词）。它是这张卡这一轮要掌握的
+   * 具体词，也是用户真正想不起来时最需要听的那个；没关联语境词时退回不显示按钮
+   * （宁可不给提示，也不要念一整句题干 —— 那等于把答案读出来）。
+   */
+  const hint: HintButton | null =
+    shouldShowHint(q.type as 'spell' | 'fill' | 'sentence' | 'choice' | 'judge') && q.contextWord.trim() !== ''
+      ? createHintButton(() => q.contextWord)
+      : null;
+
+  /**
+   * 提交：把 hintUsed 一起交出去。
+   *
+   * 关键点：`hint.used()` 必须在**推进到下一题之前**读 —— 下一题会重建组件、
+   * 提示状态随之复位（这正是「hintUsed 只在当前这道题的内存里」的落地方式）。
+   */
+  const submit = (value: string): void => handlers.onSubmit(value, hint?.used() ?? false);
 
   if (q.type === 'choice') {
     // 选择题：从题干里找 A/B/C/D 选项行（AI 一般写成 "A. xxx"）
@@ -153,6 +185,10 @@ function renderAnswerInput(q: KcQuestion, answer: string, handlers: KcExamTakerH
   //（用户明确要求「Enter 要一直有用」）。散在各处监听正是当初「时灵时不灵」的原因：
   // 填空题认 Enter、选择题不认、评分页也不认。
   box.appendChild(actions);
+  // ★ T3：提示行排在提交按钮下方（fill / sentence 才有）
+  if (hint !== null) {
+    box.appendChild(h('div', { class: 'row center kc-hint-row' }, hint.el, hintNoteEl(hint)));
+  }
   // RULES-R1: 纯 UI 延迟（等渲染完再把光标放进输入框），与动画/过渡同类，不是答题计时
   window.setTimeout(() => el.focus(), 30);
   return box;

@@ -1847,3 +1847,70 @@ body {
   font-size: 13px;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   T3 · 考核提示改为「朗诵一遍」 + 「提示后算作未通过」设置
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/*
+ * 「🔊 朗诵一遍」按钮。
+ * 为什么不用 .btn-primary：它是**辅助**动作，视觉上不能压过「提交」。
+ * 尺寸按最小触摸热区来（DEVICE.minTapSize = 44px 的口径），手机上要好点。
+ */
+.btn-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper-bg);
+  color: var(--fg);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.btn-hint:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/*
+ * 朗读不可用时的轻提示（按钮旁边的一行小字）。
+ * 用「只提示、不弹窗」的方式，避免遮挡作答卡片（见 HintButton.ts 的注释）。
+ */
+.hint-note {
+  font-size: 12px;
+  color: var(--warn);
+}
+
+/* 提示所在的那一行：按钮 + 轻提示，居中排在提交按钮下方 */
+.mem-hint-row,
+.spell-hint-row {
+  gap: 10px;
+  margin-top: 2px;
+}
+
+/* 「提示后算作未通过」的单选组 */
+.radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.radio-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.radio-row input[type='radio'] {
+  /* 触摸热区：手机上 16px 的圆点太难戳 */
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+
+

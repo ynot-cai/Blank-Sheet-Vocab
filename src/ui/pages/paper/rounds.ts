@@ -4,6 +4,7 @@ import type { Session, Settings, Word } from '../../../core/types';
 import { button, h } from '../../dom';
 import type { AnswerCardActions, AnswerComparison } from './AnswerCard';
 import { showAnswerCard } from './AnswerCard';
+import { createHintButton, hintNoteEl, resolvePass } from '../../components/HintButton';
 import type { PaperStage } from './PaperStage';
 
 /** 一轮作答的宿主（flow 提供） */
@@ -136,6 +137,15 @@ export async function runMemorizeRound(host: RoundHost, ids: string[]): Promise<
       );
     }
     box.appendChild(h('div', { class: 'row center' }, submitBtn));
+    /**
+     * ★ T3：默写环节的「朗诵一遍」提示。
+     *
+     * 放在提交按钮下面：用户想不起来英文时可以点它听一遍（题目给的是中文释义，
+     * 听发音正好对上「从中文想出英文」这个考察目标）。
+     * 是否记未通过由设置 `practice.hintFails` 与 `hintUsed` 共同决定（见 resolvePass）。
+     */
+    const hint = createHintButton(() => word.en);
+    box.appendChild(h('div', { class: 'row center mem-hint-row' }, hint.el, hintNoteEl(hint)));
     overlay.appendChild(box);
     // ★ 内容填完再定位：遮罩位置要按「整块卡片都在视口内」来夹（M2 之后手机上
     //   词分两列，原落点模式的卡片会跑出屏幕左边 —— 见 PaperStage 的 clampOverlayLeft）
@@ -158,7 +168,14 @@ export async function runMemorizeRound(host: RoundHost, ids: string[]): Promise<
       if (value === '') return false;
       return senses.some((s) => senseMatch(value, s));
     });
-    const passed = results.every(Boolean);
+    const answerCorrect = results.every(Boolean);
+    /**
+     * ★ T3：先按 R2 规则判出 answerCorrect，再由「提示后算不算未通过」决定 pass。
+     *   设置开启且用过提示时，**哪怕答对也记未通过**（场景 C，本次改造的核心语义）。
+     *   `hintUsed` 只活在**这道题**的内存里（下面这个局部变量），题目结束即丢弃 ——
+     *   不写库、不新增任何持久化的提示统计字段（用户明确要求）。
+     */
+    const passed = resolvePass(answerCorrect, hint.used(), host.settings.practice.hintFails);
     // ★ T2：先记「考了一次」（分母），未通过时 recordExam 内部会再记一次失败（分子）
     host.recordExam(id, passed);
 
@@ -174,27 +191,27 @@ export async function runMemorizeRound(host: RoundHost, ids: string[]): Promise<
 }
 
 /**
- * 把英文掩码成提示形式：先显示首字母，再显示前 3 个字母，其余字母变下划线（空格/标点保留）。
- * @param en 英文
- * @param prefix 显示前几个字母
+ * ⚠️ 这里原来有一个 `maskEn(en, prefix)`：「先显示首字母，再显示前 3 个字母，
+ * 其余变下划线」的**字母掩码提示**。
+ *
+ * ★ T3 把它**删掉了**（不是留着不用）：用户明确要求「原来的『首字母+长度』提示
+ *   已消失」，提示改成「朗诵一遍」念出整个单词。
+ *   两种提示同时存在于代码里的风险是真实存在的 —— 后来者很容易在某个新题型里
+ *   顺手把 `maskEn` 接回去，而那条路径会**直接泄露答案的字母**，
+ *   与「听发音自己拼」的考察目标相反。删掉就没有这个可能了。
  */
-export function maskEn(en: string, prefix: number): string {
-  let seen = 0;
-  return en
-    .split('')
-    .map((ch) => {
-      if (/\s/.test(ch)) return ' ';
-      if (!/[a-zA-Z]/.test(ch)) return ch;
-      seen += 1;
-      return seen <= prefix ? ch : '_';
-    })
-    .join('');
-}
 
 /**
  * 拼写环节一轮：在原落点（或居中偏上）显示全部中文意思，要求填英文。
- * 点过「看提示」就算未通过；判分忽略大小写和首尾空格，完全匹配才算对。
+ * 判分忽略大小写和首尾空格，完全匹配才算对。
  * 同样走「提交 → 答案卡 → 点击继续」闭环。
+ *
+ * ★ T3：提示从「首字母 + 单词长度」（`maskEn` 那套）**换成了「朗诵一遍」** ——
+ *   用户明确要求「点提示 → 把这个单词朗诵一遍」，不再泄露字母。
+ *   于是旧实现里那条「点过提示就算未通过」的硬规则也交给设置决定
+ *   （`practice.hintFails`，默认「不算」，见 resolvePass）——
+ *   否则「提示只是辅助」这个新默认值在拼写环节就失效了。
+ *
  * @param host 宿主
  * @param ids 本轮抽出的词 id
  */
@@ -211,17 +228,8 @@ export async function runSpellRound(host: RoundHost, ids: string[]): Promise<voi
     const box = h('div', { class: 'memorize-box' });
     box.appendChild(h('div', { class: 'spell-meanings', text: meanings }));
 
-    let hintCount = 0;
-    let hintUsed = false;
-    const hintLabel = h('span', { class: 'spell-hint-text', text: '' });
-    const hintBtn = button('看提示', () => {
-      hintCount += 1;
-      hintUsed = true;
-      const prefix = hintCount >= 2 ? 3 : 1;
-      hintLabel.textContent = maskEn(word.en, prefix);
-      if (hintCount >= 2) hintBtn.textContent = '再提示没有更多了';
-    });
-    hintBtn.id = 'spell-hint';
+    // ★ T3：「朗诵一遍」——念单词本身，不念音标、不念中文
+    const hint = createHintButton(() => word.en);
 
     const input = h('input', { class: 'input spell-input', type: 'text', placeholder: '拼写英文' });
     input.id = 'spell-input';
@@ -240,7 +248,7 @@ export async function runSpellRound(host: RoundHost, ids: string[]): Promise<voi
     });
 
     box.appendChild(h('div', { class: 'row center' }, input, submitBtn));
-    box.appendChild(h('div', { class: 'row center' }, hintBtn, hintLabel));
+    box.appendChild(h('div', { class: 'row center spell-hint-row' }, hint.el, hintNoteEl(hint)));
     overlay.appendChild(box);
     // ★ 内容填完再定位（同记忆环节：卡片必须整块在视口内）
     host.stage.repositionOverlay();
@@ -254,12 +262,23 @@ export async function runSpellRound(host: RoundHost, ids: string[]): Promise<voi
     if (host.isAborted()) return;
 
     const value = input.value.trim();
-    const ok = !hintUsed && value.toLowerCase() === word.en.trim().toLowerCase();
+    const answerCorrect = value.toLowerCase() === word.en.trim().toLowerCase();
+    /**
+     * ★ T3：拼写的判分同样走统一的 resolvePass。
+     *
+     * 旧实现是硬编码的 `!hintUsed && …`（点过提示必挂），与新增的设置项
+     * 「提示后算作未通过」（默认「否」）直接冲突 —— 留着旧写法会让默认值在拼写环节失效。
+     * 现在默认行为变成「提示只是辅助」：听一遍发音仍然要靠自己拼对；
+     * 想恢复旧口径的用户把设置拨到「是」即可（那时才是「用了提示就记未通过」）。
+     */
+    const passed = resolvePass(answerCorrect, hint.used(), host.settings.practice.hintFails);
     // ★ T2：拼写环节同样要记「考了一次」（一期两条考察路径：默写与拼写，都得累加）
-    host.recordExam(id, ok);
+    host.recordExam(id, passed);
 
+    // 答案卡上的对错标记用**最终判定**（开了提示算未通过时，答对也要显示为错，
+    // 否则用户会看到「绿勾 + 却记了一次未通过」这种自相矛盾的反馈）
     await new Promise<void>((resolve) =>
-      showAnswerCard(word, [{ input: value, ok }], resolve, host.cardActionsFor?.(word)),
+      showAnswerCard(word, [{ input: value, ok: passed }], resolve, host.cardActionsFor?.(word)),
     );
     if (host.isAborted()) return;
   }

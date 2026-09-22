@@ -1,6 +1,12 @@
 import { checkbox, h, select, textInput } from '../../dom';
 import { currentSettings, patchSettings } from './ctx';
 
+/** ★ T3：考核分组里「提示后算作未通过」的两个取值（用 radio 表达二选一更贴用户原话） */
+const HINT_FAILS_OPTIONS = [
+  { value: false, label: '否 —— 提示只是辅助，看答案对错（默认）' },
+  { value: true, label: '是 —— 用了提示就记一次未通过' },
+] as const;
+
 /**
  * D 区：记忆与练习（记忆环节位置、朗读设置）。
  */
@@ -94,6 +100,49 @@ export function renderPracticeSection(): HTMLElement {
         { placeholder: 'en-US' },
       ),
       h('span', { class: 'field-hint', text: '一般用 en-US；想听英式可填 en-GB' }),
+    ),
+  );
+
+  // ── ★ T3：考核分组的「提示后算作未通过」──
+  wrap.appendChild(h('div', { class: 'divider' }));
+  wrap.appendChild(h('h4', { class: 'sub-title', text: '考核提示' }));
+
+  /**
+   * 单选组：用原生 radio 而不是下拉框。
+   *
+   * 为什么：这一项用户原话就是「是 / 否」两个选项，radio 让两个选项和它们的后果
+   * 同时可见（下拉框要展开才看得到「否」是什么意思）。
+   */
+  const hintFailsBox = h('div', { class: 'radio-group' });
+  hintFailsBox.dataset.role = 'hint-fails';
+  for (const opt of HINT_FAILS_OPTIONS) {
+    const input = h('input', {
+      type: 'radio',
+      name: 'hint-fails',
+      value: opt.value ? 'yes' : 'no',
+      checked: settings.practice.hintFails === opt.value,
+    });
+    input.addEventListener('change', () => {
+      if (!input.checked) return;
+      void patchSettings({ practice: { ...currentSettings().practice, hintFails: opt.value } });
+    });
+    hintFailsBox.appendChild(
+      h('label', { class: 'radio-row' }, input, h('span', { text: opt.label })),
+    );
+  }
+  wrap.appendChild(
+    h(
+      'div',
+      { class: 'field' },
+      h('span', { class: 'field-label', text: '提示后算作未通过' }),
+      hintFailsBox,
+      h(
+        'span',
+        { class: 'field-hint' },
+        '说明：「提示」指考核卡片上的「🔊 朗诵一遍」。此规则**只对开启之后的考核生效**，' +
+          '不会改变已记录的历史次数（拨动开关不会让任何旧数据变化）。默认「否」：' +
+          '听了发音仍然要靠自己答对才算通过。',
+      ),
     ),
   );
 
