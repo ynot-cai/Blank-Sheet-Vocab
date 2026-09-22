@@ -72,6 +72,8 @@ export function draftToWord(draft: DraftWord, sourceId: string, priority: number
       lastReviewAt: null,
       learnedAt: null,
       reviewPriority: 0,
+      // T2：新词从 0 起算（已记录、确实考过 0 次）
+      examCount: 0,
     },
     status: 'unlearned',
     priority: normalizeWordPriority(priority),

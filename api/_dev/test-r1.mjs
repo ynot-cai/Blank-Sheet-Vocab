@@ -848,7 +848,12 @@ try {
           });
         };
       }))()`);
-      check('应用把老库升到了 v6', afterMigrate.version === 6, String(afterMigrate.version));
+      /**
+       * ★ T2 起库版本是 7（v7 给老词补 `attrs.examCount`，见 dbSchema.migrateWordRows）。
+       *   这里断言的是「应用把老库升到了**当前**版本」，所以绑 DB_VERSION 而不是写死数字
+       *   —— 以后再抬版本时，只要迁移逻辑还对，这条断言就仍然有意义。
+       */
+      check('应用把老库升到了当前版本（v7）', afterMigrate.version === 7, String(afterMigrate.version));
       check('words 表补上了 priority 索引', afterMigrate.indexNames.includes('priority'), JSON.stringify(afterMigrate.indexNames));
       check('老数据一条都没丢（还是 2 条）', afterMigrate.rows.length === 2, JSON.stringify(afterMigrate.rows));
       check(

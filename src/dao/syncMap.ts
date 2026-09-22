@@ -77,6 +77,16 @@ const EMPTY_ATTRS: Attrs = {
   lastReviewAt: null,
   learnedAt: null,
   reviewPriority: 0,
+  /**
+   * ★ T2：`examCount` 的兜底值是 **null 而不是 0**。
+   *
+   * 差别很重要：`null` 表示「这个词没有总考核次数的记录」（老数据 / 别的设备还没升级），
+   * 而 `0` 表示「确实考过 0 次」。迁移（dbSchema 的 migrateToV7ExamCount）
+   * 只处理 `null`，所以从云端拉回来的老行会在本机被正确回填；
+   * 要是这里填 0，那些词就会被当成「已记录、没考过」，永远拿默认失败率 0.5，
+   * 而它们的 `failCountTotal` 明明是有的 —— 历史失败率就白丢了。
+   */
+  examCount: null,
 };
 
 /** 合法的单词状态 */
@@ -115,6 +125,22 @@ function parseObject(text: string | null): Record<string, unknown> {
 }
 
 /**
+ * ★ T2：把云端/老备份里的 `examCount` 归一化成 `number | null`。
+ *
+ * - 合法数字 → 原样（负数按 0 处理，`Math.max` 兜一层）；
+ * - 缺字段 / null / 非数字 → `null`（保持「没有记录」的语义，等迁移回填）。
+ *
+ * 为什么不在这里直接回填成 `failCountTotal × 2`：回填是**一次性迁移**的职责
+ * （见 `core/dbSchema.ts` 的 migrateToV7ExamCount），放在读取路径上会让
+ * 「每次读云端数据」都变成一次改写，而且和迁移的幂等性判断打架。
+ * @param raw 原始值
+ */
+function normalizeExamCount(raw: unknown): number | null {
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return null;
+  return Math.max(0, raw);
+}
+
+/**
  * 服务器行 → 本地 Word。
  * @param row 服务器返回的一行
  */
@@ -129,7 +155,7 @@ export function toLocalWord(row: ServerWord): Word {
     senses: parseArray<Sense>(row.senses),
     sourceId: row.source_id ?? '',
     rawSources: parseArray<RawSourceRecord>(row.raw_sources),
-    attrs: { ...EMPTY_ATTRS, ...attrsRaw } as Attrs,
+    attrs: { ...EMPTY_ATTRS, ...attrsRaw, examCount: normalizeExamCount(attrsRaw['examCount']) },
     status,
     // R1：老服务器行没有 priority 列（可能是别的设备还没升级）→ 归一化成默认值 3
     priority: normalizeWordPriority(row.priority),

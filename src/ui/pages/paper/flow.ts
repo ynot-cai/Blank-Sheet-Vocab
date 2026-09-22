@@ -31,6 +31,19 @@ export interface FlowOptions {
   /** 复习：当前组达标（全部出现 + 每词记忆达标）后回调（页面弹「继续下一组 / 休息」） */
   onGroupDone?: () => void;
   /**
+   * ★ T2：复习模式的「结束复习」出口。
+   *
+   * 为什么需要它：复习页现在只有「保存并退出」（= 中断，不写复习记录）与
+   * 「背完了」（= 写回 `reviewCount / lastReviewAt / 优先度`）两种收尾方式，
+   * 而 `背完了` 在 `mode === 'learn'` 时才显示 —— 复习模式于是**根本没有
+   * 「正常结束并写回数据」的按钮**，用户复习完一圈只能「保存并退出」，
+   * 复习次数永远不涨。
+   *
+   * 由页面决定何时可用（复习页按「这次取出来的词是不是都复习过了」判断），
+   * 流程只负责在合适的时候调用它。
+   */
+  onRequestFinish?: () => void;
+  /**
    * 词被斩时通知（复习页要从当前组与后续组移除）。
    * ★ 返回值是「撤销这次移除」的函数：RULES-R3 的撤销要把它调回来，
    *   否则词虽然复活了，却不在复习分组里（下一组就少了它）。
@@ -45,6 +58,14 @@ export interface PaperFlow {
   root: HTMLElement;
   startMemorize: () => void;
   destroy: () => void;
+  /**
+   * ★ T2：初始化（载词 + 恢复落点/进度）完成的 Promise。
+   *
+   * 为什么要暴露：初始化是异步的，完成之前 `words` 是空的 ——
+   * 那时按钮状态是错的（「再背一个」会显示成「已全部出现」）。
+   * 重新挂载流程的调用方要 `await flow.ready` 之后再判断界面状态。
+   */
+  ready: Promise<void>;
 }
 
 /**
@@ -56,6 +77,7 @@ const ROUND_LABELS: Record<string, string> = {
   '保存并退出': '存',
   '再次记忆': '忆',
   '再背一个 (Enter)': '背',
+  '再复习一个 (Enter)': '复',
   '重新开始': '重',
 };
 
@@ -65,6 +87,7 @@ const ROUND_SUB_LABELS: Record<string, string> = {
   '保存并退出': '保存',
   '再次记忆': '记忆',
   '再背一个 (Enter)': '再背',
+  '再复习一个 (Enter)': '再复习',
   '重新开始': '重开',
 };
 
@@ -80,6 +103,8 @@ function shortNextLabel(btn: HTMLButtonElement): string {
   if (text.startsWith('纸上放不下')) return '纸满';
   if (text.startsWith('已全部出现')) return '已满';
   if (text.startsWith('再背一个')) return '再背';
+  // ★ T2：复习模式的同一个按钮（文案不同，行为一致）
+  if (text.startsWith('再复习一个')) return '再复习';
   return ROUND_SUB_LABELS[btn.dataset.fullLabel ?? ''] ?? '';
 }
 
@@ -172,7 +197,16 @@ export function createPaperFlow(opts: FlowOptions): PaperFlow {
   const btnDone = labeledButton('背完了', () => void finishAll(), { variant: 'primary', class: 'paper-done hidden' });
   const btnSave = labeledButton('保存并退出', () => void saveAndExit());
   const btnAgain = labeledButton('再次记忆', () => startMemorize());
-  const btnNext = labeledButton('再背一个 (Enter)', () => nextAction(), { variant: 'primary', class: 'paper-next' });
+  /**
+   * ★ T2：「再背一个」在复习模式下叫「再复习一个」。
+   *
+   * 两者是**同一个按钮、同一套逻辑**（把词单里的下一个词放上纸），
+   * 只有文案不同 —— 用户明确要求复习与背诵的按钮保持一致，
+   * 而「再背一个」出现在复习页会让人以为走错了流程。
+   * 短的圆按钮文案与 `ROUND_LABELS` / `shortNextLabel()` 的映射在下面同步加了两条。
+   */
+  const nextLabelBase = mode === 'review' ? '再复习一个' : '再背一个';
+  const btnNext = labeledButton(`${nextLabelBase} (Enter)`, () => nextAction(), { variant: 'primary', class: 'paper-next' });
   // ★ 用户要求「下次点击直接开始」之后，续跑是自动的，于是必须有一个显式的
   //   「把这一轮丢掉、从零开始」入口，否则保存过的进度就再也甩不掉了。
   //   这是**破坏性**操作（丢掉位置与每词记忆遍数），所以保留二次确认——
@@ -262,11 +296,44 @@ export function createPaperFlow(opts: FlowOptions): PaperFlow {
   // 解锁只解决「能不能出声」，不影响流程——真正的第一个词由「再背一个」带出来。
   mountSpeechGate(root, () => undefined);
 
-  /** 当前组要背的词 id（learn = 全部 wordIds；review = 当前组） */
-  const groupIds = (): string[] => (mode === 'learn' ? session.wordIds : session.groups[opts.groupIndex] ?? []);
+  /**
+   * 当前该背/该复习的词 id。
+   *
+   * - `learn`：整份 `wordIds`（背诵没有分组概念）；
+   * - `review`：**优先用 `wordIds`**。
+   *
+   * ★ T2 修的一个真 bug：以前 review 一律读 `session.groups[opts.groupIndex]`，
+   *   而 T2 的复习页已经不给用户看分组了（`groups` 传空数组、`groupCount` 报 1），
+   *   于是 `groupIds()` 永远返回空数组 → `words` 为空 → 纸面容量 0 →
+   *   界面上「已出现 0/0」、连「再复习一个」按钮都不出现（显示成「已全部出现」）。
+   *   实测复现：库里有 2 个已背词、会话 `wordIds` 也对，但复习页一个字都没有。
+   *
+   *   现在改成：`wordIds` 就是本轮词单（T2 的复习页正是这么维护它的，
+   *   分批追加也是往它里面 push）。只有当调用方**显式**给了分组
+   *   （老存档续跑，`groups` 非空）时才按分组取，保持向后兼容。
+   */
+  const groupIds = (): string[] => {
+    if (mode === 'learn') return session.wordIds;
+    const group = session.groups?.[opts.groupIndex];
+    return group !== undefined && group.length > 0 ? group : session.wordIds;
+  };
 
   /** 是否处于「每 N 个新词 → 按钮变记忆」状态 */
   const batchReady = (): boolean => sinceBatch > 0 && sinceBatch >= settings().memorizeEvery;
+
+  /**
+   * 复习模式的「这次取出来的词都复习过了吗」。
+   *
+   * 判定口径与 `allQualified()` 一样（每个词都上过纸 + 记忆遍数达标），
+   * 但**只看纸上的词**：复习是「点一下多复习一个」推进的，
+   * 词单里排在后面、还没轮到的词不算 —— 用户随时可以点「背完了」结束，
+   * 把已经复习的这一批写回数据（剩下的留在词库里，下次还会被抽到）。
+   */
+  const reviewQualified = (): boolean => {
+    const target = settings().memorizeTargetCount;
+    const alive = words.filter((w) => session.shownIds.includes(w.id));
+    return mode === 'review' && alive.length > 0 && alive.every((w) => (session.memorizeCount[w.id] ?? 0) >= target);
+  };
 
   /** 全部词都记忆达标（「背完了」出现条件） */
   const allQualified = (): boolean => {
@@ -309,13 +376,22 @@ export function createPaperFlow(opts: FlowOptions): PaperFlow {
     const cap = Math.min(words.length, stage.capacity());
     const paperFull = browseIndex >= cap;
     const qualified = allQualified();
+    const reviewDone = reviewQualified();
 
     progress.textContent =
-      `${mode === 'review' ? `第 ${opts.groupIndex + 1}/${opts.groupCount} 组 · ` : ''}` +
+      `${mode === 'review' ? '复习 · ' : ''}` +
       `已出现 ${browseIndex}/${cap}${cap < words.length ? '（纸面已满）' : ''} · 每词已记忆 ${minMem}/${target}` +
-      (mode === 'learn' && qualified ? ' · 可以点「背完了」' : '');
+      (mode === 'learn' && qualified ? ' · 可以点「背完了」' : '') +
+      (mode === 'review' && reviewDone ? ' · 可以点「背完了」结束复习' : '');
 
-    btnDone.classList.toggle('hidden', !(mode === 'learn' && qualified));
+    // ★ T2：复习模式也要有「背完了」出口 —— 否则复习完一圈只能「保存并退出」，
+    //   而那个是不写复习记录的（reviewCount / lastReviewAt 永远不涨）。
+    if (mode === 'learn') {
+      btnDone.classList.toggle('hidden', !qualified);
+    } else {
+      btnDone.textContent = '背完了';
+      btnDone.classList.toggle('hidden', !reviewDone);
+    }
     btnSave.disabled = false; // 任何时刻都能保存退出（一轮进行中会先中断本轮）
     btnAgain.disabled = roundBusy || alive.length === 0 || session.shownIds.length === 0;
     btnNext.disabled = roundBusy || (paperFull && !batchReady());
@@ -325,7 +401,7 @@ export function createPaperFlow(opts: FlowOptions): PaperFlow {
         ? cap < words.length
           ? '纸上放不下了'
           : '已全部出现'
-        : '再背一个 (Enter)';
+        : `${nextLabelBase} (Enter)`;
     syncRoundControls();
   };
 
@@ -558,14 +634,30 @@ export function createPaperFlow(opts: FlowOptions): PaperFlow {
     stage.hideOverlay();
     refreshUi();
 
+    /**
+     * 记一次未通过（failDeltas +1、加入 failedIds）。
+     *
+     * ★ T2：抽成独立函数而不是内联在 host 里，是为了让 `recordExam` 能**直接调用它**
+     *   而不是绕回 `host.recordFail` —— 后者在 host 对象字面量的初始化过程中
+     *   属于「还没赋值的引用」，读起来像 bug，也不必要地依赖初始化顺序。
+     */
+    const recordFail = (id: string): void => {
+      session.failDeltas[id] = (session.failDeltas[id] ?? 0) + 1;
+      if (!session.failedIds.includes(id)) session.failedIds.push(id);
+    };
+
     const host: RoundHost = {
       session,
       settings: settings(),
       stage,
       getWord: (id) => wordMap.get(id),
-      recordFail: (id) => {
-        session.failDeltas[id] = (session.failDeltas[id] ?? 0) + 1;
-        if (!session.failedIds.includes(id)) session.failedIds.push(id);
+      recordFail,
+      // ★ T2：每次判分都记一次总考核次数（分母），未通过时再记一次失败（分子）。
+      //   两者在同一处累加，杜绝「只加 failCount 不加 examCount」这类漏项。
+      recordExam: (id, passed) => {
+        session.examDeltas = session.examDeltas ?? {};
+        session.examDeltas[id] = (session.examDeltas[id] ?? 0) + 1;
+        if (!passed) recordFail(id);
       },
       recordShown: (id) => {
         // 词在答题途中被斩掉了就不算「已作答」：它已经不在本轮词单里，
@@ -659,7 +751,7 @@ export function createPaperFlow(opts: FlowOptions): PaperFlow {
     await exitMidway(session);
     toastOk(
       mode === 'review'
-        ? `已保存进度，下次从第 ${opts.groupIndex + 1} 组继续`
+        ? '已保存复习进度，下次从「复习」继续'
         : '已保存进度（词单、位置与每词记忆次数）',
     );
     navigate('/home');
@@ -671,9 +763,22 @@ export function createPaperFlow(opts: FlowOptions): PaperFlow {
    * ★ 归档的**只有本轮上过纸的词**（`shownIds`）——用户报过严重 bug：
    *   只点了 4 个词上纸，点「背完了」却把整个词库都标成了已背。
    *   队列里没轮到的词必须原样留着（仍是「未背」），下次继续背。
+   *
+   * ★ T2：复习模式走另一个出口（`opts.onRequestFinish`，由复习页写回复习数据），
+   *   因为两者的收尾语义完全不同 —— 背诵是「标记已背 + 归档未通过次数」，
+   *   复习是「更新 lastReviewAt / reviewCount / 优先度」，混在一起会互相写错字段。
    */
   const finishAll = async (): Promise<void> => {
     if (destroyed || roundBusy || flowMode !== 'browse') return;
+    if (mode === 'review') {
+      if (!reviewQualified()) {
+        toastWarn('先复习到词，「背完了」才会出现');
+        return;
+      }
+      await flushEdits();
+      opts.onRequestFinish?.();
+      return;
+    }
     if (!allQualified()) {
       toastWarn('每个词都记忆达标后，「背完了」才会出现');
       return;
@@ -738,8 +843,15 @@ export function createPaperFlow(opts: FlowOptions): PaperFlow {
    * 现在的口径：**只要「上过纸的词」有落点，就恢复**；恢复不了的那几个
    * （老存档 / 中途换过词）当场补一个落点，也照样画出来。
    * 一句话：`shownIds` 里有几个词，重进就必须看到几个词 —— 绝不允许白纸。
+   *
+   * ★ T2：抽成 `initFlow()` 并把它的 Promise 作为 `flow.ready` 返回。
+   *   为什么必须能 await：初始化是**异步**的（要先 `dao.words.getAll()`），
+   *   在它完成之前 `words` 还是空数组 —— 此时 `refreshUi()` 算出来的容量是 0，
+   *   「再背一个 / 再复习一个」按钮会显示成 **「已全部出现」且带着纸面已满的状态**，
+   *   页面上一个字都没有。调用方（复习页在「点一下多复习一个」之后会重新挂载流程）
+   *   必须等 `ready` 再继续，否则会拿到一个「空纸 + 没有可用按钮」的界面。
    */
-  void (async () => {
+  const initFlow = async (): Promise<void> => {
     const all = await dao.words.getAll();
     wordMap = new Map(all.map((w) => [w.id, w]));
     words = groupIds()
@@ -772,7 +884,19 @@ export function createPaperFlow(opts: FlowOptions): PaperFlow {
     stage.applySettings();
     refreshUi();
     if (opts.startInMemorize) startMemorize();
-  })();
+  };
 
-  return { root, startMemorize, destroy };
+  /**
+   * 初始化 Promise：`initFlow()` 一抛错就吞掉并打日志。
+   *
+   * 为什么不 `void initFlow()` 了事：那样一个未处理的 rejection 会冒到
+   * `window.onunhandledrejection` → 全局兜底错误页（整个应用被遮罩盖住）。
+   * 白纸流程加载失败应当只影响这一页，不该把用户锁死。
+   */
+  const initPromise: Promise<void> = initFlow().catch((err: unknown) => {
+    console.error('[paper/flow] 初始化失败', err);
+    toastError('白纸加载失败，可以点「保存并退出」回到首页再试');
+  });
+
+  return { root, startMemorize, destroy, ready: initPromise };
 }

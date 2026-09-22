@@ -1,4 +1,5 @@
 import { humanizeDays, wordPriorityOf } from '../../../core/model';
+import { getFailRate } from '../../../core/priority';
 import type { Attrs, Source, Word, WordStatus } from '../../../core/types';
 import { WORD_PRIORITY_OPTIONS } from '../../../core/types';
 import { button, h } from '../../dom';
@@ -180,7 +181,14 @@ export function renderListTable(
     });
     failBtn.addEventListener('click', () => handlers.onEditNumber(word, 'failCount'));
     failCell.appendChild(failBtn);
-    failCell.appendChild(h('div', { class: 'sub', text: `累计 ${word.attrs.failCountTotal}` }));
+    // ★ T2：副行显示「真实累计失败 / 总考核次数 / 失败率」——失败率是新公式的口径
+    const exams = word.attrs.examCount;
+    failCell.appendChild(
+      h('div', {
+        class: 'sub',
+        text: `累计 ${word.attrs.failCountTotal} · 考 ${typeof exams === 'number' ? exams : '未记录'} 次 · 失败率 ${getFailRate(word.attrs).toFixed(2)}`,
+      }),
+    );
     tr.appendChild(failCell);
 
     // ③ 复习次数

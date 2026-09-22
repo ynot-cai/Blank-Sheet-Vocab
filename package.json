@@ -37,6 +37,7 @@
     "test:m2-ui": "node api/_dev/test-m2-ui.mjs",
     "test:s3-ui": "node api/_dev/test-s3-ui.mjs",
     "test:t1-ui": "node api/_dev/test-t1-ui.mjs",
+    "test:t2-ui": "node api/_dev/test-t2-ui.mjs",
     "test:pwa": "node api/_dev/test-pwa.mjs",
     "test:about": "node api/_dev/test-about.mjs",
     "test:build": "node api/_dev/test-build.mjs",

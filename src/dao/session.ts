@@ -14,6 +14,8 @@ interface SessionRow {
   memorizeCount: Session['memorizeCount'];
   failedIds: string[];
   failDeltas: Session['failDeltas'];
+  /** ★ T2：本次会话内每词累计的总考核次数增量（正常结束时写回 attrs.examCount） */
+  examDeltas: Record<string, number>;
   /** 上一轮记忆里没通过的词（记忆抽词的「额外项」依据，见 core/pick.ts） */
   lastRoundFailedIds: string[];
   spellEnabled: boolean;
@@ -25,7 +27,8 @@ interface SessionRow {
 /**
  * 保存会话（「保存并退出」走这里）。
  * 现在会持久化：wordIds / placements（每个单词在白纸上的位置）/
- * shownIds（已出现的词）/ memorizeCount（每词记忆次数）/ failedIds / failDeltas / groupId 等。
+ * shownIds（已出现的词）/ memorizeCount（每词记忆次数）/ failedIds / failDeltas /
+ * examDeltas（T2 的总考核次数增量）/ groupId 等。
  * 只有 groups（复习分组）不落库——复习续跑时会按 wordIds 重新分组。
  * @param s 会话对象
  */
@@ -40,6 +43,7 @@ export async function saveSession(s: Session): Promise<void> {
     memorizeCount: { ...s.memorizeCount },
     failedIds: [...s.failedIds],
     failDeltas: { ...s.failDeltas },
+    examDeltas: { ...(s.examDeltas ?? {}) },
     lastRoundFailedIds: [...(s.lastRoundFailedIds ?? [])],
     spellEnabled: s.spellEnabled,
     groupId: s.groupId,
@@ -69,6 +73,8 @@ export async function loadSession(): Promise<Session | null> {
     spellEnabled: row.spellEnabled ?? false,
     failedIds: [...(row.failedIds ?? [])],
     failDeltas: { ...(row.failDeltas ?? {}) },
+    // ★ T2：老存档没有这个字段 → 空对象（当作「本次还没考核过任何词」）
+    examDeltas: { ...(row.examDeltas ?? {}) },
     // 老存档没有这个字段 → 空数组（当作「上一轮没有未通过的词」）
     lastRoundFailedIds: [...(row.lastRoundFailedIds ?? [])],
     groupId: row.groupId ?? 0,

@@ -1,18 +1,26 @@
-import { PRESETS, activeExpr, computePriority, validateExpr } from '../../../core/priority';
+import { activeExpr, computePriority, getFailRate, PRESETS, validateExpr } from '../../../core/priority';
 import type { PriorityPreset, Settings } from '../../../core/types';
 import * as dao from '../../../dao';
 import { button, h, select } from '../../dom';
 import { toastError, toastOk } from '../../components/Toast';
 import { currentSettings, patchSettings } from './ctx';
 
-/** 可点击插入的变量 */
-const VAR_CHIPS = [
-  'needSpell',
-  'failCount',
-  'failCountTotal',
-  'reviewCount',
-  'daysSinceReview',
-  'daysSinceLearned',
+/**
+ * 可点击插入的变量。
+ *
+ * ★ T2：`failRate` 排在最前面并标了「推荐」——它是 0~1 的**比率**，
+ * 也是这一轮改造的主口径；`failCount` / `failCountTotal` / `examCount` 是**次数**，
+ * 保留给高级用户，但混用会把量纲搞错（见下面的量纲提示）。
+ */
+const VAR_CHIPS: { name: string; hint: string }[] = [
+  { name: 'failRate', hint: '失败率 0~1（推荐）' },
+  { name: 'daysSinceReview', hint: '距上次复习的天数' },
+  { name: 'reviewCount', hint: '复习次数' },
+  { name: 'needSpell', hint: '是否要拼写（0/1）' },
+  { name: 'examCount', hint: '总考核次数' },
+  { name: 'failCount', hint: '未通过次数（封顶）' },
+  { name: 'failCountTotal', hint: '未通过次数（真实累计）' },
+  { name: 'daysSinceLearned', hint: '距首次背完的天数' },
 ];
 
 /**
@@ -69,13 +77,32 @@ export function renderPrioritySection(): HTMLElement {
   const chipBox = h('div', { class: 'chips' });
   for (const chip of VAR_CHIPS) {
     chipBox.appendChild(
-      button(chip, () => {
-        const start = textarea.selectionStart ?? textarea.value.length;
-        textarea.value = `${textarea.value.slice(0, start)}${chip}${textarea.value.slice(start)}`;
-        textarea.focus();
-      }, { variant: 'ghost', class: 'mini' }),
+      button(
+        chip.name,
+        () => {
+          const start = textarea.selectionStart ?? textarea.value.length;
+          textarea.value = `${textarea.value.slice(0, start)}${chip.name}${textarea.value.slice(start)}`;
+          textarea.focus();
+        },
+        { variant: 'ghost', class: 'mini', title: chip.hint },
+      ),
     );
   }
+
+  /**
+   * ★ T2：量纲提示。
+   *
+   * 为什么必须明说：`failRate` 是 0~1 的比率，`failCount` / `examCount` 是次数，
+   * 同一个系数配在两者上结果差一两个数量级。老用户手里可能已经有一份
+   * 「`failCount * 10`」时代的自定义表达式，切换口径后数值会变，得让人知道原因。
+   */
+  const unitNote = h(
+    'p',
+    { class: 'field-hint' },
+    '量纲提醒：failRate 是 0~1 的比率，failCount / failCountTotal / examCount 是次数 —— ' +
+      '同一个系数放在两者上结果会差一两个数量级。内置预设已全部改成失败率口径；' +
+      '如果你保存过自定义表达式，建议改用 failRate 并重新标定系数。',
+  );
 
   const checkLine = h('div', { class: 'test-result' });
   const saveBtn = button(
@@ -117,19 +144,28 @@ export function renderPrioritySection(): HTMLElement {
         }
         const table = h('table', { class: 'table' });
         table.appendChild(
-          h('thead', {}, h('tr', {}, h('th', { text: '单词' }), h('th', { text: '优先度' }), h('th', { text: '未通过 / 复习次数' }))),
+          h(
+            'thead',
+            {},
+            h('tr', {}, h('th', { text: '单词' }), h('th', { text: '优先度' }), h('th', { text: '失败率' }), h('th', { text: '未通过 / 总考核' }), h('th', { text: '复习次数' })),
+          ),
         );
         const tbody = h('tbody');
         const settingsNow: Settings = { ...currentSettings(), priority: { ...currentSettings().priority, customExpr: modeSelect.value === 'custom' ? exprNow : '' } };
         for (const w of items) {
           const value = computePriority(w, settingsNow);
+          const exams = w.attrs.examCount;
           tbody.appendChild(
             h(
               'tr',
               {},
               h('td', { text: w.en }),
               h('td', { text: value.toFixed(2) }),
-              h('td', { text: `${w.attrs.failCount} / ${w.attrs.reviewCount}` }),
+              // ★ T2：把失败率单独列出来 —— 它就是新公式里真正参与计算的那个数
+              h('td', { text: getFailRate(w.attrs).toFixed(3) }),
+              // 老词还没跑迁移时 examCount 是 null，如实显示成「未记录」而不是 0
+              h('td', { text: `${w.attrs.failCountTotal} / ${typeof exams === 'number' ? exams : '未记录'}` }),
+              h('td', { text: String(w.attrs.reviewCount) }),
             ),
           );
         }
@@ -144,6 +180,7 @@ export function renderPrioritySection(): HTMLElement {
     'div',
     { class: `stack${isCustom ? '' : ' hidden'}` },
     h('p', { class: 'note' }, '只允许数字运算和下面这些变量；保存前会做白名单校验，不合法的表达式不会被保存。'),
+    unitNote,
     textarea,
     chipBox,
     h('div', { class: 'row' }, saveBtn, calcBtn),

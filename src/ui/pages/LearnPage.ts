@@ -34,6 +34,9 @@ export function renderLearnPage(ctx?: RouteContext): HTMLElement {
     const flow = createPaperFlow({ session, mode: 'learn', groupIndex: 0, groupCount: 1 });
     page.replaceChildren(flow.root);
     registerCleanup(page, () => flow.destroy());
+    // ★ T2：等初始化完成（异步载词 + 恢复落点）。不等的话「再背一个」按钮
+    //   会在词库读回来之前显示成「已全部出现」，用户以为没词可背。
+    void flow.ready;
   };
 
   /**

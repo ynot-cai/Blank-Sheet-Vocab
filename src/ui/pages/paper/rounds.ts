@@ -16,6 +16,23 @@ export interface RoundHost {
   recordFail: (id: string) => void;
   /** 记一次已作答：memorizeCount +1、加入 shownIds */
   recordShown: (id: string) => void;
+  /**
+   * ★ T2：记一次**考核**（不论对错）。
+   *
+   * 累加规则（用户明确要求）：
+   * - 每次考核 `examCount += 1`；
+   * - 未通过时**额外** `failCount += 1`。
+   *
+   * ★ 为什么必须有一个集中的 `recordExam`，而不是让每个考察环节自己 +1：
+   *   以前只有「未通过」被记录（recordFail），答对的题**一点痕迹都不留** ——
+   *   于是「考了多少次」根本无法还原，失败率也就无从算起。
+   *   现在把「每次判分」统一走这一个口子，新增考察环节时只要调它就不会漏。
+   *   漏掉某条路径的后果是那个环节的词永远算不出失败率（分母恒为 0 → 一直用默认 0.5）。
+   *
+   * @param id 词 id
+   * @param passed 本次是否通过（false 会同时记一次未通过）
+   */
+  recordExam: (id: string, passed: boolean) => void;
   /** 用户点了「返回白纸」等中断信号 */
   isAborted: () => boolean;
   /**
@@ -142,7 +159,8 @@ export async function runMemorizeRound(host: RoundHost, ids: string[]): Promise<
       return senses.some((s) => senseMatch(value, s));
     });
     const passed = results.every(Boolean);
-    if (!passed) host.recordFail(id);
+    // ★ T2：先记「考了一次」（分母），未通过时 recordExam 内部会再记一次失败（分子）
+    host.recordExam(id, passed);
 
     const comparison: AnswerComparison[] = inputs.map((input, i) => ({
       input: input.value.trim(),
@@ -237,7 +255,8 @@ export async function runSpellRound(host: RoundHost, ids: string[]): Promise<voi
 
     const value = input.value.trim();
     const ok = !hintUsed && value.toLowerCase() === word.en.trim().toLowerCase();
-    if (!ok) host.recordFail(id);
+    // ★ T2：拼写环节同样要记「考了一次」（一期两条考察路径：默写与拼写，都得累加）
+    host.recordExam(id, ok);
 
     await new Promise<void>((resolve) =>
       showAnswerCard(word, [{ input: value, ok }], resolve, host.cardActionsFor?.(word)),

@@ -115,6 +115,12 @@ async function boot(): Promise<void> {
     // 二期的验收项（mastery 公式 / XSS 渲染 / 隔离）另挂一个入口：__kcselftest.run()
     const { attachKcSelfTest } = await import('./dev/kcSelftest');
     attachKcSelfTest();
+    // ★ T2：总考核次数回填的手动入口（控制台 `__t2BackfillExamCount()`）。
+    //   为什么要有：真实回填跑在 IndexedDB 的 v7 升级里，一旦怀疑「老词的失败率不对」，
+    //   需要一个不动库结构、可重复执行的排查入口 —— 它调的就是迁移那段逻辑本身（幂等）。
+    //   生产构建里这段被 DEV 分支整段剔除，也不会打进包里。
+    const { attachExamCountBackfill } = await import('./dev/t2Migrate');
+    attachExamCountBackfill();
   }
 
   // 布局测量入口（阶段 M1）：`window.__layoutProbe()` 量白纸上的真实 DOM 坐标。

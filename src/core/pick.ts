@@ -128,6 +128,40 @@ export function pickForReview(words: Word[], count: number, settings: Settings, 
 }
 
 /**
+ * ★ T2：按优先度排出**全部**可复习词（降序），排除已斩 / 未背 / 已在本次词单里的。
+ *
+ * 用途：「再复习一个」点一下多上一个词 —— 每次要的是「下一个该复习的词」。
+ *
+ * 排序与 {@link pickForReview} 完全一致（优先度降序，同分时更早复习的优先），
+ * 刻意共用同一套比较逻辑：两处各写一遍的话，会出现「批量抽词顺序 A、
+ * 逐个加词顺序 B」的不一致 —— 表现就是用户点了「再复习一个」，
+ * 拿到的不是刚才列表里的下一个。
+ *
+ * @param words 词库全量
+ * @param excludeIds 已经在本次词单里的词 id（不再重复上纸）
+ * @param settings 设置（读优先度表达式）
+ * @param now 当前时间戳
+ * @returns 排好序的候选词（调用方取第一个即可）
+ */
+export function sortReviewCandidates(
+  words: Word[],
+  excludeIds: ReadonlySet<string>,
+  settings: Settings,
+  now: number = Date.now(),
+): Word[] {
+  return words
+    .filter((w) => w.status !== 'chopped' && w.status !== 'unlearned' && !excludeIds.has(w.id))
+    .sort((a, b) => {
+      const pa = computePriority(a, settings, now);
+      const pb = computePriority(b, settings, now);
+      if (pb !== pa) return pb - pa;
+      const ta = a.attrs.lastReviewAt ?? 0;
+      const tb = b.attrs.lastReviewAt ?? 0;
+      return ta - tb;
+    });
+}
+
+/**
  * 分组：每组不超过 size 个，最后一组可以少。
  * 这里选择「顺序切分」而不是蛇形分配，原因：验收标准要求 65 个 → 3 组（30/30/5），
  * 蛇形分配会把词摊成 size 个小组，破坏「每组 ≤ reviewGroupSize」的分组模型；

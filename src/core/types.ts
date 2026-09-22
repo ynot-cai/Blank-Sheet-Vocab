@@ -7,8 +7,20 @@ import type { KcSettings } from './kcTypes';
 /** 单词状态：未背 / 学习中 / 已背 / 已斩 */
 export type WordStatus = 'unlearned' | 'learning' | 'learned' | 'chopped';
 
-/** 复习优先度预设：遗忘曲线型 / 未通过优先型 / 均衡型（自定义表达式通过 customExpr 表达） */
-export type PriorityPreset = 'forgetting' | 'failFirst' | 'balanced';
+/**
+ * 复习优先度预设。
+ *
+ * - `forgetting` 遗忘曲线型
+ * - `failFirst` 失败率优先型
+ * - `balanced` 均衡型
+ * - `failRateBalanced` ★ T2 新增：**失败率均衡型** —— 与 balanced 同量纲口径，
+ *   但把失败率的权重提高、去掉复习次数的降权，适合想「按错误率严格排序」的用户。
+ *   单独给一个预设而不是直接改 balanced，是为了**不动老用户的现有选择**：
+ *   已选 balanced 的人升级后公式不变（只是里面那个变量从次数换成了比率，见 PRESETS 注释）。
+ *
+ * 自定义表达式通过 `customExpr` 表达（非空时优先于这里的预设）。
+ */
+export type PriorityPreset = 'forgetting' | 'failFirst' | 'balanced' | 'failRateBalanced';
 
 /**
  * 来源优先级的排序方向。
@@ -66,6 +78,23 @@ export interface Attrs {
   lastReviewAt: number | null; // 属性4 上次复习时间戳
   learnedAt: number | null; // 属性5 首次背诵完成时间
   reviewPriority: number; // 属性6 复习综合优先度
+  /**
+   * ★ T2：**总考核次数** —— 这个词一共被考察过多少次（对 + 错都算一次）。
+   *
+   * 为什么需要它：优先度公式以前直接用 `failCount`（绝对次数），对老词不公平 ——
+   * 「考 2 次错 1 次」和「考 20 次错 5 次」的 `failCount` 是 1 和 5，老词看起来
+   * 更该复习，可它的失败率 25% 其实比新词的 50% 低。用户要求改成**比率**
+   * （`failRate = 失败次数 / 总考核次数`），分母就是它。
+   *
+   * 累加时机：**每一次判分都 +1**（不论对错），与 `failCount` 的累加在同一处
+   * （见 `ui/pages/paper/rounds.ts` 的 recordExam）。
+   *
+   * 为什么类型是 `number | null` 而不是 `number`：
+   *   `null` 明确表示「这个词还没有总考核次数的记录」（老数据），
+   *   与「确实考过 0 次」区分开 —— 迁移（`backfillExamCount`）只处理 null，
+   *   0 是有意义的真实值，不能被回填覆盖。跑过迁移之后这个字段不再为 null。
+   */
+  examCount: number | null;
 }
 
 /** 某个低优先级来源留下的义项记录，供列表页手动采纳 */
@@ -134,6 +163,17 @@ export interface Session {
   spellEnabled: boolean;
   failedIds: string[]; // 本次会话内记过未通过的词 id（历史记录，界面/收尾用）
   failDeltas: Record<string, number>; // 本次会话内每词累计未通过次数（正常结束时写回词库）
+  /**
+   * ★ T2：本次会话内每词累计的**总考核次数**（正常结束时写回 `attrs.examCount`）。
+   *
+   * 为什么和 `failDeltas` 一样存「增量」而不是在会话里直接改词：
+   * 中途退出（保存并退出 / 关页面）时这份会话原样落库，**不该**已经把
+   * 总考核次数写进词库 —— 否则「复习到一半退出」也会算作词汇被完整考核过。
+   * 只有正常收尾（`finishReview` / 一次复习会话结束）才把增量合并回词库。
+   *
+   * 可选（`?`）：老会话存档里没有这个字段，读回来当 `{}` 处理即可。
+   */
+  examDeltas?: Record<string, number>;
   /**
    * **上一轮**记忆里没通过的词 id（每次记忆结束刷新）。
    *

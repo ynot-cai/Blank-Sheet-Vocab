@@ -1,5 +1,6 @@
 import { getSettings } from '../../core/config';
 import { formatSensesBrief, humanizeDays } from '../../core/model';
+import { getFailRate } from '../../core/priority';
 import type { Sense, Word } from '../../core/types';
 import { speak } from '../../services/tts';
 import { button, h, textInput } from '../dom';
@@ -66,11 +67,15 @@ export function renderWordCard(word: Word, opts: WordCardOptions = {}): HTMLElem
     head.appendChild(h('span', { class: 'word-en', text: current.en }));
     head.appendChild(briefSpan);
     if (opts.showAttrs) {
+      // ★ T2：把「失败率」与「总考核次数」也显示出来 —— 失败率是新公式里真正
+      //   参与计算的数，用户在卡片上就能看到它，不用去设置页试算。
+      const exams = current.attrs.examCount;
       head.appendChild(
         h('span', {
           class: 'word-attrs',
           text:
             `①拼:${current.attrs.needSpell ? '是' : '否'} · ②未通过:${current.attrs.failCount}/${current.attrs.failCountTotal}` +
+            ` · 失败率:${getFailRate(current.attrs).toFixed(2)}（考 ${typeof exams === 'number' ? exams : '未记录'} 次）` +
             ` · ③复习:${current.attrs.reviewCount} · ④${humanizeDays(current.attrs.lastReviewAt)} · ⑤${humanizeDays(current.attrs.learnedAt, Date.now(), '未背')}` +
             ` · ⑥${current.attrs.reviewPriority.toFixed(2)}`,
         }),

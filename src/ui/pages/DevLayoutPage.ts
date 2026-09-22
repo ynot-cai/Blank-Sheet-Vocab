@@ -199,6 +199,8 @@ function toWords(list: DemoWord[], count: number): Word[] {
       lastReviewAt: null,
       learnedAt: null,
       reviewPriority: 0,
+      // T2：调试页的演示词也走同一份属性结构（不填会在类型检查里报缺字段）
+      examCount: 0,
     },
     status: 'unlearned' as const,
     priority: 3,
