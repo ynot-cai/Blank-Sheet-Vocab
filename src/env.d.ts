@@ -20,3 +20,13 @@ declare module '*?url' {
   const src: string;
   export default src;
 }
+
+/**
+ * ★ T1：验收用的「预览崩坏注入」开关。
+ *
+ * 打开方式：地址栏带 `?bustPreview=1`（或 hash 里带），设置页会把预览的渲染
+ * 故意炸掉一次，用来验证「预览崩了不影响设置控件」。默认 `undefined` = 不注入。
+ */
+interface Window {
+  __bustLayoutPreview?: boolean;
+}

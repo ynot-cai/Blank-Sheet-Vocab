@@ -109,7 +109,18 @@ console.log('\n[5] 错误边界（不白屏）');
     boundaryImports,
   );
   check('导出内容是词库本身', boundary.includes('words, sources'));
-  check('只显示一次（避免连环报错刷屏）', boundary.includes('if (shown) return'));
+  /**
+   * ★ T1 起防刷屏的方式变了（断言跟着改）：
+   *   以前是「一次性闩锁」——`if (shown) return`，显示过就永远不再响应，
+   *   于是**没法定向撤掉**兜底页；而 T1 的「应用后自动回滚」必须在修好设置之后
+   *   把遮罩撤掉（否则回滚了但用户仍被卡住，非刷新不可，那不算兜底）。
+   *   现在改成「单例 + 可清除 + 只留最新一条」：既不会连环叠加刷屏，
+   *   又能被 `clearFatal()` 定向撤掉。
+   */
+  check(
+    '只留一条兜底页（避免连环报错刷屏），且可被定向清除',
+    boundary.includes('let fatalEl') && boundary.includes('export function clearFatal') && boundary.includes('clearFatal();'),
+  );
   check('错误文案不吓人、说明数据还在', boundary.includes('你的数据还在'));
   check('启动时最先装错误边界', /boot[\s\S]{0,400}mountErrorBoundary\(\)/.test(main));
 }

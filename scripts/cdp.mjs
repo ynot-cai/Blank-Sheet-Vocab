@@ -121,6 +121,18 @@ export async function openSession(port, url, opts = {}) {
       return;
     }
     if (msg.method === 'Page.loadEventFired') loadFired = true;
+    /**
+     * ★ 原生对话框必须自动应答，否则整条 CDP 会话会**永久挂住**。
+     *
+     * 踩过的坑：`App.ts` 有「关页面前提醒导出」的 `beforeunload`（距上次手动导出
+     * 超过 7 天且连了本地文件夹时触发），`Page.reload` / `Page.navigate` 会因此
+     * 弹原生确认框 —— 而 CDP 默认**不自动处理**，`Page.reload` 的响应永远不回来，
+     * 脚本就卡死在那一行（没有超时、没有报错，看起来像「脚本死了」）。
+     * 测试里一律按「离开页面」处理：`accept: true`。
+     */
+    if (msg.method === 'Page.javascriptDialogOpening') {
+      void send('Page.handleJavaScriptDialog', { accept: true }).catch(() => undefined);
+    }
     if (msg.method === 'Network.requestWillBeSent') {
       network.push({ url: msg.params.request.url, method: msg.params.request.method });
     }

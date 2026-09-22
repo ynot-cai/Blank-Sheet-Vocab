@@ -7,11 +7,17 @@
  *
  * 兜底页只给三个动作：返回首页 / 重新加载 / 导出数据（导出走 Blob 下载，
  * 不依赖任何应用状态，就算应用已经坏了也能把数据拿去）。
+ *
+ * ★ T1：兜底页改成**可清除**的（{@link clearFatal}）。
+ *   以前这里是「一旦显示就永久占屏、且不再响应任何后续错误」（`shown` 一置位就 return）。
+ *   T1 的「应用后自动回滚」需要它可清除：观察期内抓到异常时，回滚流程会立刻把设置
+ *   修回可用值，如果兜底页还压在屏幕上，用户依然被卡住、非刷新不可 ——
+ *   那就等于没有兜底。回滚成功后调 `clearFatal()` 撤掉遮罩，应用当场恢复可用。
  */
 import { escapeHtml } from '../dom';
 
-/** 是否已经显示过错误页（避免连环报错把页面刷爆） */
-let shown = false;
+/** 当前显示中的错误页（null = 没显示） */
+let fatalEl: HTMLElement | null = null;
 
 /**
  * 挂载错误边界（在应用启动时调用一次即可）。
@@ -30,17 +36,32 @@ export function mountErrorBoundary(): void {
 }
 
 /**
+ * 撤掉兜底错误页（如果正显示着）。
+ *
+ * 调用时机：应用已经恢复到可用状态之后（T1 的回滚成功、用户手动点关闭）。
+ * 为什么要专门导出：`window.location.reload()` 之外，没有任何其它办法能从
+ * 兜底页回到应用 —— 而「自动回滚已经修好了设置，却还要用户手动刷新」是不能接受的。
+ */
+export function clearFatal(): void {
+  if (fatalEl) {
+    fatalEl.remove();
+    fatalEl = null;
+  }
+}
+
+/**
  * 显示兜底错误页。
  * @param message 给用户看的简短说明
  * @param detail 原始错误（只打到控制台，页面上不展示堆栈）
  */
 export function showFatal(message: string, detail?: unknown): void {
-  if (shown) return;
-  shown = true;
   console.error('[fatal] 未捕获的错误：', detail ?? message);
+  // 已经显示过就先撤掉旧的：连环报错时展示**最新**那条（旧消息往往是引发新错误的原因，更有误导性）
+  clearFatal();
 
   const page = document.createElement('div');
   page.className = 'fatal-page';
+  page.dataset.role = 'fatal-page';
   page.innerHTML = `
     <h2 class="fatal-title">出问题了，但你的数据还在</h2>
     <p class="fatal-msg">${escapeHtml(message)}</p>
@@ -58,8 +79,7 @@ export function showFatal(message: string, detail?: unknown): void {
     if (!(target instanceof HTMLElement)) return;
     const act = target.dataset.act;
     if (act === 'home') {
-      shown = false;
-      page.remove();
+      clearFatal();
       window.location.hash = '#/home';
       window.location.reload();
     } else if (act === 'reload') {
@@ -70,6 +90,7 @@ export function showFatal(message: string, detail?: unknown): void {
   };
   page.addEventListener('click', onClick);
   document.body.appendChild(page);
+  fatalEl = page;
 }
 
 /**

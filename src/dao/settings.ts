@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, deepMergeSettings, setSettingsCache } from '../core/config';
+import { DEFAULT_SETTINGS, deepMergeSettings, sanitizeLayoutSettings, setSettingsCache } from '../core/config';
 import { STORE, tx } from '../core/db';
 import type { DeepPartial, Settings } from '../core/types';
 
@@ -15,7 +15,15 @@ interface SettingsRow {
 
 /**
  * 读设置：与 DEFAULT_SETTINGS 深合并，缺字段用默认值补。
- * 同时把结果写进 localStorage 镜像，便于排查与快速启动。
+ * 同时把结果写进 localStorage 镜像，便于启动时同步读取与排查。
+ *
+ * ★ T1：返回值额外过一道 `sanitizeLayoutSettings`。
+ *   为什么在**读**的时候就要净化：T1 诊断已经实测到，旧版本一次「改手机档边距」
+ *   就会把 `layout.mobile` 写成 `{ edgeMarginPx: 18 }`（`button` 子树丢失）并落库，
+ *   之后**每次**进设置页都白屏，用户只能清数据自救。
+ *   `deepMergeSettings(DEFAULT_SETTINGS, …)` 只在**整个 tier 缺失**时补默认值，
+ *   补不了「tier 在、但里面缺字段」这种半残状态 —— 所以需要这一层按字段净化。
+ *   净化是**幂等**的（跑两次结果一样），合法数据经过它不会有任何变化。
  */
 export async function get(): Promise<Settings> {
   const row = await tx<SettingsRow | undefined>(
@@ -23,12 +31,23 @@ export async function get(): Promise<Settings> {
     'readonly',
     (s) => s.get(MAIN_KEY) as IDBRequest<SettingsRow | undefined>,
   );
-  const merged = deepMergeSettings(DEFAULT_SETTINGS, row?.value ?? {});
+  const merged = sanitizeSettings(deepMergeSettings(DEFAULT_SETTINGS, row?.value ?? {}));
   writeMirror(merged);
   // 同步刷新 core 层的内存缓存：core 的同步函数（priorities、同步调度器）都读它，
   // 不刷新的话「改了设置但缓存还是旧的」，会出现「界面显示已开启、后台却按旧的判断跑」。
   setSettingsCache(merged);
   return merged;
+}
+
+/**
+ * 把设置里所有「可能来自脏数据」的字段收敛到合法形状。
+ *
+ * 目前只有布局参数需要（它是唯一有嵌套数值、且直接进布点算法的部分）。
+ * 以后新增这类字段时**加在这里**，不要在业务代码里各自兜底。
+ * @param s 深合并后的设置
+ */
+function sanitizeSettings(s: Settings): Settings {
+  return { ...s, layout: sanitizeLayoutSettings(s.layout) };
 }
 
 /**
@@ -38,7 +57,7 @@ export function readMirror(): Settings | null {
   try {
     const raw = localStorage.getItem(MIRROR_KEY);
     if (!raw) return null;
-    return deepMergeSettings(DEFAULT_SETTINGS, JSON.parse(raw) as unknown);
+    return sanitizeSettings(deepMergeSettings(DEFAULT_SETTINGS, JSON.parse(raw) as unknown));
   } catch (err) {
     console.warn('[dao/settings] 读取本地镜像失败', err);
     return null;

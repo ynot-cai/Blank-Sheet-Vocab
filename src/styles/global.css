@@ -1647,3 +1647,203 @@ body {
 .reparse-progress {
   font-weight: 600;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   T1 · 布局确认制 / 预览隔离 / 应用后观察期 / 设置页分组隔离
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* —— 未应用提示条 + [取消] [应用并预览] —— */
+.layout-action-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper-bg);
+}
+
+/* 有未应用的修改时整条变成黄色告警态（用户一眼能看出「还没生效」） */
+.layout-action-bar-dirty {
+  border-color: var(--warn);
+  background: #fffaf0;
+}
+
+.layout-action-warn {
+  font-weight: 600;
+  color: var(--warn);
+}
+
+.layout-action-hint {
+  color: var(--fg-dim);
+  font-size: 13px;
+}
+
+/* —— 预览 —— */
+.layout-preview-host {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 10px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: var(--paper-bg);
+  /* 预览再高也不该把设置页撑爆；真溢出了就自己滚 */
+  max-height: 420px;
+  overflow: auto;
+}
+
+.layout-preview-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.layout-preview-title {
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+
+.layout-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* 纸面：白底 + 边框，比例与真实纸面一致（由 JS 按缩放比例给宽高） */
+.layout-preview-paper {
+  position: relative;
+  background: var(--paper-bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+/* 可用布点区（虚线框）：让用户直观看到「边距吃掉了多少」 */
+.layout-preview-zone {
+  position: absolute;
+  border: 1px dashed rgba(47, 111, 237, 0.45);
+  border-radius: 2px;
+}
+
+/* 一个词位 */
+.layout-preview-word {
+  position: absolute;
+  border-radius: 2px;
+  background: rgba(29, 31, 35, 0.55);
+}
+
+/* 底部按钮带（这条带子里不会布点） */
+.layout-preview-band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(183, 121, 31, 0.18);
+  border-top: 1px dashed rgba(183, 121, 31, 0.6);
+}
+
+.layout-preview-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 260px;
+}
+
+.layout-preview-stat {
+  font-size: 12px;
+  color: var(--fg);
+}
+
+.layout-preview-sub {
+  color: var(--fg-dim);
+}
+
+/* 预览失败：只在预览容器里显示，设置控件照常可用 */
+.layout-preview-failed {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--warn);
+  border-radius: 8px;
+  background: #fffaf0;
+}
+
+.layout-preview-failed-title {
+  font-weight: 600;
+  color: var(--warn);
+}
+
+.layout-preview-failed-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* —— 应用后观察期黄条（固定在顶部，压住一切，8 秒内可反悔）—— */
+.layout-observe-banner {
+  position: fixed;
+  left: 50%;
+  top: 12px;
+  transform: translateX(-50%);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  max-width: min(720px, calc(100vw - 24px));
+  padding: 10px 14px;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  background: #fffaf0;
+  box-shadow: var(--shadow-lg);
+}
+
+.layout-observe-text {
+  font-size: 14px;
+  color: var(--fg);
+}
+
+/* —— 设置页分组渲染失败（一组崩了其他照常）—— */
+.section-failed {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  background: #fff5f5;
+}
+
+.section-failed-title {
+  font-weight: 600;
+  color: var(--danger);
+}
+
+.section-failed-note {
+  font-size: 13px;
+  color: var(--fg-dim);
+}
+
+.section-failed-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* —— 设置页顶部的「有未应用的布局修改」提示 —— */
+.settings-dirty-hint {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--warn);
+  border-radius: 8px;
+  background: #fffaf0;
+  font-size: 13px;
+}
+

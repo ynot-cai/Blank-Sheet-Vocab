@@ -1,4 +1,4 @@
-import type { DeepPartial, PriorityPreset, Settings } from './types';
+import type { DeepPartial, LayoutColsOverride, LayoutSettings, LayoutTier, PriorityPreset, Settings } from './types';
 
 /** 星号参数：所有可调数字集中在这里，代码里不许写死 */
 export const DEFAULTS = {
@@ -60,6 +60,123 @@ const DEFAULT_LAYOUT: Settings['layout'] = {
 };
 
 /**
+ * ★ T1：布局参数的可调区间（**唯一一份**，设置页的控件范围与净化函数都读它）。
+ *
+ * 为什么必须集中：以前「输入框能填多少」只写在 `LayoutSection` 的 `min/max` 属性上，
+ * 而**写库、读库、渲染**三条路都没有第二道校验 —— 输入框能绕过（手输、粘贴、
+ * 老备份、手改 localStorage），一绕过就直接进布点算法。这里把它变成真正的护栏。
+ *
+ * 区间口径：以 `DEFAULT_LAYOUT` 各档的默认值为基准的宽容范围（默认值 ×0.2~×6），
+ * 再夹到硬上下限。这样「用户正常想调的范围」全都放得下，而
+ * `1e9` / `-1e9` / `NaN` / 字符串这类值一定被夹回可用值。
+ */
+export const LAYOUT_LIMITS = {
+  edgeMarginPx: { min: 0, max: 120 },
+  minGapPx: { min: 0, max: 80 },
+  fontSizePx: { min: 8, max: 96 },
+  targetCount: { min: 1, max: 200 },
+  diameterPx: { min: 24, max: 160 },
+  gapPx: { min: 0, max: 120 },
+  labelFontPx: { min: 8, max: 32 },
+} as const;
+
+/** 布局参数里「可调数值字段」的键名 */
+export type LayoutNumericKey = keyof typeof LAYOUT_LIMITS;
+
+/** 一个数值区间 */
+export interface NumRange {
+  min: number;
+  max: number;
+}
+
+/**
+ * 把任意输入夹进区间（**唯一入口**，所有布局数字都必须过它）。
+ *
+ * 处理四种脏输入，全部有确定行为：
+ * - 非数字类型（字符串 / null / undefined / 对象）→ 返回 `fallback`；
+ * - `NaN` / `±Infinity` → 返回 `fallback`；
+ * - 小于 `min` / 大于 `max` → 夹到边界；
+ * - 正常数字 → 原样返回（**不做取整**，字号允许小数）。
+ *
+ * @param value 原始值（可能来自输入框、localStorage、老备份、URL 参数）
+ * @param range 允许区间
+ * @param fallback 非数字时用什么兜底（通常给默认值）
+ */
+export function clampNum(value: unknown, range: NumRange, fallback: number): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(range.max, Math.max(range.min, n));
+}
+
+/**
+ * 取某个布局数值字段的区间。
+ * @param key 字段名
+ */
+export function layoutRangeOf(key: LayoutNumericKey): NumRange {
+  return LAYOUT_LIMITS[key];
+}
+
+/**
+ * ★ T1：把「一份可能残缺/越界的档位参数」净化成**一定能安全渲染**的档位参数。
+ *
+ * 三道防线里的最后一道，也是最关键的一道：
+ * 1. 写库前净化（设置页应用时）；
+ * 2. 读库后净化（{@link getPresetParams} / {@link sanitizeLayoutSettings}）；
+ * 3. 渲染前净化（设置页分组渲染时）。
+ *
+ * 为什么必须防「字段缺失」而不只是「数值越界」：T1 诊断实测的崩溃数据就是
+ * `layout.mobile = { edgeMarginPx: 18 }` —— `button` 整个不见了。
+ * 旧代码直接读 `.button.diameterPx` 当场抛错；净化后缺失字段一律补默认值，
+ * 老版本/被剪过的数据也能正常打开设置页（**不再需要用户清数据**）。
+ *
+ * @param raw 原始档位参数（未知形状）
+ * @param fallback 该档的默认值（`DEFAULT_SETTINGS.layout[tier]`）
+ */
+export function getPresetParams(raw: unknown, fallback: LayoutTier): LayoutTier {
+  const src = isPlainObject(raw) ? raw : {};
+  const srcButton = isPlainObject(src['button']) ? src['button'] : {};
+  return {
+    edgeMarginPx: clampNum(src['edgeMarginPx'], LAYOUT_LIMITS.edgeMarginPx, fallback.edgeMarginPx),
+    minGapPx: clampNum(src['minGapPx'], LAYOUT_LIMITS.minGapPx, fallback.minGapPx),
+    fontSizePx: clampNum(src['fontSizePx'], LAYOUT_LIMITS.fontSizePx, fallback.fontSizePx),
+    targetCount: Math.round(clampNum(src['targetCount'], LAYOUT_LIMITS.targetCount, fallback.targetCount)),
+    button: {
+      diameterPx: clampNum(srcButton['diameterPx'], LAYOUT_LIMITS.diameterPx, fallback.button.diameterPx),
+      gapPx: clampNum(srcButton['gapPx'], LAYOUT_LIMITS.gapPx, fallback.button.gapPx),
+      labelFontPx: clampNum(srcButton['labelFontPx'], LAYOUT_LIMITS.labelFontPx, fallback.button.labelFontPx),
+    },
+  };
+}
+
+/**
+ * 净化整份三档布局设置（手机 / 平板 / 桌面各过一遍 {@link getPresetParams}）。
+ *
+ * 用途：`dao.settings.get()` 读回设置之后调一次，保证**任何**进内存的形状都合法。
+ * 这是「脏数据在源头被修好，而不是等某个页面崩了才发现」的那一层。
+ * @param raw 设置里的 `layout` 字段（未知形状）
+ */
+export function sanitizeLayoutSettings(raw: unknown): LayoutSettings {
+  const src = isPlainObject(raw) ? raw : {};
+  return {
+    mobile: getPresetParams(src['mobile'], DEFAULT_LAYOUT.mobile),
+    tablet: getPresetParams(src['tablet'], DEFAULT_LAYOUT.tablet),
+    desktop: getPresetParams(src['desktop'], DEFAULT_LAYOUT.desktop),
+  };
+}
+
+/**
+ * 三档布局的默认值副本（供设置页「恢复这一档的默认值」使用）。
+ *
+ * ★ 为什么返回副本而不是 `DEFAULT_LAYOUT` 本身：调用方拿到就直接塞进设置对象，
+ *   共享引用的话「恢复默认」会**改到全局默认值**，之后再新建的用户就不是默认了。
+ * @param tier 档位名
+ */
+export function defaultTierCopy(tier: keyof LayoutSettings): LayoutTier {
+  const src = DEFAULT_LAYOUT[tier];
+  return { ...src, button: { ...src.button } };
+}
+
+/**
  * 响应式（移动端适配）参数。
  * 断点：手机 < 768px / 平板 768~1024px / 桌面 > 1024px。
  */
@@ -113,8 +230,16 @@ export const DEVICE = {
  */
 export const LAYOUT_COLS_OPTIONS = ['auto', 3, 4, 5, 6, 8, 10] as const;
 
-/** 手动列数覆盖的取值类型 */
-export type LayoutColsOverride = (typeof LAYOUT_COLS_OPTIONS)[number];
+/**
+ * 手动列数覆盖的取值类型。
+ *
+ * ★ T1：改成从 `core/types.ts` 重新导出，**不再自己定义一份**。
+ *   以前这里写 `(typeof LAYOUT_COLS_OPTIONS)[number]`、types.ts 里又手写了一遍
+ *   `'auto' | 3 | 4 | 5 | 6 | 8 | 10` —— 两处同形不同源，谁加一个可选列数
+ *   而忘了改另一处，就会出现「设置页能选、类型不认」的怪问题。
+ *   `Settings['layoutColsOverride']` 是同一个类型的唯一真源。
+ */
+export type { LayoutColsOverride } from './types';
 
 /**
  * 把设置里的 `layoutColsOverride` 解析成 `computeGrid` 要的 `colsOverride`。
@@ -356,23 +481,58 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 
 /**
  * 深合并设置：以 base 为底，用 patch 覆盖，缺字段补默认值。
- * 只处理一层对象嵌套（设置结构只有两层），数组直接替换。
+ *
+ * ★ 递归深合并（T1 修）：**这个函数以前只合并一层**，于是嵌套补丁会把
+ *   兄弟字段整片覆盖掉 —— 最典型的就是设置页改「手机档边距」时的
+ *   `{ layout: { mobile: { edgeMarginPx: 18 } } }`：
+ *   第一层合上 layout，第二层里那个 patch 对象整体替换掉了 `layout.mobile`，
+ *   **`button` 子树当场消失** → 设置页再读
+ *   `currentSettings().layout.mobile.button.diameterPx` 就抛
+ *   `TypeError: Cannot read properties of undefined (reading 'diameterPx')`，
+ *   页面白屏；而且这份残缺数据**已经落库**，重进设置页照样崩（T1 诊断实测）。
+ *
+ *   现在按「设置结构有几层就合几层」递归：只覆盖 patch 里真正给出的叶子，
+ *   兄弟字段一律保留。数组仍然整体替换（合并数组没有合理语义）；
+ *   `null` 仍然被忽略（保持「缺字段补默认值」的老口径，脏备份不会把字段置空）。
+ *
  * @param base 底（通常是 DEFAULT_SETTINGS）
  * @param patch 待合并的补丁（可能来自旧版本备份文件，字段可能缺失/多余）
+ * @param depth 递归深度（内部递归用；外部调用不用传）
  */
-export function deepMergeSettings(base: Settings, patch: unknown): Settings {
-  const out: Record<string, unknown> = { ...(base as unknown as Record<string, unknown>) };
-  if (isPlainObject(patch)) {
-    for (const [key, value] of Object.entries(patch)) {
-      const current = out[key];
-      if (isPlainObject(value) && isPlainObject(current)) {
-        out[key] = { ...current, ...value };
-      } else if (value !== undefined && value !== null) {
-        out[key] = value;
-      }
+export function deepMergeSettings(base: Settings, patch: unknown, depth = 0): Settings {
+  return mergeRecords(base as unknown as Record<string, unknown>, patch, depth) as unknown as Settings;
+}
+
+/**
+ * 深合并的递归深度上限。
+ * 设置树实际只有 3~4 层（`layout.mobile.button.diameterPx`），留到 8 足够，
+ * 同时挡住「补丁里带循环引用」这种能让递归爆栈的脏输入。
+ */
+const MAX_MERGE_DEPTH = 8;
+
+/**
+ * 递归合并两个「普通对象」。
+ *
+ * 独立于 {@link deepMergeSettings} 是为了让 `Settings` 类型断言只出现在一处
+ * （递归里不必反复断言）。
+ * @param base 底对象
+ * @param patch 补丁（不是普通对象时原样返回 base）
+ * @param depth 当前深度
+ */
+function mergeRecords(base: Record<string, unknown>, patch: unknown, depth: number): Record<string, unknown> {
+  if (!isPlainObject(patch)) return base;
+  const out: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined || value === null) continue;
+    const current = out[key];
+    // 两边都是普通对象 → 继续往下合；数组不是普通对象，所以会走 else 整体替换
+    if (isPlainObject(value) && isPlainObject(current) && depth < MAX_MERGE_DEPTH) {
+      out[key] = mergeRecords(current, value, depth + 1);
+    } else {
+      out[key] = value;
     }
   }
-  return out as unknown as Settings;
+  return out;
 }
 
 let cachedSettings: Settings = DEFAULT_SETTINGS;
