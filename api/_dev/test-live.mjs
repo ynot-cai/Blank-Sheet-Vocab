@@ -120,7 +120,8 @@ console.log(`路由表（来自 src/dao/syncServer.ts）：${JSON.stringify(ROUT
 console.log('[1] 路由可达性：路径写错会直接 404');
 {
   for (const [name, path] of Object.entries(ROUTES)) {
-    if (name === 'aiProxy') continue; // 需要 POST，单独测
+    // 需要 POST 的接口单独测（GET 探测对它们没有意义）
+    if (name === 'aiProxy' || name === 'ttsProxy') continue;
     const res = await call(`${path}${name === 'syncPull' ? '?since=0' : ''}`, {
       headers: { 'X-Space-Key': keyA },
     });
@@ -222,7 +223,7 @@ console.log('\n[5] 批量上限 500 条');
 }
 
 // ─────────────────────────────── 6. 来源白名单
-console.log('\n[6] AI 代理来源白名单');
+console.log('\n[6] AI 代理 / TTS 代理的来源白名单');
 {
   const res = await call(ROUTES.aiProxy, {
     method: 'POST',
@@ -233,7 +234,19 @@ console.log('\n[6] AI 代理来源白名单');
     },
     body: '{}',
   });
-  check('非白名单来源 → 403', res.status === 403, `实际 ${res.status} ${res.text.slice(0, 120)}`);
+  check('AI 代理：非白名单来源 → 403', res.status === 403, `实际 ${res.status} ${res.text.slice(0, 120)}`);
+
+  /**
+   * ★ T4：TTS 代理同样必须挡非白名单来源。
+   * 它是公网可访问的，不挡就等于给别人一个免费的有道转发。
+   */
+  const tts = await call(ROUTES.ttsProxy, {
+    method: 'POST',
+    headers: { Origin: 'https://evil.example.com', 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'q=abandon&appKey=fake',
+  });
+  check('TTS 代理：非白名单来源 → 403', tts.status === 403, `实际 ${tts.status} ${tts.text.slice(0, 120)}`);
+  check('TTS 代理：路由存在（不是 404）', tts.status !== 404, `返回 404 —— 路径可能写错了`);
 }
 
 // ─────────────────────────────── 7. 清理

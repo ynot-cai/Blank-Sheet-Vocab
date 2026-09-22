@@ -404,6 +404,83 @@ export function runPhraseSelfTest(): SelfTestResult[] {
 }
 
 /**
+ * ★ T4：有道 TTS 签名的自测与「参考值」输出。
+ *
+ * ── 为什么要有它 ──
+ * 签名算错的表现是**有道返回 202「签名校验失败」**，而这条信息里没有任何线索
+ * 指向「是 input 截断写错了还是拼接顺序写错了」。
+ * 所以必须有一个**不联网、可对照**的自测：
+ * 给定固定的 appKey / appSecret / salt / curtime / q，输出 sign，
+ * 与 `node scripts/youdaoSign.mjs`（教程里那份 Node 脚本）算出的值比对 ——
+ * 两个独立实现（WebCrypto vs Node crypto）算出同一个哈希，才能证明算法写对了。
+ *
+ * ⚠️ **不自动执行**（与其它 selftest 一致）：它只是挂在 window 上的一个函数，
+ * 由用户/测试显式调用。
+ */
+
+/** 自测用的固定输入（改动它等于让已有的参考值失效，非必要不要动） */
+export const YOUDAO_SIGN_SAMPLE = {
+  appKey: 'test-app-key',
+  appSecret: 'test-app-secret',
+  salt: '2fa4f0d0-1e6b-4c2f-9c1a-3f8f2b7d5e10',
+  curtime: '1700000000',
+  q: 'abandon',
+} as const;
+
+/**
+ * 用固定输入算一遍签名（同时覆盖「短文本」与「长文本」两条截断分支）。
+ */
+export async function runYoudaoSignSelfTest(): Promise<SelfTestResult[]> {
+  const out: SelfTestResult[] = [];
+  const { youdaoSign, youdaoSignInput, sha256Hex } = await import('../services/tts/youdao');
+
+  // ① 短文本（q ≤ 20）：input 就是 q 本身
+  const short = { ...YOUDAO_SIGN_SAMPLE };
+  const shortInput = youdaoSignInput(short.q);
+  const shortSign = await youdaoSign(short);
+  out.push({
+    name: 'T4 有道签名：短文本 input = q',
+    ok: shortInput === short.q,
+    detail: `${shortInput}`,
+  });
+  out.push({
+    name: 'T4 有道签名：短文本 sign 长度 64（sha256 十六进制）',
+    ok: shortSign.length === 64 && /^[0-9a-f]{64}$/.test(shortSign),
+    detail: shortSign,
+  });
+
+  // ② 长文本（q > 20）：input = 前 10 + 长度 + 后 10
+  const longQ = 'abcdefghijKLMNOPQRSTuvwxyz-0123456789';
+  const longInput = youdaoSignInput(longQ);
+  const expectedLong = `${longQ.slice(0, 10)}${longQ.length}${longQ.slice(-10)}`;
+  out.push({
+    name: 'T4 有道签名：长文本 input = 前10 + 长度 + 后10',
+    ok: longInput === expectedLong,
+    detail: `${longInput}（期望 ${expectedLong}）`,
+  });
+
+  // ③ 拼接顺序必须是 appKey + input + salt + curtime + appSecret
+  const manual = await sha256Hex(
+    `${short.appKey}${shortInput}${short.salt}${short.curtime}${short.appSecret}`,
+  );
+  out.push({
+    name: 'T4 有道签名：拼接顺序 appKey+input+salt+curtime+appSecret',
+    ok: manual === shortSign,
+    detail: `手工串=${manual.slice(0, 16)}… 函数=${shortSign.slice(0, 16)}…`,
+  });
+
+  // ④ 换一个字符必须换一个签名（防止「函数根本不看输入」这类错误）
+  const other = await youdaoSign({ ...short, q: 'abandon ' });
+  out.push({
+    name: 'T4 有道签名：输入变了签名就变',
+    ok: other !== shortSign,
+    detail: `q="abandon" → ${shortSign.slice(0, 12)}… / q="abandon " → ${other.slice(0, 12)}…`,
+  });
+
+  return out;
+}
+
+/**
  * 把自测挂到 window.__selftest（开发模式专用）。
  */
 export function attachSelfTest(): void {
@@ -417,6 +494,7 @@ export function attachSelfTest(): void {
         ...runPickSelfTest(),
         ...runLayoutSelfTest(),
         ...runPhraseSelfTest(),
+        ...(await runYoudaoSignSelfTest()),
         ...(await runDataSelfTest()),
       ];
       const failed = results.filter((r) => !r.ok);
@@ -432,6 +510,21 @@ export function attachSelfTest(): void {
     pick: runPickSelfTest,
     layout: runLayoutSelfTest,
     phrase: runPhraseSelfTest,
+    /**
+     * ★ T4：有道 TTS 签名自测（**不自动执行**）。
+     *
+     * 用法（控制台）：
+     * ```js
+     * await __selftest.youdaoSign()          // 跑断言
+     * await __selftest.youdaoSignValue()     // 只取参考值，拿去和 Node 脚本比对
+     * ```
+     */
+    youdaoSign: runYoudaoSignSelfTest,
+    /** 用固定输入算一个签名值（与 `node scripts/youdaoSign.mjs` 的输出必须一致） */
+    youdaoSignValue: async (): Promise<string> => {
+      const { youdaoSign } = await import('../services/tts/youdao');
+      return youdaoSign({ ...YOUDAO_SIGN_SAMPLE });
+    },
   };
   (window as unknown as { __selftest: typeof api }).__selftest = api;
   console.info('[selftest] 已挂到 window.__selftest，手动执行：await __selftest.run()');

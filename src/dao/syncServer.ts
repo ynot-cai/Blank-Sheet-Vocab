@@ -150,6 +150,11 @@ export const API_ROUTES = {
   syncPush: '/api/sync-push',
   syncPurge: '/api/sync-purge',
   aiProxy: '/api/ai-proxy',
+  /**
+   * ★ T4：无状态 TTS 转发（浏览器直连有道的 ttsapi 会被 CORS 拦）。
+   * 同样只做转发：不存密钥、不写库、不缓存（见 api/tts-proxy.ts）。
+   */
+  ttsProxy: '/api/tts-proxy',
   // ── 二期（知识点精学）：数据完全独立，只是共用同一个库和空间隔离逻辑 ──
   /** 卡片增量拉取，使用时拼查询串：`${API_ROUTES.kcList}?since=<ts>` */
   kcList: '/api/kc-list',

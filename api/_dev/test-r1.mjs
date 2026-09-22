@@ -849,11 +849,18 @@ try {
         };
       }))()`);
       /**
-       * ★ T2 起库版本是 7（v7 给老词补 `attrs.examCount`，见 dbSchema.migrateWordRows）。
-       *   这里断言的是「应用把老库升到了**当前**版本」，所以绑 DB_VERSION 而不是写死数字
-       *   —— 以后再抬版本时，只要迁移逻辑还对，这条断言就仍然有意义。
+       * ★ 断言的是「应用把老库升到了**当前**版本」，所以读 `DB_VERSION` 而不是写死数字。
+       *
+       * 写死数字的下场实测过两次：T2 把库抬到 7、T4 抬到 8，
+       * 每次都要回来改这一行 —— 而这条断言真正要保的是
+       * 「老库会被升到代码期望的版本」这个关系，不是某个具体数字。
        */
-      check('应用把老库升到了当前版本（v7）', afterMigrate.version === 7, String(afterMigrate.version));
+      const { DB_VERSION } = await import('../../src/core/dbSchema.ts');
+      check(
+        `应用把老库升到了当前版本（v${DB_VERSION}）`,
+        afterMigrate.version === DB_VERSION,
+        String(afterMigrate.version),
+      );
       check('words 表补上了 priority 索引', afterMigrate.indexNames.includes('priority'), JSON.stringify(afterMigrate.indexNames));
       check('老数据一条都没丢（还是 2 条）', afterMigrate.rows.length === 2, JSON.stringify(afterMigrate.rows));
       check(

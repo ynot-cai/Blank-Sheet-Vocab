@@ -26,6 +26,8 @@ export const ROUTES = {
   '/api/sync-push': () => import('../sync-push.ts'),
   '/api/sync-purge': () => import('../sync-purge.ts'),
   '/api/ai-proxy': () => import('../ai-proxy.ts'),
+  // T4：无状态 TTS 转发（与 ai-proxy 同一套模式，上游固定为 TTS_TARGET）
+  '/api/tts-proxy': () => import('../tts-proxy.ts'),
   // 二期（知识点）：路由名同样是连字符形式
   '/api/kc-list': () => import('../kc-list.ts'),
   '/api/kc-push': () => import('../kc-push.ts'),
@@ -156,7 +158,24 @@ export function startServer(port) {
 
       // 处理函数已经通过 shim 收下了响应（含流式内容），这里统一发出去
       if (!res.headersSent) {
-        res.writeHead(shim.statusCode, { 'Content-Type': 'application/json; charset=utf-8', ...captured.headers });
+        /**
+         * ★ 合并响应头时必须**先剥掉大小写不同的重名**。
+         *
+         * 踩过的坑（T4 实测）：处理函数用 `setHeader('Content-Type', 'audio/mpeg')`
+         * 设的是**小写键** `content-type`（shim 统一转小写存的），
+         * 而这里又写了一个 `'Content-Type': 'application/json; charset=utf-8'`。
+         * Node 认为这是两个不同的键，**把两个值用逗号拼起来**：
+         * `application/json; charset=utf-8,audio/mpeg`。
+         * 浏览器按第一个值处理 → 前端把音频当错误体去 JSON.parse，
+         * 表现成「有道 TTS 失败：HTTP 200」这种完全看不出原因的报错。
+         *
+         * 正确做法：以 captured 里的值为准，先把 writeHead 里同名（忽略大小写）的默认头删掉。
+         */
+        const headers = { 'Content-Type': 'application/json; charset=utf-8', ...captured.headers };
+        if (captured.headers['content-type'] !== undefined) {
+          delete headers['Content-Type'];
+        }
+        res.writeHead(shim.statusCode, headers);
       }
       res.end(Buffer.concat(captured.chunks));
     })();

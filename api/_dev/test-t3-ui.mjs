@@ -93,7 +93,7 @@ window.__t3Spoken = [];
    *   但会让「点击确实朗读了」这条断言测不出来，所以补一个最小形状的对象。
    *
    * ⚠️ 只补 speak / cancel / getVoices / addEventListener 这几个真被调用的成员，
-   *   **utterance 仍是浏览器真身**。上一版自己造 utterance 类的写法会让
+   *   **utterance 仍是浏览器真身**。自己造 utterance 类的写法会让
    *   utter.voice = … 抛 TypeError（"Failed to convert value to SpeechSynthesisVoice"），
    *   把整轮背诵在 refreshUi 之后打断，表现成「进不了记忆环节」—— 那个坑踩过一次。
    */
@@ -104,20 +104,26 @@ window.__t3Spoken = [];
       writable: true,
     });
   }
-  /**
-   * 记录朗读调用：包一层 speechSynthesis.speak。
-   *
-   * ⚠️ 为什么不去包 SpeechSynthesisUtterance.prototype.text：
-   *   实测 Chrome 里它是 **data property**（不是 accessor），
-   *   Object.getOwnPropertyDescriptor(...).set 为 undefined，包装会**静默失效**
-   *   （测试拿到空数组、看着像「没朗读」，其实是探针没装上）。
-   *   包 speak 更直接：utterance 从参数里拿到，text 读一下就有了。
-   */
+})();
+/**
+ * 记录朗读调用的时机：**等 speechSynthesis 就绪之后**再包 speak。
+ *
+ * ⚠️ 为什么不能放在上面那个 IIFE 里立刻包：如果浏览器**自带** speechSynthesis，
+ *   那段 if (!('speechSynthesis' in window)) 会跳过、探针根本没装上，
+ *   于是 window.__t3Spoken 永远是空数组 —— 看起来像「点了提示没朗读」，
+ *   其实是测试的探针没生效（T4 的探针写法更稳，这里对齐过来）。
+ *
+ * ⚠️ 也不要改成去包 SpeechSynthesisUtterance.prototype.text：
+ *   实测 Chrome 里它是 **data property**（不是 accessor），
+ *   getOwnPropertyDescriptor(...).set 为 undefined，包装会**静默失效**。
+ *   包 speak 最直接：utterance 从参数里拿，text 读一下就有。
+ */
+(() => {
   const synth = window.speechSynthesis;
+  if (!synth) return;
   const rawSpeak = synth.speak.bind(synth);
   synth.speak = function (utter) {
-    // 只记文本：判据就是「念的是不是这个单词」
-    try { window.__t3Spoken.push(String(utter && utter.text)); } catch (e) { /* 记录失败不影响主流程 */ }
+    try { window.__t3Spoken.push(String((utter && utter.text) ?? '')); } catch (e) { /* 记录失败不影响主流程 */ }
     return rawSpeak(utter);
   };
 })();
@@ -431,15 +437,33 @@ try {
     check('★ 老的「首字母+长度」提示已消失（没有 #spell-hint / 掩码下划线）', !btnInfo.oldHint && !btnInfo.masked, JSON.stringify(btnInfo));
 
     // 点两次：可重复、每次真的调了朗读、念的是这个单词
-    const spoken1 = await page.evaluate(`(() => {
+    /**
+     * ★ 先复位「重复触发去重」的记忆。
+     *
+     * T4 给朗读加了「同一文本 1.5 秒内只念一次」的优化。而本页在走到这里之前
+     * 已经朗读过 `abandon`（自动朗读 / 前面的步骤），于是**第一次点提示会被
+     * 去重拦掉**，测出来像「点了没朗读」。
+     * 用显式的复位接口而不是 sleep：窗口值以后一改，测试不用跟着改。
+     */
+    await page.evaluate(`(async () => {
+      const tts = await import('/src/services/tts/index.ts');
+      tts.resetSpeechDedupe();
       window.__t3Spoken.length = 0;
+    })()`);
+    const spoken1 = await page.evaluate(`(() => {
       const el = document.querySelector('[data-role="speak-hint"]');
       if (!el) return ['__no_button__'];
       el.click();
       return window.__t3Spoken.slice();
     })()`);
-    await new Promise((r) => setTimeout(r, 200));
-    const spoken2 = await page.evaluate(`(() => { document.querySelector('[data-role="speak-hint"]').click(); return window.__t3Spoken.map((s) => s.text); })()`);
+    await page.evaluate(`(async () => {
+      const tts = await import('/src/services/tts/index.ts');
+      tts.resetSpeechDedupe();
+    })()`);
+    const spoken2 = await page.evaluate(`(() => {
+      document.querySelector('[data-role="speak-hint"]').click();
+      return window.__t3Spoken.slice();
+    })()`);
     console.log('   第一次点：', JSON.stringify(spoken1), '第二次点：', JSON.stringify(spoken2));
     check('★ 点击确实调用了朗读', spoken1.includes('abandon'), JSON.stringify(spoken1));
     check('★ 只念单词本身（不念音标、不念中文释义）', spoken1.every((t) => t === 'abandon'), JSON.stringify(spoken1));
@@ -552,7 +576,17 @@ try {
     }))()`);
     console.log('   words 行字段：', JSON.stringify(shape.rowKeys), '库版本', shape.version);
     check('★ words 表结构未变（没有新列）', !shape.rowKeys.some((k) => /hint/i.test(k)), JSON.stringify(shape.rowKeys));
-    check('库版本仍是 7（T3 没有加迁移，因此没有抬版本）', shape.version === 7, String(shape.version));
+    /**
+     * ★ T3 自己**没有**任何迁移（用户明确要求「不写迁移、不回填」），
+     *   所以这里断言的是「版本号是当前代码期望的那个」，而不是某个具体数字
+     *   —— T4 给 TTS 缓存加了 v8，写死 7 会误报（实测过）。
+     *   后半句才是 T3 真正要保的：**words 表结构没变、attrs 没有新字段**。
+     */
+    const { DB_VERSION } = await page.evaluate(`(async () => {
+      const m = await import('/src/core/dbSchema.ts');
+      return { DB_VERSION: m.DB_VERSION };
+    })()`);
+    check(`库版本 = 当前 DB_VERSION（v${DB_VERSION}），T3 没抬过版本`, shape.version === DB_VERSION, `${shape.version} vs ${DB_VERSION}`);
     await page.close();
   }
 

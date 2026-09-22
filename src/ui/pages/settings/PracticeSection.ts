@@ -1,4 +1,4 @@
-import { checkbox, h, select, textInput } from '../../dom';
+import { checkbox, h, select } from '../../dom';
 import { currentSettings, patchSettings } from './ctx';
 
 /** ★ T3：考核分组里「提示后算作未通过」的两个取值（用 radio 表达二选一更贴用户原话） */
@@ -71,35 +71,19 @@ export function renderPracticeSection(): HTMLElement {
       void patchSettings({ practice: { ...currentSettings().practice, autoSpeak: v } }),
     ),
   );
-
-  const rateSlider = h('input', {
-    type: 'range',
-    class: 'range',
-    min: '0.5',
-    max: '2',
-    step: '0.1',
-    value: String(settings.practice.speakRate),
-  });
-  const rateLabel = h('span', { class: 'field-hint', text: `语速：${settings.practice.speakRate.toFixed(1)}×` });
-  rateSlider.addEventListener('input', () => {
-    rateLabel.textContent = `语速：${Number(rateSlider.value).toFixed(1)}×`;
-  });
-  rateSlider.addEventListener('change', () =>
-    void patchSettings({ practice: { ...currentSettings().practice, speakRate: Number(rateSlider.value) } }),
-  );
-  wrap.appendChild(h('label', { class: 'field' }, h('span', { class: 'field-label', text: '语速' }), rateSlider, rateLabel));
-
+  /**
+   * ★ T4：语速与发音语言**搬到 H 区「语音」**了，这里只留一个跳转提示。
+   *
+   * 为什么要搬：朗读音色/语速/第三方密钥/缓存是同一件事的四个面，
+   * 散在 D 区（练习）与 H 区（语音）两处时，用户调完语速想换音色还得去另一组找。
+   * 旧字段 `practice.speakRate` / `speakLang` 仍保留在设置里（老备份兼容），
+   * 但**不再有界面入口**，真正的取值统一读 `speech.rate` / `speech.accent`。
+   */
   wrap.appendChild(
     h(
-      'label',
-      { class: 'field' },
-      h('span', { class: 'field-label', text: '发音语言' }),
-      textInput(
-        settings.practice.speakLang,
-        (v) => void patchSettings({ practice: { ...currentSettings().practice, speakLang: v } }),
-        { placeholder: 'en-US' },
-      ),
-      h('span', { class: 'field-hint', text: '一般用 en-US；想听英式可填 en-GB' }),
+      'p',
+      { class: 'field-hint' },
+      '语速、音色（语音）、第三方朗读密钥都在下面的「H. 语音」分组里。',
     ),
   );
 

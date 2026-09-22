@@ -7,6 +7,17 @@ import { defineConfig } from 'vite';
  */
 const buildStamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
 
+/**
+ * 本地 API 服务的端口。
+ *
+ * 默认 3000（`npm run api` / `npx vercel dev` 的默认端口）。
+ * 之所以做成可覆盖：端到端验收（`api/_dev/test-*.mjs`）需要**同时**起
+ * 一个 vite dev 和一个独立的 API 服务，而 3000 可能被开发中的服务占着 ——
+ * 抢占端口会让测试间歇性失败（而且失败原因看起来像功能坏了）。
+ * 用 `LOCAL_API_PORT` 与 `npm run api` 保持一致（同一个变量控制两端）。
+ */
+const apiPort = Number(process.env.LOCAL_API_PORT ?? 3000);
+
 /** Vite 配置：base 用相对路径，方便构建产物直接本地打开。 */
 export default defineConfig({
   base: './',
@@ -24,7 +35,7 @@ export default defineConfig({
     //   npx vercel dev       → 官方开发服务器（默认也是 3000 端口）
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:3000',
+        target: `http://127.0.0.1:${apiPort}`,
         changeOrigin: true,
       },
     },

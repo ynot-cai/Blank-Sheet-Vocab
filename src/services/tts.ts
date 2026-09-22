@@ -1,94 +1,45 @@
 /**
- * 朗读：浏览器自带 SpeechSynthesis（Web Speech API）封装。
- * 不支持时静默失败（只 console.warn），不弹窗打断背单词。
+ * 朗读（TTS）—— **再导出层**。
+ *
+ * ★ T4 起真正的实现在 `services/tts/` 目录下（抽象层 + 浏览器语音 + 有道适配器 + 缓存）：
+ * - `tts/index.ts`  统一入口 `speak()`（缓存 → 第三方 → 浏览器语音三级降级）
+ * - `tts/browser.ts` 浏览器 SpeechSynthesis
+ * - `tts/voices.ts`  语音挑选规则与「语音列表就绪」监听
+ * - `tts/normalize.ts` 朗读前文本预处理（音标/词性/缩写/连字符/数字）
+ * - `tts/youdao.ts`  有道 TTS 签名与适配器
+ * - `tts/cache.ts`   音频缓存（IndexedDB）
+ *
+ * 这个文件保留下来只为**不动既有 import**（历史代码写的是 `from '.../services/tts'`）。
+ * 新代码可以直接从 `services/tts` 目录导入，语义更清楚。
+ *
+ * ⚠️ 不要把实现写回这个文件：`services/tts.ts` 与 `services/tts/` 同名会让
+ * 模块解析产生歧义（有的打包器优先文件、有的优先目录），本项目统一用
+ * 「目录 + index.ts」承载实现，这个文件只做转发。
  */
-
-/** 语音列表是否已加载过（loadVoices 是异步填充的） */
-let voicesLoaded = false;
-
-/** 确保 voices 列表已加载 */
-function ensureVoices(): void {
-  if (!isSupported() || voicesLoaded) return;
-  window.speechSynthesis.getVoices();
-  window.speechSynthesis.addEventListener(
-    'voiceschanged',
-    () => {
-      voicesLoaded = true;
-    },
-    { once: true },
-  );
-}
-
-/**
- * 当前环境是否支持语音合成。
- */
-export function isSupported(): boolean {
-  return typeof window !== 'undefined' && 'speechSynthesis' in window;
-}
-
-/**
- * 选一个发音语音：优先选与 lang 完全匹配的本地语音，其次前缀匹配（en-*），
- * 再其次系统默认。选不到返回 null（speak 里会静默降级）。
- * @param lang 语言标签，如 en-US
- */
-export function pickVoice(lang: string): SpeechSynthesisVoice | null {
-  if (!isSupported()) return null;
-  ensureVoices();
-  const voices = window.speechSynthesis.getVoices();
-  const target = lang.toLowerCase();
-  const prefix = target.split('-')[0] ?? 'en';
-  let fallback: SpeechSynthesisVoice | null = null;
-  for (const voice of voices) {
-    const vlang = voice.lang.toLowerCase();
-    if (vlang === target && voice.localService) return voice;
-    if (vlang === target && !fallback) fallback = voice;
-    if (vlang.startsWith(prefix) && !fallback) fallback = voice;
-  }
-  return fallback;
-}
-
-/** 朗读参数 */
-export interface SpeakOptions {
-  rate?: number;
-  lang?: string;
-  /** 朗读结束后回调 */
-  onEnd?: () => void;
-}
-
-/**
- * 朗读一段文本（会先打断上一条，避免连续快速点击时排队叠读）。
- * 环境不支持语音时静默失败。
- * @param text 要读的文本
- * @param opts 语速 / 语言
- */
-export function speak(text: string, opts: SpeakOptions = {}): void {
-  if (!isSupported() || text.trim() === '') {
-    if (text.trim() === '') return;
-    console.warn('[tts] 当前环境不支持语音合成，跳过朗读');
-    return;
-  }
-  const synth = window.speechSynthesis;
-  synth.cancel(); // 先取消上一条，再读新的
-  const utter = new SpeechSynthesisUtterance(text);
-  utter.rate = opts.rate ?? 1;
-  utter.lang = opts.lang ?? 'en-US';
-  const voice = pickVoice(utter.lang);
-  if (voice) utter.voice = voice;
-  if (opts.onEnd) utter.onend = () => opts.onEnd?.();
-  synth.speak(utter);
-}
-
-/**
- * 停止/取消朗读。
- */
-export function cancelSpeak(): void {
-  if (!isSupported()) return;
-  window.speechSynthesis.cancel();
-}
-
-/**
- * 停止朗读（cancelSpeak 的别名，兼容旧调用）。
- */
-export function stop(): void {
-  cancelSpeak();
-}
+export {
+  cancelSpeak,
+  clearTtsCache,
+  formatBytes,
+  getLastThirdPartyResult,
+  isSupported,
+  isThirdPartyDisabled,
+  listBrowserVoices,
+  normalizeForSpeech,
+  onVoicesChanged,
+  pickVoice,
+  resetSpeechDedupe,
+  resetThirdPartyCircuit,
+  resolveBrowserVoice,
+  speak,
+  speakAsync,
+  stop,
+  ttsCacheStats,
+  YOUDAO_VOICES,
+  type LastThirdPartyResult,
+  type SpeakOptions,
+  type TtsCacheStats,
+  type TtsLang,
+  type TtsProvider,
+} from './tts/index';
+export { isBrowserSpeechSupported } from './tts/browser';
+export { createYoudaoProvider, YoudaoTtsError } from './tts/youdao';

@@ -216,7 +216,9 @@ export function createPaperStage(opts: PaperStageOptions): PaperStage {
   /** 朗读（带设置里的语速/语言） */
   const speakWord = (word: Word): void => {
     const s = getSettings();
-    speak(word.en, { rate: s.practice.speakRate, lang: s.practice.speakLang });
+    // ★ T4：语速与口音统一读 `speech`（朗读设置的家）。`speak()` 内部还会走
+    //   「缓存 → 第三方 → 浏览器语音」三级降级，这里只管把词与参数交给它。
+    speak(word.en, { rate: s.speech.rate, lang: s.speech.accent });
   };
 
   let placeCapacity = 0;

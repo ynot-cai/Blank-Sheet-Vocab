@@ -37,10 +37,12 @@ export const DB_NAME = 'blank-sheet-vocab';
  *   （对正常库来说是空操作）。
  * - v6 R1 阶段的词级优先级：给老词补上 `priority`（见 migrateToV3Priority）。
  *   同样是「抬版本号逼一次升级」，对已经是 v6 的库是空操作。
- * - v7 T2：给老词补上 `attrs.examCount`（总考核次数，见 migrateToV7ExamCount）。
+ * - v7 T2：给老词补上 `attrs.examCount`（总考核次数，见 migrateWordRows）。
  *   和 v5/v6 同一套思路 —— 抬版本号逼一次升级，对已经是 v7 的库是空操作。
+ * - v8 T4：新增 `ttsCache` 表（第三方 TTS 的音频缓存）。**纯加法**：
+ *   只建一张新表，不动任何已有数据；对用户不可见（缓存丢了只是重新合成一次）。
  */
-export const DB_VERSION = 7;
+export const DB_VERSION = 8;
 
 /** 表名常量，避免各处写错字符串 */
 export const STORE = {  // ── 一期 ──
@@ -54,6 +56,16 @@ export const STORE = {  // ── 一期 ──
   examRecords: 'examRecords',
   bankQuestions: 'bankQuestions',
   kcSessions: 'kcSessions',
+  /**
+   * ★ T4：第三方 TTS 的音频缓存。
+   *
+   * 为什么和业务数据放**同一个库**（而不是另开一个 IndexedDB）：
+   * 本项目已经有「缺表自愈」（`dbStale.ts` + `repairUpgrade`）这一整套机制 ——
+   * 它会在连接里缺表时自动抬版本重建。缓存放在同一个库里就直接复用了这套兜底；
+   * 另开一个库等于把那套机制再实现一遍，而且用户排查问题时还要多找一个库。
+   * 备份/导出**不会**碰这张表（见 services/backup.ts 的导出范围），所以缓存不会撑大备份。
+   */
+  ttsCache: 'ttsCache',
 } as const;
 
 /**
@@ -294,6 +306,16 @@ export function createSchema(db: IDBDatabase, oldVersion: number, transaction: I
   }
   if (!db.objectStoreNames.contains(STORE.sessions)) {
     db.createObjectStore(STORE.sessions, { keyPath: 'id' });
+  }
+  /**
+   * ★ T4（v8）：TTS 音频缓存表。
+   *
+   * 纯加法，没有数据迁移：主键是缓存键（providerId + 归一化文本 + 速度 + 变体），
+   * 值是 `{ key, bytes, size, createdAt }`。缓存丢了只是下次重新合成一次，
+   * 所以**不需要**任何回填逻辑，也永远不进备份/同步。
+   */
+  if (!db.objectStoreNames.contains(STORE.ttsCache)) {
+    db.createObjectStore(STORE.ttsCache, { keyPath: 'key' });
   }
   // 二期：只新增表，不动一期数据
   createKcStores(db);

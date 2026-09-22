@@ -16,5 +16,14 @@ export const MAX_PULL_ROWS = 2000;
 /** AI 代理的上游超时（毫秒）。对应 vercel.json 里 api/ai-proxy.ts 的 maxDuration: 120 */
 export const AI_PROXY_TIMEOUT_MS = 60_000;
 
+/**
+ * ★ T4：TTS 代理的上游超时（毫秒）。
+ *
+ * 为什么比 AI 代理短得多：合成一个单词是**毫秒级**的动作，
+ * 上游 15 秒还没回基本就是网络问题或额度问题，让用户干等 60 秒毫无意义；
+ * 而且朗读是交互动作（点一下就期待出声），超时越短越早降级到浏览器语音。
+ */
+export const TTS_PROXY_TIMEOUT_MS = 15_000;
+
 /** 单词条数上限提示（超过这个量级，前端列表页内存筛选会卡，属已知限制） */
 export const WORDS_SOFT_LIMIT = 20_000;

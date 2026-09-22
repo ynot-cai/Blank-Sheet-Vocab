@@ -48,6 +48,16 @@ function check(name, ok, detail = '') {
   }
 }
 
+/**
+ * 设置页应有的分组 id。
+ *
+ * ★ 为什么列成清单而不是写死数字：写死「8」的下场实测过 ——
+ *   T4 加了「H. 语音」一个分组，T1/T3 里三条「8 个分组」的断言同时失败，
+ *   而它们真正要保的是「**每个分组都在页面上**」（T1 的加固目标：
+ *   一组崩了别的照常显示），不是某个具体数量。
+ */
+const EXPECTED_SECTIONS = ['A', 'B', 'C', 'C2', 'D', 'E', 'F', 'G', 'speech'];
+
 /** 起 vite dev */
 function startDev() {
   const viteBin = join(ROOT, 'node_modules', 'vite', 'bin', 'vite.js');
@@ -222,7 +232,7 @@ try {
   console.log('\n════════ [1] 确认机制：改列数 → 不应用 → 背诵页不变化 ════════');
   page = await open('#/settings');
   const s1 = await page.evaluate(OBSERVE);
-  check('设置页正常打开（8 个分组）', s1.settingsPage && s1.groups.length === 8, `分组=${JSON.stringify(s1.groups)}`);
+  check('设置页正常打开（九大分组齐全）', s1.settingsPage && s1.groups.length === EXPECTED_SECTIONS.length && EXPECTED_SECTIONS.every((id) => s1.groups.includes(id)), `分组=${JSON.stringify(s1.groups)}`);
   check('初始没有未应用提示', !s1.dirtyWarn, `dirtyWarn=${s1.dirtyWarn}`);
   check('预览渲染出 3 张卡（手机/平板/桌面）', s1.previewCards === 3, `previewCards=${s1.previewCards}`);
 
@@ -339,7 +349,7 @@ try {
   page = await open('#/settings', 2400, '?bustPreview=1');
   const s5 = await page.evaluate(OBSERVE);
   check('预览抛异常时显示「预览不可用」', s5.previewFailed, `previewFailed=${s5.previewFailed}`);
-  check('★ 预览崩了但设置页 8 个分组照常显示', s5.groups.length === 8, `分组=${JSON.stringify(s5.groups)}`);
+  check('★ 预览崩了但设置页全部分组照常显示', s5.groups.length === EXPECTED_SECTIONS.length, `分组=${JSON.stringify(s5.groups)}`);
   check('预览崩了但没弹致命页', !s5.fatal, `fatal=${s5.fatal} msg=${s5.fatalMsg}`);
   check('预览崩了但 C2 控件仍可用（能找到应用按钮容器）', await page.evaluate(`!!${C2}.querySelector('.layout-action-bar')`));
   /**
@@ -441,8 +451,8 @@ try {
     JSON.stringify(rows.filter((r) => r.背诵页白屏 === '是')),
   );
   check(
-    '★ 8 种脏数据下设置页 8 个分组都在（不再整页打不开）',
-    rows.every((r) => r.设置页分组 === 8),
+    `★ 8 种脏数据下设置页全部分组都在（${EXPECTED_SECTIONS.length} 个，不再整页打不开）`,
+    rows.every((r) => r.设置页分组 === EXPECTED_SECTIONS.length),
     JSON.stringify(rows.map((r) => r.设置页分组)),
   );
 

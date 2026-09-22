@@ -7,9 +7,11 @@ import { renderDisplaySection } from './settings/DisplaySection';
 import { renderLayoutSection, isLayoutDirty } from './settings/LayoutSection';
 import { renderPracticeSection } from './settings/PracticeSection';
 import { renderPrioritySection } from './settings/PrioritySection';
+import { renderSpeechSection } from './settings/SpeechSection';
 import { renderStarParamsSection } from './settings/StarParamsSection';
 import { discardDraft } from './settings/layoutDraft';
 import { patchSettings } from './settings/ctx';
+import { clearTtsCache } from '../../services/tts';
 
 /** 一个设置分组的定义 */
 interface Section {
@@ -136,6 +138,25 @@ export function renderSettingsPage(): HTMLElement {
       render: renderDataSection,
       resetNote: '数据区不提供重置（避免误删词库），请用这一组里的导出 / 恢复按钮',
       reset: () => Promise.resolve(),
+    },
+    {
+      /**
+       * ★ T4：朗读设置。
+       *
+       * 为什么放在 G 之后而不是插进字母序列：`data-section` 的 id 被 UI 验收
+       * (`test-t1-ui` 断言 8 个分组、`test-t2-ui`/`test-t3-ui` 按 id 找 E / D 区)
+       * 当作锚点用，插队会让后面所有分组改字母、连带改测试。
+       * 用语义 id `speech` 定住它，界面标题里的字母只影响观感。
+       */
+      id: 'speech',
+      title: 'H. 语音（朗读音色 / 有道 TTS / 缓存）',
+      open: false,
+      render: renderSpeechSection,
+      resetNote: '把朗读恢复到浏览器内置语音、自动挑音色、语速 0.9，并清空有道密钥（会一并清掉语音缓存）',
+      reset: async () => {
+        await patchSettings({ speech: { ...DEFAULT_SETTINGS.speech } });
+        await clearTtsCache();
+      },
     },
   ];
 

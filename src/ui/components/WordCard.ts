@@ -39,7 +39,6 @@ export interface WordCardOptions {
  */
 export function renderWordCard(word: Word, opts: WordCardOptions = {}): HTMLElement {
   const editable = opts.editable ?? false;
-  const settings = getSettings();
   let current: Word = word;
   const card = h('div', { class: 'word-card' });
 
@@ -61,7 +60,6 @@ export function renderWordCard(word: Word, opts: WordCardOptions = {}): HTMLElem
   /** 构建卡片主体 */
   function build(): HTMLElement {
     const frag = h('div', { class: 'word-card-inner' });
-
     // —— 第 1 行：单词 + 中文意思（紧跟其后） ——
     const head = h('div', { class: 'word-head' });
     head.appendChild(h('span', { class: 'word-en', text: current.en }));
@@ -98,7 +96,8 @@ export function renderWordCard(word: Word, opts: WordCardOptions = {}): HTMLElem
     phRow.appendChild(
       button(
         '🔊',
-        () => speak(current.en, { rate: settings.practice.speakRate, lang: settings.practice.speakLang }),
+        // ★ T4：语速/口音统一读 `speech`（朗读设置）；`speak()` 内部做三级降级
+        () => speak(current.en, { rate: getSettings().speech.rate, lang: getSettings().speech.accent }),
         { variant: 'ghost', class: 'mini', title: '朗读这个单词' },
       ),
     );

@@ -273,6 +273,45 @@ export interface PracticeSettings {
   hintFails: boolean;
 }
 
+/**
+ * ★ T4：朗读（TTS）设置 —— 抽象层的配置。
+ *
+ * ── 安全前提（与 R4 一致）──
+ * `youdao.appSecret` 只存在这台设备的浏览器里，且**只在浏览器端参与签名**；
+ * 服务器侧的 `/api/tts-proxy` 只做转发，永远看不到 appSecret（方案 B）。
+ */
+export interface SpeechSettings {
+  /** 语音来源：浏览器内置（免费）或第三方（有道） */
+  provider: 'browser' | 'youdao';
+  /**
+   * 浏览器语音：用户选定的 voice 名（空串 = 按 {@link pickBrowserVoice} 的规则自动挑）。
+   *
+   * 为什么存**名字**而不是索引/对象：不同设备可用语音完全不同，
+   * 对象存不进设置、索引换个系统就指到别人身上；名字对不上时自动回退（见 pickBrowserVoice）。
+   */
+  voiceName: string;
+  /** 浏览器语音的语速（0.5~1.5，默认 0.9） */
+  rate: number;
+  /** 有道 TTS 配置 */
+  youdao: {
+    /** 应用 ID（控制台里叫「应用 ID」；老版本这里叫「应用密钥」，两个名字都认） */
+    appKey: string;
+    /** 应用密钥（**只在浏览器端参与签名，绝不上传**） */
+    appSecret: string;
+    /** 发音人（默认 youmeimei，词典美式） */
+    voiceName: string;
+  };
+  /** 口音（决定默认发音人，也用于浏览器语音的 lang） */
+  accent: 'en-US' | 'en-GB';
+  /**
+   * 语音变体：'single' = 只合成一个速度；'normal+slow' = 另外缓存一个慢速版本。
+   *
+   * 为什么要有：有道不支持 SSML、调不了 pitch，只能用速度做「语调多样」的近似。
+   * 默认 single（省调用次数——第三方 TTS 是按字符计费的）。
+   */
+  variant: 'single' | 'normal+slow';
+}
+
 /** 备份设置 */
 export interface BackupSettings {
   remindOnClose: boolean; // 关闭页面前提醒导出
@@ -367,6 +406,8 @@ export interface Settings {
   learnPick: LearnPickSettings;
   ai: AiSettings;
   practice: PracticeSettings;
+  /** ★ T4：朗读（TTS）—— 语音来源 / 语音挑选 / 语速 / 有道密钥 / 变体 */
+  speech: SpeechSettings;
   backup: BackupSettings;
   cloud: CloudSettings;
   /**

@@ -1,4 +1,4 @@
-import type { DeepPartial, LayoutColsOverride, LayoutSettings, LayoutTier, PriorityPreset, Settings } from './types';
+import type { DeepPartial, LayoutColsOverride, LayoutSettings, LayoutTier, PriorityPreset, Settings, SpeechSettings } from './types';
 
 /** 星号参数：所有可调数字集中在这里，代码里不许写死 */
 export const DEFAULTS = {
@@ -434,9 +434,28 @@ const DEFAULT_KC: Settings['kc'] = {
   },
 };
 
+/**
+ * ★ T4：朗读（TTS）的默认设置。
+ *
+ * 几个默认值的理由（都有实测/文档依据，不是拍脑袋）：
+ * - `rate: 0.9`：浏览器语音默认 1.0 偏快，用户明确要求 0.9（更清晰）；
+ * - `provider: 'browser'`：零成本、无需密钥，装上就能用；
+ * - `voiceName: ''`：让 `pickBrowserVoice()` 按「本地 + 英文 + 高质量」自动挑，
+ *   用户想指定时再在下拉里选（不同设备可用语音完全不同，写死一个名字必然错）；
+ * - `accent: 'en-US'`：与原有的 `practice.speakLang` 默认一致；
+ * - `variant: 'single'`：第三方 TTS 按字符计费，默认不额外合成慢速版本。
+ */
+const DEFAULT_SPEECH: SpeechSettings = {
+  provider: 'browser',
+  voiceName: '',
+  rate: 0.9,
+  youdao: { appKey: '', appSecret: '', voiceName: 'youmeimei' },
+  accent: 'en-US',
+  variant: 'single',
+};
+
 /** 默认设置（缺字段时用它补齐；AI 三项只是预填，用户可随意改） */
-export const DEFAULT_SETTINGS: Settings = {
-  ...DEFAULTS,
+export const DEFAULT_SETTINGS: Settings = {  ...DEFAULTS,
   paper: { mode: 'auto', ratio: 'A4', width: 1200, height: 800 },
   display: {
     fontFamily: 'system-ui',
@@ -468,6 +487,8 @@ export const DEFAULT_SETTINGS: Settings = {
   // ★ T3：hintFails 默认 false —— 「提示只是辅助，看答案对错」。
   //   拨到 true 之后，用了「朗诵一遍」的考核一律记未通过（哪怕答案本身是对的）。
   practice: { autoSpeak: true, speakRate: 1, speakLang: 'en-US', hintFails: false },
+  // ★ T4：朗读设置（语音来源 / 语音挑选 / 语速 / 有道密钥 / 变体）
+  speech: DEFAULT_SPEECH,
   backup: { remindOnClose: true, lastManualExportAt: null },
   cloud: DEFAULT_CLOUD,
   kc: DEFAULT_KC,
