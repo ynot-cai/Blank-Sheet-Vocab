@@ -12,7 +12,7 @@
  * 说明：本地表里存 `spaceKey` 是为了和云端行同构（云端每条都带 space_key，
  * 那是最外层的隔离冗余），本地只有一个空间，但保留字段能让「推上去」零转换。
  */
-import { STORE, tx } from '../core/db';
+import { STORE, clearStore, tx } from '../core/db';
 import { newId, sanitizeText } from '../core/kcModel';
 import { getSettings } from '../core/config';
 import { getSpaceKey } from '../core/syncHelper';
@@ -190,4 +190,11 @@ export function dedupe(list: readonly string[]): string[] {
     out.push(v);
   }
   return out;
+}
+
+/**
+ * 清空语境词表（设置页清库与自检清理用）。
+ */
+export async function clearAll(): Promise<void> {
+  await clearStore(STORE.dailyContextWords);
 }
