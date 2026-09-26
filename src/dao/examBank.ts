@@ -12,7 +12,7 @@
  */
 
 // RULES-R1: 此处禁止任何强制时间限制（无倒计时 / 无超时提交 / 无超时判错）
-import { STORE, clearStore, tx, txRun } from '../core/db';
+import { STORE, clearStore, tx } from '../core/db';
 import { newId, sanitizeText } from '../core/kcModel';
 import { getSettings } from '../core/config';
 import type { BankQuestion, ExamRecord } from '../core/kcTypes';
@@ -199,12 +199,4 @@ export async function removeBankQuestion(id: string): Promise<void> {
 export async function clearAll(): Promise<void> {
   await clearStore(STORE.examRecords);
   await clearStore(STORE.bankQuestions);
-}
-
-/** 批量写入题库样题（导入备份 / 从别的设备拉回来时用） */
-export async function bulkPutBank(rows: BankQuestion[]): Promise<void> {
-  if (rows.length === 0) return;
-  await txRun(STORE.bankQuestions, 'readwrite', (s) => {
-    for (const row of rows) s.put(row);
-  });
 }

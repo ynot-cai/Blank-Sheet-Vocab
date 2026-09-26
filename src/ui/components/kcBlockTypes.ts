@@ -7,7 +7,7 @@
  *    不会有「工具条写「标题」、块头写「小标题」」这种不一致。
  */
 import { createBlock } from '../../core/kcModel';
-import { EXAM_TYPES, type Block, type BlockType } from '../../core/kcTypes';
+import type { Block, BlockType } from '../../core/kcTypes';
 import { button, h } from '../dom';
 
 /** 块类型的中文名（工具条按钮、块头部标签共用） */
@@ -52,9 +52,4 @@ export function renderInsertBar(onInsert: (block: Block) => void): HTMLElement {
     );
   }
   return bar;
-}
-
-/** 题型名（给卡片编辑页的标签用；从 EXAM_TYPES 生成，不写死四种） */
-export function examTypeLabel(id: string): string {
-  return EXAM_TYPES.find((t) => t.id === id)?.name ?? id;
 }

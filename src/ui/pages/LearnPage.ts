@@ -45,7 +45,7 @@ export function renderLearnPage(ctx?: RouteContext): HTMLElement {
    *
    * ★ R3：排序规则改为**优先级绝对优先**（`core/pick.ts` 的 `sortForLearn`）：
    *   先按 `word.priority` 降序（5 → 1），同级内再按设置决定的顺序（默认 createdAt）。
-   *   这和「再背一个」用的 `pickNextForLearn` 是**同一个排序函数**，
+   *   这和「再背一个」用的 `sortForLearn` 是**同一个排序函数**，
    *   所以「词单顺序」和「逐个上纸的顺序」永远一致——
    *   两处各写一份的话，用户会看到「我点的顺序和它给的不一样」，很难查。
    *

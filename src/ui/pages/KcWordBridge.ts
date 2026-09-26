@@ -131,6 +131,3 @@ export async function createKcWordBridge(
     },
   };
 }
-
-/** 桥接的说明文案（没有词库时的提示用，导出便于测试断言） */
-export const BRIDGE_SKIP_HINT = '一期词库为空，跳过背单词';

@@ -120,10 +120,3 @@ export function startRouter(el: HTMLElement): void {
   }
   renderCurrent();
 }
-
-/**
- * 重新渲染当前页面（数据变化后手动刷新用）。
- */
-export function refresh(): void {
-  renderCurrent();
-}

@@ -1,5 +1,5 @@
 import { clearStore, STORE, tx, txRun } from '../core/db';
-import { normalizeEn, normalizeForCompare, normalizeWordPriority, uid, wordPriorityOf } from '../core/model';
+import { normalizeEn, normalizeForCompare, normalizeWordPriority, wordPriorityOf } from '../core/model';
 import type { Attrs, Sense, Word, WordQuery, WordStats, WordStatus } from '../core/types';
 import { emitDataChanged } from '../state/store';
 
@@ -80,39 +80,6 @@ export async function bulkUpsert(words: Word[]): Promise<{ inserted: number; upd
 }
 
 /**
- * 原样写回一条词（**不改 updatedAt**）——云同步应用云端数据时用。
- * 必须保留云端的版本号，否则会把「云端已改」判成「本地又改了」来回打架。
- * @param word 单词对象
- * @param touch 是否刷新本地 updatedAt（默认 false）
- */
-export async function putRaw(word: Word, touch = false): Promise<void> {
-  const next: Word = touch ? { ...word, updatedAt: Date.now() } : word;
-  await tx(STORE.words, 'readwrite', (s) => s.put(next));
-}
-
-/**
- * 批量原样写回（一次事务），云同步应用增量时用。
- * @param words 单词数组
- */
-export async function putRawMany(words: Word[]): Promise<void> {
-  if (words.length === 0) return;
-  await txRun(STORE.words, 'readwrite', (s) => {
-    for (const w of words) s.put(w);
-  });
-}
-
-/**
- * 覆盖某词的义项。
- * @param id 单词 id
- * @param senses 新义项列表
- */
-export async function updateSenses(id: string, senses: Sense[]): Promise<void> {
-  const word = await getById(id);
-  if (!word) return;
-  await put({ ...word, senses });
-}
-
-/**
  * 局部更新属性（属性①~⑥）。
  * @param id 单词 id
  * @param patch 属性补丁
@@ -160,66 +127,8 @@ export async function setWordPriorityMany(ids: string[], priority: number): Prom
 }
 
 /**
- * 批量改**词级优先级**，每个词可以给不同的值（R1 的「覆盖优先级」用）。
- *
- * 与 `setWordPriorityMany` 的区别：那个是「一堆词改成同一个值」（批量条），
- * 这个是「id → 值」的映射（冲突询问框里用户逐条选出来的结果）。
- *
- * ★ 只改 `priority` 与 `updatedAt`，其余字段（义项 / 状态 / 属性 / 来源 / 墓碑）一字不动。
- * @param entries id + 新的优先级
- */
-export async function setWordPriorityByIdMany(entries: { id: string; priority: number }[]): Promise<void> {
-  if (entries.length === 0) return;
-  const map = new Map(entries.map((e) => [e.id, normalizeWordPriority(e.priority)]));
-  const all = await listAlive();
-  const now = Date.now();
-  await txRun(STORE.words, 'readwrite', (s) => {
-    for (const w of all) {
-      const value = map.get(w.id);
-      if (value === undefined) continue;
-      s.put({ ...w, deleted: 0, priority: value, updatedAt: now });
-    }
-  });
-  emitDataChanged();
-}
-
-/**
- * 只覆盖某词的**义项 / 音标 / 例句**（R2 的「已有词库整理」写库用）。
- *
- * ★ 铁律（R2 提示词第 2.5 节）：应用 AI 重整理的结果时**绝不能碰**
- *   `priority` / `sourceId` / `rawSources` / `status` / `attrs` / `id` / `createdAt`。
- *
- * 所以这里刻意**不走 `put()`**，因为 `put()` 会把 `deleted` 归零——
- * 那不是「只改义项」的语义。这里读原始行、只替换三个字段再原样写回，
- * 其余字段（含墓碑标记）一字不动。
- *
- * 注意：**会**刷新 `updatedAt`（云同步按它做增量，不刷新别的设备看不到新义项）。
- *
- * @param id 单词 id
- * @param patch 只含 senses / phonetic / example
- * @returns 是否真的写入了（词不存在时 false）
- */
-export async function applySenseRewrite(
-  id: string,
-  patch: { senses?: Sense[]; phonetic?: string; example?: string },
-): Promise<boolean> {
-  const row = await tx<Word | undefined>(STORE.words, 'readonly', (s) => s.get(id) as IDBRequest<Word | undefined>);
-  if (!row) return false;
-  const next: Word = {
-    ...row,
-    senses: patch.senses ?? row.senses,
-    phonetic: patch.phonetic ?? row.phonetic,
-    example: patch.example ?? row.example,
-    updatedAt: Date.now(),
-  };
-  await tx(STORE.words, 'readwrite', (s) => s.put(next));
-  emitDataChanged();
-  return true;
-}
-
-/**
  * 批量应用「只改义项 / 音标 / 例句」的写回（R2，一次事务写完）。
- * 与 `applySenseRewrite` 同一套语义（列在 `patch` 里的字段才动）。
+ * 与 `applySenseRewriteMany` 同一套语义（列在 `patch` 里的字段才动）。
  *
  * @param entries id + 要覆盖的字段
  * @returns 实际写入的条数
@@ -478,22 +387,9 @@ export async function applyPriorities(entries: { id: string; priority: number }[
 }
 
 /**
- * 生成背诵顺序序号（阶段 05 会用；这里先给最大序号工具）。
- */
-export async function maxLearnOrder(): Promise<number> {
-  const all = await listAlive();
-  return all.reduce((max, w) => (w.learnOrder !== null && w.learnOrder > max ? w.learnOrder : max), 0);
-}
-
-/**
  * 清空所有单词。
  */
 export async function clearAll(): Promise<void> {
   await clearStore(STORE.words);
   emitDataChanged();
-}
-
-/** 生成一个新的单词 id（页面构造新词时用，避免各处 import uid） */
-export function newId(): string {
-  return uid();
 }

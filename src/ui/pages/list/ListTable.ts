@@ -1,6 +1,6 @@
 import { humanizeDays, wordPriorityOf } from '../../../core/model';
 import { getFailRate } from '../../../core/priority';
-import type { Attrs, Source, Word, WordStatus } from '../../../core/types';
+import type { Source, Word, WordStatus } from '../../../core/types';
 import { WORD_PRIORITY_OPTIONS } from '../../../core/types';
 import { button, h } from '../../dom';
 
@@ -255,9 +255,4 @@ export function renderListTable(
     return h('div', {}, h('p', { class: 'note' }, '没有符合条件的词。'), table);
   }
   return table;
-}
-
-/** 属性补丁的小工具：把「未通过 / 复习次数」的输入结果转成 Attrs 补丁 */
-export function attrsNumberPatch(field: 'failCount' | 'reviewCount', value: number): Partial<Attrs> {
-  return field === 'failCount' ? { failCount: value } : { reviewCount: value };
 }

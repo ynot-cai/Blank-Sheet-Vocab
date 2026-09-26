@@ -226,35 +226,3 @@ export async function pullSmallTable(key: SmallTableKey, since = 0): Promise<num
   emitDataChanged();
   return toWrite.length;
 }
-
-/**
- * 推所有三张小表（写操作后的防抖调用）。
- * @returns 各表推成功条数
- */
-export async function pushAllSmall(): Promise<Record<SmallTableKey, number>> {
-  const out: Record<SmallTableKey, number> = { contextWords: 0, examRecords: 0, bankQuestions: 0 };
-  for (const key of Object.keys(out) as SmallTableKey[]) {
-    try {
-      out[key] = await pushSmallTable(key);
-    } catch (err) {
-      console.warn(`[kcSmallCloud] 推 ${key} 出错（不影响本地）`, err);
-    }
-  }
-  return out;
-}
-
-/**
- * 拉所有三张小表（启动/手动同步时调用）。
- * @param since 增量起点
- */
-export async function pullAllSmall(since = 0): Promise<Record<SmallTableKey, number>> {
-  const out: Record<SmallTableKey, number> = { contextWords: 0, examRecords: 0, bankQuestions: 0 };
-  for (const key of Object.keys(out) as SmallTableKey[]) {
-    try {
-      out[key] = await pullSmallTable(key, since);
-    } catch (err) {
-      console.warn(`[kcSmallCloud] 拉 ${key} 出错（不影响本地）`, err);
-    }
-  }
-  return out;
-}

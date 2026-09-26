@@ -344,11 +344,3 @@ export async function getStatus(): Promise<CloudStatus> {
     lastError: cloud.lastError,
   };
 }
-
-/**
- * 是否配置齐全（后台防抖同步前的快速判断，避免白跑）。
- */
-export function isConfigured(settings: Settings): boolean {
-  const cloud = settings.cloud;
-  return cloud.enabled && normalizeApiBase(cloud.apiBase) !== '' && cloud.syncCode.trim() !== '';
-}

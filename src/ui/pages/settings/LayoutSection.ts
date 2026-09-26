@@ -23,11 +23,10 @@
  * 另外两道防线也在这里落地：
  * - **预览隔离**：预览在独立容器里单独渲染 + 单独 try/catch + 200ms 防抖，
  *   预览崩了只显示「预览不可用」，控件照常能用（见 `layoutPreview.ts`）；
- * - **渲染前净化**：所有数字都过 `getPresetParams` / `clampNum`，
+ * - **渲染前净化**：所有数字都过 `getPresetParams`（越界与残缺值在进 DOM 前就被收敛），
  *   残缺或越界的数据不可能进到 DOM 与算法里。
  */
 import {
-  clampNum,
   coerceColsOverride,
   defaultTierCopy,
   getPresetParams,
@@ -425,16 +424,3 @@ export function renderLayoutSection(): HTMLElement {
 
 /** 供设置页做「未应用就离开」判断用 */
 export { isDirty as isLayoutDirty };
-
-/**
- * 把越界值夹进区间的公开入口（设置页与测试可直接用）。
- *
- * 之所以要导出：验收里要能独立证明「护栏真的在夹」，
- * 而不是只能靠「改完没崩」间接推断。
- * @param key 字段名
- * @param value 原始值
- */
-export function clampLayoutValue(key: LayoutFieldKey | LayoutButtonFieldKey, value: unknown): number {
-  const range = layoutRangeOf(key);
-  return clampNum(value, range, range.min);
-}

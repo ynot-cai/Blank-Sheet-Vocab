@@ -215,15 +215,3 @@ export function resetTierToDefault(tier: LayoutTierKey): void {
 export function discardDraft(): void {
   draft = null;
 }
-
-/**
- * 取出一份「可安全落库的布局」。
- *
- * 不在这里清空草稿：清理由调用方在确认应用成功后显式做（`discardDraft()`），
- * 因为观察期可能回滚，回滚后界面还要能显示回滚后的值。
- */
-export function draftPatch(): { layout: LayoutSettings; layoutColsOverride: LayoutColsOverride } {
-  const d = currentDraft();
-  // 再净化一次：调用方拿到的必须一定是完整合法的布局（双保险，代价可忽略）
-  return { layout: sanitizeLayoutSettings(d.layout), layoutColsOverride: d.colsOverride };
-}

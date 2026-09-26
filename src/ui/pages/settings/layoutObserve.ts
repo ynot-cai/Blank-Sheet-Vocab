@@ -93,17 +93,6 @@ export function writeSnapshot(layout: LayoutSettings, colsOverride: LayoutColsOv
   }
 }
 
-/**
- * 首次使用时把**当前**设置记为 lastKnownGood。
- *
- * 为什么需要：老用户升级上来时没有快照，第一次点应用如果出事就没有东西可回滚。
- * 启动时补一次，保证「第一次应用」也有退路。
- */
-export function ensureSnapshot(layout: LayoutSettings, colsOverride: LayoutColsOverride): void {
-  if (readSnapshot() !== null) return;
-  writeSnapshot(layout, colsOverride);
-}
-
 /** 应用新布局时的参数 */
 export interface ApplyLayoutOptions {
   /** 新的布局参数（调用方负责净化，这里再兜一次） */
@@ -120,11 +109,6 @@ export interface ApplyLayoutOptions {
 let active: {
   finish: (reason: 'confirmed' | 'timeout' | 'rollback') => void;
 } | null = null;
-
-/** 当前是否处在观察期内（诊断/测试用） */
-export function isObserving(): boolean {
-  return active !== null;
-}
 
 /**
  * 逼停当前观察期。

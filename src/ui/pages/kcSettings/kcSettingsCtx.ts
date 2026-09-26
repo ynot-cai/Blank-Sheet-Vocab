@@ -4,7 +4,7 @@
  * 为什么单独一个文件：掌握度区、优先度区、参数区都要做同一件事
  * （改设置 → 重算所有卡片 → 通知页面重画），写在三处必然分叉。
  */
-import { getSettings, setSettingsCache } from '../../../core/config';
+import { setSettingsCache } from '../../../core/config';
 import { StaleDbError, withDbRetry } from '../../../core/db';
 import { recomputeCard } from '../../../core/kcPriority';
 import type { KcSettings } from '../../../core/kcTypes';
@@ -98,11 +98,4 @@ export async function recomputeAllCards(): Promise<number> {
     n += 1;
   }
   return n;
-}
-
-/**
- * 读当前二期设置（便捷入口）。
- */
-export function currentKcSettings(): KcSettings {
-  return getSettings().kc;
 }

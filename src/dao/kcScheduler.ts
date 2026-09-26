@@ -21,11 +21,7 @@
  */
 import { SYNC, getSettings } from '../core/config';
 import type { SyncResult } from './cloudSync';
-import {
-  createSyncScheduler,
-  type SyncScheduler,
-  type SyncState,
-} from './syncSchedulerFactory';
+import { createSyncScheduler, type SyncScheduler } from './syncSchedulerFactory';
 
 export type { SyncPhase, SyncState } from './syncSchedulerFactory';
 
@@ -74,41 +70,4 @@ const scheduler: SyncScheduler = createSyncScheduler({
  */
 export function scheduleKcSync(): void {
   scheduler.scheduleSync();
-}
-
-/**
- * 立即同步二期数据（返回结果供界面显示）。
- */
-export function kcSyncNow(): Promise<SyncResult | null> {
-  return scheduler.syncNow();
-}
-
-/**
- * 取消待执行的防抖同步。
- */
-export function cancelKcScheduled(): void {
-  scheduler.cancelScheduled();
-}
-
-/**
- * 订阅二期同步状态（返回取消订阅函数）。
- * @param fn 回调
- */
-export function subscribeKcSyncState(fn: (s: SyncState) => void): () => void {
-  return scheduler.subscribeSyncState(fn);
-}
-
-/**
- * 读二期同步状态快照。
- */
-export function getKcSyncState(): SyncState {
-  return scheduler.getSyncState();
-}
-
-/**
- * 二期连续失败是否多到该常驻提示。
- * @param s 状态快照
- */
-export function shouldShowKcPersistentHint(s: SyncState): boolean {
-  return scheduler.shouldShowPersistentHint(s);
 }

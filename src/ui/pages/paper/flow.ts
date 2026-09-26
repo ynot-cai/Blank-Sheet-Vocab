@@ -412,7 +412,7 @@ export function createPaperFlow(opts: FlowOptions): PaperFlow {
    *   `session.wordIds`——它由 `LearnPage` 用 `core/pick.ts` 的 `sortForLearn()`
    *   排好（优先级降序是第一关键字，绝对优先）。
    *   所以「再背一个」天然就是「先抽高优先级的词」，这里不需要再排一次；
-   *   真正需要单独抽词的地方（换词、断点续跑后取下一个）用 `pickNextForLearn()`。
+   *   真正需要单独抽词的地方（换词、断点续跑后取下一个）用 `sortForLearn()` 排序后取第一个。
    */
   const nextAction = (): void => {
     if (destroyed || flowMode !== 'browse' || roundBusy) return;

@@ -91,17 +91,6 @@ export function replace(el: Element, ...children: DomChild[]): void {
   append(el, ...children);
 }
 
-/**
- * 查询单个元素（找不到直接抛错，避免后续一堆空判断）。
- * @param selector CSS 选择器
- * @param root 根节点
- */
-export function qs<T extends Element = HTMLElement>(selector: string, root: ParentNode = document): T {
-  const el = root.querySelector<T>(selector);
-  if (!el) throw new Error(`找不到元素：${selector}`);
-  return el;
-}
-
 /** 防抖函数（带 `cancel()`，用于「离开页面时别让定时器把已卸载的页面写回去」） */
 export interface Debounced<A extends unknown[]> {
   (...args: A): void;
