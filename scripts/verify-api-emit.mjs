@@ -56,7 +56,7 @@ if (tsSpecifiers.length > 0) {
   failed += 1;
   console.log(`✗ 产物里还有 ${tsSpecifiers.length} 处 .ts 说明符（线上会 ERR_MODULE_NOT_FOUND）：`);
   for (const item of tsSpecifiers.slice(0, 10)) console.log(`    ${item}`);
-  console.log('  修复：源码里的相对导入要写 .js 后缀，见 scripts/fix-api-extensions.mjs 顶部注释');
+  console.log('  修复：api/** 的相对导入必须写 .js 后缀（Vercel 剥类型但不重写 import 路径）；');
 } else {
   console.log('✓ 产物里没有任何 .ts 说明符');
 }
