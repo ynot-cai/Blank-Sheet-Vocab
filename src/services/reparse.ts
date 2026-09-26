@@ -46,12 +46,6 @@ export interface ReparseDiff {
   fields: ('义项' | '音标' | '例句')[];
 }
 
-/** 一批的处理结果 */
-export interface ReparseBatchOutcome {
-  ok: boolean;
-  error?: string;
-}
-
 /** 整理选项 */
 export interface ReparseOptions {
   words: Word[];

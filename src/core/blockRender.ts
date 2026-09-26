@@ -17,7 +17,6 @@
  *
  * 结果就是：`<script>alert(1)</script>` 会**原样显示成这行字**，不弹窗、不发请求。
  */
-import { KC } from './config';
 import { sanitizeText } from './kcModel';
 import type { Block } from './kcTypes';
 
@@ -249,8 +248,3 @@ export function renderBlocks(blocks: Block[]): DocumentFragment {
   }
   return frag;
 }
-
-/**
- * 单块文本长度上限（给编辑器做输入限制用）。
- */
-export const MAX_BLOCK_TEXT = KC.maxBlockTextLength;

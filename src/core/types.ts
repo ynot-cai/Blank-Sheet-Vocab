@@ -91,7 +91,7 @@ export interface Attrs {
    *
    * 为什么类型是 `number | null` 而不是 `number`：
    *   `null` 明确表示「这个词还没有总考核次数的记录」（老数据），
-   *   与「确实考过 0 次」区分开 —— 迁移（`backfillExamCount`）只处理 null，
+   *   与「确实考过 0 次」区分开 —— 迁移（`backfillExamCountRow`）只处理 null，
    *   0 是有意义的真实值，不能被回填覆盖。跑过迁移之后这个字段不再为 null。
    */
   examCount: number | null;

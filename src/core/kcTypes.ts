@@ -51,9 +51,6 @@ export interface Block {
 /** 卡片状态：未学 / 学习中 / 已学 / 已斩 */
 export type KcStatus = 'unlearned' | 'learning' | 'learned' | 'chopped';
 
-/** 自评与考核的分数：1=不会，2=模糊，3=会了 */
-export type SelfRating = 1 | 2 | 3;
-
 /** 出题量建议（录入时由 AI 决定，用户可改） */
 export interface ExamLoad {
   /** 本次建议的题型组合，元素是 `EXAM_TYPES` 的 id */
@@ -120,9 +117,6 @@ export const EXAM_TYPES = [
   { id: 'choice', name: '选择题', desc: '' },
   { id: 'judge', name: '判断正误', desc: '' },
 ] as const;
-
-/** 题型 id 联合类型（由 EXAM_TYPES 推导，新增题型自动包含） */
-export type ExamTypeId = (typeof EXAM_TYPES)[number]['id'];
 
 /**
  * 按 id 找题型定义（找不到返回 undefined）。

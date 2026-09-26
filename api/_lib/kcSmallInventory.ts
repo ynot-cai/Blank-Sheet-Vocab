@@ -11,45 +11,6 @@
 import { getDB } from './db.js';
 import { KC_SMALL_TABLES, type KcSmallTableKey, type SyncRow } from './kcSmallTables.js';
 
-/** 语境词行 */
-export interface ContextWordRow {
-  id: string;
-  date: string;
-  words: string;
-  source: string;
-  confirmed: number;
-  created_at: number;
-  updated_at: number;
-  deleted: number;
-}
-
-/** 题目历史行 */
-export interface ExamRecordRow {
-  id: string;
-  card_id: string;
-  date: string;
-  type: string;
-  question: string;
-  user_answer: string | null;
-  ai_score: number | null;
-  ai_reason: string | null;
-  context_word: string | null;
-  created_at: number;
-  updated_at: number;
-  deleted: number;
-}
-
-/** 题库行 */
-export interface BankQuestionRow {
-  id: string;
-  type: string;
-  content: string;
-  source: string | null;
-  created_at: number;
-  updated_at: number;
-  deleted: number;
-}
-
 /**
  * 把驱动返回的行转成普通对象（libSQL 的 Row 类直接展开拿不到字段）。
  * @param row 驱动返回的行

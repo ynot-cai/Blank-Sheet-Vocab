@@ -81,11 +81,3 @@ export const PRESET_TIERS: PresetTier[] = [
     file: 'ielts.json',
   },
 ];
-
-/**
- * 按 id 取档位。
- * @param id 档位 id
- */
-export function findTier(id: string): PresetTier | null {
-  return PRESET_TIERS.find((t) => t.id === id) ?? null;
-}

@@ -8,10 +8,9 @@
  * `Authorization` 头直接发给模型服务；服务器（含我们自己的代理）**不保存、不落库**。
  * 这个文件里**不许出现任何「把密钥存起来」的逻辑**。
  */
-import type { Settings } from '../core/types';
 import { KC } from '../core/config';
 import { createEmptyCard } from '../core/kcModel';
-import { aiConfigFromSettings, chatComplete, type AiConfig, type ChatMessage } from './ai';
+import { chatComplete, type AiConfig, type ChatMessage } from './ai';
 import { KC_IMPORT_SYSTEM_PROMPT, kcImportUserPrompt } from './kcPrompts';
 import { parseImportReply, type ParsedImport } from './kcImportParse';
 import type { Block, KnowledgeCard, ParsedKcCard } from '../core/kcTypes';
@@ -206,12 +205,4 @@ export async function analyzeWeakPoint(
     return { ...parsed, raw, omittedTurns, error: `${parsed.error}（可点「重试」，或改用「手动新建」）` };
   }
   return { ...parsed, raw, omittedTurns };
-}
-
-/**
- * 从设置里取 AI 配置（便捷入口，与一期 `aiConfigFromSettings` 同一份实现）。
- * @param settings 设置
- */
-export function kcAiConfig(settings: Settings): AiConfig {
-  return aiConfigFromSettings(settings);
 }

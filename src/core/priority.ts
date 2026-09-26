@@ -19,7 +19,7 @@ export const DEFAULT_FAIL_RATE = 0.5;
  *
  * 为什么这个函数对「0 次考核」和「null（老数据没记录）」一视同仁：
  * 两者都意味着「我们不知道这个词的实际表现」，用同一个默认值最诚实。
- * 迁移（dbSchema 的 migrateToV7ExamCount / model 的 backfillExamCount）
+ * 迁移（dbSchema 的 migrateToV7ExamCount / dbSchema 的 backfillExamCountRow）
  * 会把 null 补成具体数字，之后这里只会遇到数字。
  *
  * @param attrs 词属性

@@ -24,6 +24,3 @@ export const AI_PROXY_TIMEOUT_MS = 60_000;
  * 而且朗读是交互动作（点一下就期待出声），超时越短越早降级到浏览器语音。
  */
 export const TTS_PROXY_TIMEOUT_MS = 15_000;
-
-/** 单词条数上限提示（超过这个量级，前端列表页内存筛选会卡，属已知限制） */
-export const WORDS_SOFT_LIMIT = 20_000;

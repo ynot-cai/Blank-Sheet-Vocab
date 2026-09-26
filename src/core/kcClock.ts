@@ -94,10 +94,3 @@ export async function ensureClockFloor(): Promise<void> {
     console.warn('[kcClock] 读取同步水位失败（不影响本地功能）', err);
   }
 }
-
-/**
- * 读当前水位（自测与排查用，不参与业务判断）。
- */
-export function currentClockFloor(): number {
-  return clockHigh;
-}

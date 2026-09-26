@@ -225,20 +225,6 @@ export interface MaxUpdated {
 }
 
 /**
- * 取某个空间里单词的最大 updated_at（用于服务器时间基准）。
- * @param spaceKey 数据空间键
- */
-export async function maxWordUpdatedAt(spaceKey: string): Promise<number | null> {
-  const rs = await getDB().execute({
-    sql: 'SELECT MAX(updated_at) AS max_updated FROM words WHERE space_key = ?',
-    args: [spaceKey],
-  });
-  const row = rs.rows[0];
-  if (row === undefined) return null;
-  return toPlainRow<MaxUpdated>(row).max_updated ?? null;
-}
-
-/**
  * 查这些 id 在**本空间**里已有的 updated_at（用于后写覆盖判断与 conflicts 统计）。
  * 分块查询，避免 SQL 变量数量超限（SQLite 默认上限 999）。
  * @param spaceKey 数据空间键

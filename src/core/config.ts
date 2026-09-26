@@ -578,14 +578,6 @@ export function getSettings(): Settings {
 }
 
 /**
- * 读取单项设置（同步读缓存）。
- * @param k 设置键名
- */
-export function getSetting<K extends keyof Settings>(k: K): Settings[K] {
-  return cachedSettings[k];
-}
-
-/**
  * 把补丁合并到当前设置上，返回一份新对象（不改原对象）。
  * @param patch 设置补丁（支持 { cloud: { enabled: true } } 这类嵌套局部更新）
  */

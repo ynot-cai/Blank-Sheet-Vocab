@@ -107,27 +107,6 @@ export function recommendReviewCount(
 }
 
 /**
- * 复习抽词：排除 chopped 和 unlearned；
- * 按 reviewPriority 降序，同分时 lastReviewAt 更早（含从未复习）的优先；取前 count 个。
- * @param words 词库全量
- * @param count 要抽的数量
- * @param settings 设置
- * @param now 当前时间戳
- */
-export function pickForReview(words: Word[], count: number, settings: Settings, now: number = Date.now()): string[] {
-  const candidates = words.filter((w) => w.status !== 'chopped' && w.status !== 'unlearned');
-  candidates.sort((a, b) => {
-    const pa = computePriority(a, settings, now);
-    const pb = computePriority(b, settings, now);
-    if (pb !== pa) return pb - pa;
-    const ta = a.attrs.lastReviewAt ?? 0;
-    const tb = b.attrs.lastReviewAt ?? 0;
-    return ta - tb;
-  });
-  return candidates.slice(0, Math.max(0, count)).map((w) => w.id);
-}
-
-/**
  * ★ T2：按优先度排出**全部**可复习词（降序），排除已斩 / 未背 / 已在本次词单里的。
  *
  * 用途：「再复习一个」点一下多上一个词 —— 每次要的是「下一个该复习的词」。
@@ -186,7 +165,7 @@ export function groupWords(ids: string[], size: number): string[][] {
  * ★ 背诵抽词的排序规则（R3 第一关键字是**绝对**优先）。
  *
  * 为什么单独抽成导出的函数，而不是在两个地方各写一遍：
- *   1. 「开始背诵」（LearnPage 取全部未背词）和「再背一个」（pickNextForLearn 取下一个）
+ *   1. 「开始背诵」（LearnPage 取全部未背词）和「再背一个」（sortForLearn 决定下一个）
  *      必须是**同一套顺序**——两处各写一遍的话，会出现「词单顺序 A、再背一个顺序 B」，
  *      用户看到的现象是「我自己点的顺序和它给我的不一样」，很难查；
  *   2. 顺序规则是这一阶段的核心验收项（连续抽 10 次：前 5 次必须全是 priority=5），
@@ -229,33 +208,4 @@ export function sortForLearn(
     if (pd !== 0) return pd;
     return a.createdAt - b.createdAt;
   });
-}
-
-/**
- * ★ 背诵抽词：取「下一个该背的词」。
- *
- * 候选池（提示词 2.2 节）：`status` 为未背 / 学习中、**未被斩**、**不在 appearedIds 里**。
- * 顺序：见 `sortForLearn` —— 优先级降序是**绝对优先**（5 的词没抽完不会抽 4 的）。
- *
- * @param words 词库全量（内部自己过滤候选池）
- * @param appearedIds 本次会话已经出现过的词 id
- * @param opts.samePriorityOrder 同级内的顺序（默认按 createdAt）
- * @param opts.seedText 随机模式的种子（传 session.id）
- * @returns 下一个词；没有候选时返回 null
- */
-export function pickNextForLearn(
-  words: Word[],
-  appearedIds: Set<string>,
-  opts: { samePriorityOrder?: 'createdAt' | 'random'; seedText?: string } = {},
-): Word | null {
-  const candidates = words.filter(
-    (w) =>
-      w.deleted !== 1 &&
-      w.status !== 'chopped' &&
-      (w.status === 'unlearned' || w.status === 'learning') &&
-      !appearedIds.has(w.id),
-  );
-  if (candidates.length === 0) return null;
-  const ordered = sortForLearn(candidates, opts.samePriorityOrder ?? 'createdAt', opts.seedText ?? 'learn');
-  return ordered[0] ?? null;
 }

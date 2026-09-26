@@ -720,29 +720,6 @@ export function resolvePaperSize(
   return { width: Math.max(320, Math.floor(viewport.width)), height: Math.max(240, Math.floor(viewport.height)) };
 }
 
-/**
- * 兼容旧签名：按像素尺寸布点（内部换算成宽高比后交给 jitteredGrid）。
- * @param count 落点数
- * @param width 画布宽
- * @param height 画布高
- * @param opts 旧参数（padding 对应 margin）
- */
-export function paperLayout(
-  count: number,
-  width: number,
-  height: number,
-  opts: { jitter?: number; minGap?: number; random?: () => number; padding?: number } = {},
-): Placement[] {
-  void opts.jitter;
-  void opts.minGap;
-  void opts.random;
-  return jitteredGrid(count, {
-    aspect: width / Math.max(1, height),
-    margin: opts.padding ?? 0.06,
-    seed: seedFromString(`${width}x${height}`),
-  });
-}
-
 /** 生成 0..n-1 的随机排列（Fisher–Yates，可传 seeded random） */
 export function shuffledIndexes(n: number, random: () => number = Math.random): number[] {
   const arr = Array.from({ length: n }, (_, i) => i);
