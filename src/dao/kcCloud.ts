@@ -41,8 +41,6 @@ import {
   type KcPushData,
 } from './kcCloudHttp';
 
-export { kcCloudReady } from './kcCloudHttp';
-
 /**
  * 一次同步的结果（给界面显示）。
  *

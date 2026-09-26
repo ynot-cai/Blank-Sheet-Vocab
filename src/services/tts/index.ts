@@ -35,17 +35,15 @@ import type { LastThirdPartyResult, SpeakOptions, TtsLang } from './types';
 import { pickBrowserVoice } from './voices';
 import { createYoudaoProvider } from './youdao';
 
-export type { SpeakOptions, TtsLang, TtsProvider, LastThirdPartyResult } from './types';
-export { normalizeForSpeech } from './normalize';
+export type { SpeakOptions, TtsLang, LastThirdPartyResult } from './types';
 export { pickBrowserVoice, listBrowserVoices, onVoicesChanged, resolveBrowserVoice } from './voices';
-export * from './youdao';
+export { YOUDAO_VOICES } from './youdao';
 export {
   clearTtsCache,
   formatBytes,
   ttsCacheStats,
   type TtsCacheStats,
 } from './cache';
-export { isBrowserSpeechSupported } from './browser';
 
 /**
  * 连续失败多少次之后，本次会话内不再尝试第三方。

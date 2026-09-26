@@ -28,17 +28,6 @@ export function defaultAttrs(): Attrs {
 }
 
 /**
- * ★ T2：历史数据的「总考核次数」回填 —— **实现见 `core/dbSchema.ts` 的
- * {@link backfillExamCountRow}**，这里只做一次转发导出。
- *
- * 为什么不把实现写在这个文件里：`dbSchema.ts` 刻意保持「零运行时依赖」
- * （连自己的模块都不 import），而 model.ts 会拉进 senseRules 一串东西；
- * 迁移逻辑住在 dbSchema 里能让那条约定不被破坏，同时保证
- * 「真实升级」与「测试入口」调的是**同一份**代码。
- */
-export { backfillExamCountRow as backfillExamCount } from './dbSchema';
-
-/**
  * 新建一个义项。
  *
  * ★ aliases 会过一遍 `normalizeAliases`（见 core/senseRules.ts 的约束 1）：

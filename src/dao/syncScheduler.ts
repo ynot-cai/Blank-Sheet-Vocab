@@ -17,7 +17,7 @@ import {
   type SyncScheduler,
 } from './syncSchedulerFactory';
 
-export type { SyncPhase, SyncState } from './syncSchedulerFactory';
+export type { SyncState } from './syncSchedulerFactory';
 
 /**
  * 现在能不能同步：开启了云同步、配置齐全、且开了自动同步（手动同步不受 autoSync 限制）。

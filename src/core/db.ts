@@ -10,16 +10,16 @@
  *   一期：words / sources / settings / sessions
  *   二期：knowledgeCards / dailyContextWords / examRecords / bankQuestions / kcSessions
  *
- * ⚠️ 这里把 `STORE` / `DB_NAME` / `StaleDbError` / `openDB` 等**再导出**一次，
+ * ⚠️ 这里把 `STORE` / `StaleDbError` / `openDB` 等**再导出**一次，
  * 是为了不动几十个 DAO 的 `import ... from '../core/db'`。新代码按语义从
  * `dbSchema` / `dbStale` 直接 import 更清楚。
  */
-import { STORE, DB_NAME, DB_VERSION } from './dbSchema';
+import { STORE } from './dbSchema';
 import { withDbRetry, withStore, StaleDbError } from './dbStale';
-import { openDB, releaseConnections, repairUpgrade } from './dbOpen';
+import { openDB } from './dbOpen';
 
-export { STORE, DB_NAME, DB_VERSION, StaleDbError, openDB, releaseConnections, repairUpgrade };
-export { withDbRetry, withStore };
+export { STORE, StaleDbError, openDB };
+export { withDbRetry };
 
 /**
  * 在一个事务里发一条请求，成功返回结果，失败 reject。

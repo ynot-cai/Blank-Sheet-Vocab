@@ -6,9 +6,7 @@
  */
 
 // RULES-R1: 此处禁止任何强制时间限制（无倒计时 / 无超时提交 / 无超时判错）
-import { EXAM_TYPES, findExamType } from './kcTypes';
-/** 已知的题型 id 集合（给「把 AI 输出的标签过滤成合法 id」用） */
-export const KNOWN_EXAM_TYPE_IDS: readonly string[] = EXAM_TYPES.map((t) => t.id);
+import { findExamType } from './kcTypes';
 
 /**
  * 把任意字符串数组过滤成合法题型标签（去重、保序）。

@@ -23,8 +23,6 @@ import { SYNC, getSettings } from '../core/config';
 import type { SyncResult } from './cloudSync';
 import { createSyncScheduler, type SyncScheduler } from './syncSchedulerFactory';
 
-export type { SyncPhase, SyncState } from './syncSchedulerFactory';
-
 /** 真正的同步实现（由 main.ts 注入，见文件头说明） */
 type KcSyncRunner = () => Promise<SyncResult>;
 

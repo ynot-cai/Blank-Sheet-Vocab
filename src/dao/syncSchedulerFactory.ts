@@ -23,7 +23,7 @@
 import type { SyncResult } from './cloudSync';
 
 /** 界面可见的同步状态 */
-export type SyncPhase = 'idle' | 'syncing' | 'ok' | 'error';
+type SyncPhase = 'idle' | 'syncing' | 'ok' | 'error';
 
 /** 同步状态快照（订阅回调收到它） */
 export interface SyncState {
