@@ -183,15 +183,18 @@ check(
   `清单 ${declaredIds.join(',')} / 脚本 ${TIERS.map((t) => t.id).join(',')}`,
 );
 
-// —— [6] 前端确实在用这些档位 ——
-console.log('\n[6] 前端接线正确');
-const presetVocabSrc = read('src/services/presetVocab.ts');
-check('presetVocab 从 public/presets 取数据', presetVocabSrc.includes('presets/'));
-check('presetVocab 用 BASE_URL 拼路径（子路径部署不会 404）', presetVocabSrc.includes('import.meta.env.BASE_URL'));
-const importPageSrc = read('src/ui/pages/ImportPage.ts');
-check('录入页接了预设导入', importPageSrc.includes('importPreset') && importPageSrc.includes('loadPreset'));
-check('预设导入后进合并确认页', importPageSrc.includes("navigate('/merge')"));
-// SW 必须缓存 json，否则离线时点预设会失败
+// —— [6] 产物能被离线用上 ——
+console.log('\n[6] 产物接线正确');
+/**
+ * ★ 版本 0.0.1「删除与归档行动」：删掉了三条指向**已归档文件**的断言
+ *   （`src/services/presetVocab.ts` 的取数路径与 BASE_URL 拼接、
+ *   `src/ui/pages/ImportPage.ts` 的预设导入与跳转合并页）。
+ *   那两个文件随「录入」模块进了 `已归档/04` 与 `已归档/13`，
+ *   恢复录入功能时把这三条加回来即可。
+ *
+ * 保留下面这条 SW 断言：它验的是**产物的离线可用性**，
+ * 与界面在不在无关 —— 预设 json 是纯数据，程序侧一直留着。
+ */
 const swSrc = read('public/sw.js');
 check('Service Worker 把 json 纳入缓存', /PRECACHE_EXT\s*=\s*\/\\\.\(\?:[^/]*json/.test(swSrc), 'PRECACHE_EXT 里没有 json');
 

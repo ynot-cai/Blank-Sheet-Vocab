@@ -1,11 +1,15 @@
 #!/usr/bin/env node
 /**
- * checkRules.mjs —— AI_RULES.md 铁律自检脚本
+ * checkRules.mjs —— 项目铁律自检脚本
  *
  * 用法：npm run rules:check   （或 node scripts/checkRules.mjs）
  *
  * 目的：防止编码 AI（dsh 等）在多次对话后遗忘项目铁律。
- * 规则住在 AI_RULES.md 里，本脚本负责机器化验证"规则是否真的落地到代码"。
+ * 规则住在 `开发必读/逻辑与交互要求.md` 里，本脚本负责机器化验证"规则是否真的落地到代码"。
+ *
+ * ★ 版本 0.0.1 的改动：规则文件从仓库根的 `AI_RULES.md`
+ *   移到 `开发必读/逻辑与交互要求.md`（用户的文档整理要求）。
+ *   旧文件的完整内容保存在 `已归档/原始文档/AI_RULES.md`。
  *
  * 退出码：0 = 全绿；1 = 有违规或警告未处理
  */
@@ -14,7 +18,8 @@ import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 const ROOT = process.cwd();
-const RULES_FILE = join(ROOT, 'AI_RULES.md');
+/** 规则文件（版本 0.0.1 起的现行位置） */
+const RULES_FILE = join(ROOT, '开发必读', '逻辑与交互要求.md');
 
 // 需要扫描的源码目录
 const SCAN_DIRS = ['src', 'api'];
@@ -51,7 +56,7 @@ function pass(rule, msg) {
 // 0. 前置：AI_RULES.md 必须存在
 // ─────────────────────────────────────────────
 if (!existsSync(RULES_FILE)) {
-  console.error('✗ 找不到 AI_RULES.md —— 铁律文件缺失，先创建它');
+  console.error('✗ 找不到 开发必读/逻辑与交互要求.md —— 铁律文件缺失，先创建它');
   process.exit(1);
 }
 const rulesText = readFileSync(RULES_FILE, 'utf8');

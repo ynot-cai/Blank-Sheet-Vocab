@@ -100,8 +100,24 @@ const CODE_FILES = [
   join(ROOT, 'vite.config.ts'),
 ];
 
-/** 文档（旧名允许出现在「历史沿革」的说明里） */
-const DOC_FILES = ['README.md', 'README-DEPLOY.md', 'HANDOVER.md', 'CHECKLIST.md']
+/**
+ * 文档（旧名允许出现在「历史沿革」的说明里）。
+ *
+ * ★ 版本 0.0.1 起：中文文档统一收进 `已归档/原始文档/` 与三个长期文件夹，
+ *   根目录的 `README.md` / `README-DEPLOY.md` / `CHECKLIST.md` 早在 0.0.1 之前就已删除，
+ *   `HANDOVER.md` 在本版移入 `已归档/原始文档/`。用 `existsSync` 过滤，
+ *   所以这里列的是「可能存在的文档全集」，不存在的自动跳过。
+ */
+const DOC_FILES = [
+  'HANDOVER.md',
+  '已归档/原始文档/HANDOVER.md',
+  '已归档/原始文档/AI_RULES.md',
+  '已归档/原始文档/白纸单词-架构与交互分析报告.md',
+  '关于项目/版本更新日志.md',
+  '关于项目/项目概述.md',
+  '开发必读/逻辑与交互要求.md',
+  '开发必读/开发规则.md',
+]
   .map((f) => join(ROOT, f))
   .filter((f) => existsSync(f));
 
@@ -131,15 +147,20 @@ const NEW_BRAND = '白纸单词';
 const NEW_SLUG = 'blank-sheet-vocab';
 const NEW_DB = 'blank-sheet-vocab';
 
-/** 文件内容必须包含某个字符串 */
+/**
+ * 文件内容必须包含某个字符串。
+ *
+ * ★ 版本 0.0.1「删除与归档行动」：删掉了三条指向**已归档文件**的断言
+ *   （`services/importJob.ts` 的存档键、`ui/components/SpeechGate.ts` 的语音解锁标记、
+ *   `ui/components/Footer.ts` 的品牌名）。三个文件随各自模块进了「已归档」，
+ *   断言跟着删；恢复那些模块时，把对应三行加回来即可。
+ */
 const mustContain = [
   // ⚠️ 库名住在 `src/core/dbSchema.ts`（`db.ts` 只发事务，见 HANDOVER §0.12 的分层）。
   // 这条护栏查的是「库名有没有改回来」，落在哪个文件不重要，改结构时跟着挪即可。
   ['IndexedDB 库名', 'src/core/dbSchema.ts', `DB_NAME = '${NEW_DB}'`],
   ['错误边界的救火读取也指向新库名', 'src/ui/components/ErrorBoundary.ts', `indexedDB.open('${NEW_DB}')`],
   ['设置镜像键', 'src/dao/settings.ts', `${NEW_SLUG}.settings`],
-  ['导入任务存档键', 'src/services/importJob.ts', `${NEW_SLUG}.importJob`],
-  ['iOS 语音解锁标记', 'src/ui/components/SpeechGate.ts', `${NEW_SLUG}.speechUnlocked`],
   ['安装提示标记', 'src/services/pwa.ts', `${NEW_SLUG}.installHintShown`],
   ['本地文件夹备份文件名', 'src/services/localfile.ts', `${NEW_SLUG}-data.json`],
   ['SW 缓存前缀', 'public/sw.js', `${NEW_SLUG}-v1`],
@@ -150,7 +171,6 @@ const mustContain = [
   ['包名', 'package.json', `"name": "${NEW_SLUG}"`],
   ['顶栏品牌名', 'src/App.ts', NEW_BRAND],
   ['首页标题', 'src/ui/pages/HomePage.ts', NEW_BRAND],
-  ['footer 品牌名', 'src/ui/components/Footer.ts', NEW_BRAND],
   ['备份文件名', 'src/services/backup.ts', `${NEW_BRAND}备份_`],
 ];
 
@@ -190,11 +210,28 @@ if (legacyPrefixMatch) {
 console.log('\n[5] 文档记录了改名这件事');
 const docText = DOC_FILES.map((f) => readFileSync(f, 'utf8')).join('\n');
 check('文档里提到了新标识 blank-sheet-vocab', docText.includes(NEW_SLUG));
-check('HANDOVER 记录了改名历史', readFileSync(join(ROOT, 'HANDOVER.md'), 'utf8').includes('改名'));
+/**
+ * HANDOVER 的位置在版本 0.0.1 变了（根目录 → `已归档/原始文档/`）。
+ * 两个位置都试一下，这样它在「移动前 / 移动后」都能被验到。
+ */
+const handoverPath = [
+  join(ROOT, 'HANDOVER.md'),
+  join(ROOT, '已归档', '原始文档', 'HANDOVER.md'),
+].find((p) => existsSync(p));
+check(
+  'HANDOVER 记录了改名历史',
+  handoverPath !== undefined && readFileSync(handoverPath, 'utf8').includes('改名'),
+  String(handoverPath),
+);
 
 // ─────────────────────────────────────────── 6. 构建产物与逻辑名一致
 console.log('\n[6] 生成物与清单一致');
-const presetsTs = readFileSync(join(ROOT, 'src/core/presets.ts'), 'utf8');
+/**
+ * 原来读的是 `src/core/presets.ts`（应用内的预设词库装载器）。
+ * 版本 0.0.1 把录入相关模块归档后，它随模块 16 一起进了 `已归档/`；
+ * 预设清单本身改由构建脚本 `scripts/build-presets.mjs` 定义，断言跟着挪过去。
+ */
+const presetsTs = readFileSync(join(ROOT, 'scripts/build-presets.mjs'), 'utf8');
 check('预设清单没有被改名波及（仍能正常解析）', presetsTs.includes('PRESET_TIERS'));
 
 // ─────────────────────────────────────────── 汇总

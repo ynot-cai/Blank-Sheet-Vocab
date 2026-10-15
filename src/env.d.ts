@@ -3,8 +3,11 @@
  * 这个文件不含运行时代码。
  */
 
-/** 构建时间戳（由 vite.config.ts 的 define 注入，每次构建都不同） */
+/** 三段式语义版本（由 vite.config.ts 从 package.json 读取后 define 注入，形如 `0.0.1`） */
 declare const __APP_VERSION__: string;
+
+/** 构建时间戳（由 vite.config.ts 的 define 注入，每次构建都不同，形如 `20261015T1955`） */
+declare const __APP_BUILD__: string;
 
 /**
  * `?url` 后缀的模块导入（R1 的 PDF worker 用到）。
@@ -19,14 +22,4 @@ declare const __APP_VERSION__: string;
 declare module '*?url' {
   const src: string;
   export default src;
-}
-
-/**
- * ★ T1：验收用的「预览崩坏注入」开关。
- *
- * 打开方式：地址栏带 `?bustPreview=1`（或 hash 里带），设置页会把预览的渲染
- * 故意炸掉一次，用来验证「预览崩了不影响设置控件」。默认 `undefined` = 不注入。
- */
-interface Window {
-  __bustLayoutPreview?: boolean;
 }

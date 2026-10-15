@@ -1,17 +1,10 @@
-import { defaultTierCopy, DEFAULT_SETTINGS } from '../../core/config';
+import { DEFAULT_SETTINGS } from '../../core/config';
+import { appVersionLabel } from '../../core/version';
 import { button, details, h } from '../dom';
 import { renderAiSection } from './settings/AiSection';
 import { renderCloudSection } from './settings/CloudSection';
-import { renderDataSection } from './settings/DataSection';
-import { renderDisplaySection } from './settings/DisplaySection';
-import { renderLayoutSection, isLayoutDirty } from './settings/LayoutSection';
-import { renderPracticeSection } from './settings/PracticeSection';
 import { renderPrioritySection } from './settings/PrioritySection';
-import { renderSpeechSection } from './settings/SpeechSection';
-import { renderStarParamsSection } from './settings/StarParamsSection';
-import { discardDraft } from './settings/layoutDraft';
 import { patchSettings } from './settings/ctx';
-import { clearTtsCache } from '../../services/tts';
 
 /** 一个设置分组的定义 */
 interface Section {
@@ -30,133 +23,62 @@ interface Section {
 }
 
 /**
- * 设置页：A~G 八个折叠分区，默认展开 A 和 G。
+ * 设置页。
  *
- * ── T1：骨架加固（阶段文档 T1 任务 4）──
- * 以前这里是「一次性把八个分组全部渲染出来再挂上去」：
- * `renderLayoutSection()` 里只要抛一次（实测就是 `layout.mobile.button` 丢失导致的
- * `TypeError: Cannot read properties of undefined (reading 'diameterPx')`），
- * 整页就只剩 `router` 兜底的一行「页面渲染失败：…」——
- * 用户看到的是**所有设置都打不开**，连出事的那一项都碰不到，只能清数据自救。
+ * ★ 版本 0.0.1「删除与归档行动」：**只保留三项**
+ *   1. 同步（云同步：开关 / 后端地址 / 同步码 / 手动同步 / 强制覆盖）
+ *   2. AI 接口（接口地址 / 模型名 / 密钥）
+ *   3. 复习优先度计算公式（预设三档 + 自定义表达式）
+ *   另外保留一个**空的「画面设置」分类外壳**（用户明确允许保留这类可展开收起的外壳，
+ *   但壳里的具体设置项不属于保留项，已全部删除）。
  *
- * 现在改成三段式：
- * 1. **先渲染外壳**：标题 + 说明先挂上去，下面是八个分区的骨架（`details` + 标题），
- *    页面结构一定存在，任何一段内容失败都不会变成白屏；
- * 2. **每个分组独立 try/catch**：某一组抛错只影响它自己，其他分组照常可用；
- * 3. **崩溃组显示「重置该分组」**：给一个能自救的出口。
- *    重置只动这一组的字段，不碰词库 / 学习记录 / 同步码。
+ * ── 被删掉的五个分区去哪了 ──
+ *   A. 星号参数（背诵/记忆/复习的规模）
+ *   C. 画面与纸张
+ *   C2. 布局参数
+ *   D. 记忆与练习
+ *   H. 语音（朗读音色 / 有道 TTS / 缓存）
+ *   G. 数据（备份 / 恢复 / 清空）—— 该分区的**全部内容**也已删除
+ *   六份分区的完整源码见 已归档/11_设置页被删除的分区.md，可直接按原路径还原。
+ *
+ * ⚠️ 这些分区对应的**设置字段与默认值仍然完整保留在 `core/config.ts` 里**
+ *   （数据层不动），所以把分区文件放回、在下面的 `sections` 数组里加回一行，
+ *   功能立刻就能恢复，不需要改任何数据。
+ *
+ * ── 骨架加固（原 T1 的成果，保留）──
+ * 每个分区独立 try/catch：某一组渲染失败只影响它自己，其他分组照常可用，
+ * 并给一个「重置该分组」的自救出口。
  */
 export function renderSettingsPage(): HTMLElement {
   const page = h('div', { class: 'page settings-page' });
   page.appendChild(h('h2', { class: 'page-title', text: '设置' }));
-  page.appendChild(
-    h(
-      'p',
-      { class: 'note' },
-      '设置改动即存，存在本机浏览器里。星号参数（A 区）会影响背诵/记忆/复习的行为，建议先按默认值用一阵子再调。',
-    ),
-  );
+  page.appendChild(h('p', { class: 'note' }, '设置改动即存，存在本机浏览器里。'));
 
-  /** 八个分组（顺序即界面顺序） */
+  /** 保留的三个分区（顺序即界面顺序） */
   const sections: Section[] = [
     {
-      id: 'A',
-      title: 'A. 星号参数（背诵 / 记忆 / 复习的规模）',
+      id: 'sync',
+      title: '同步',
       open: true,
-      render: renderStarParamsSection,
-      resetNote: '把规模参数恢复成默认值（词库与学习记录不受影响）',
-      reset: () =>
-        patchSettings({
-          memorizeMaxPick: DEFAULT_SETTINGS.memorizeMaxPick,
-          memorizeTargetCount: DEFAULT_SETTINGS.memorizeTargetCount,
-          memorizeEvery: DEFAULT_SETTINGS.memorizeEvery,
-          failCountCap: DEFAULT_SETTINGS.failCountCap,
-          reviewGroupSize: DEFAULT_SETTINGS.reviewGroupSize,
-        }),
-    },
-    {
-      id: 'B',
-      title: 'B. AI 解析（接口地址 / 模型名 / 密钥自己填）',
-      open: false,
-      render: renderAiSection,
-      resetNote: '只清掉 AI 的接口地址与密钥，其他设置一个都不动',
-      reset: () => patchSettings({ ai: { ...DEFAULT_SETTINGS.ai } }),
-    },
-    {
-      id: 'C',
-      title: 'C. 画面与纸张',
-      open: false,
-      render: renderDisplaySection,
-      resetNote: '恢复字号 / 颜色 / 动画与纸张的默认值',
-      reset: () => patchSettings({ display: { ...DEFAULT_SETTINGS.display }, paper: { ...DEFAULT_SETTINGS.paper } }),
-    },
-    {
-      // ★ M2：布局参数独立成一节（手机一屏放几个词就靠它）
-      id: 'C2',
-      title: 'C2. 布局参数（手机一屏放几个词 / 按钮大小）',
-      open: false,
-      render: renderLayoutSection,
-      resetNote: '把三档布点参数与列数恢复成默认值（词库与学习记录不受影响）',
-      reset: () =>
-        patchSettings({
-          layout: {
-            mobile: defaultTierCopy('mobile'),
-            tablet: defaultTierCopy('tablet'),
-            desktop: defaultTierCopy('desktop'),
-          },
-          layoutColsOverride: 'auto',
-        }),
-    },
-    {
-      id: 'D',
-      title: 'D. 记忆与练习',
-      open: false,
-      render: renderPracticeSection,
-      resetNote: '恢复朗读与练习相关设置的默认值',
-      reset: () => patchSettings({ practice: { ...DEFAULT_SETTINGS.practice } }),
-    },
-    {
-      id: 'E',
-      title: 'E. 复习优先度',
-      open: false,
-      render: renderPrioritySection,
-      resetNote: '恢复优先度公式的默认预设（不改任何学习记录）',
-      reset: () => patchSettings({ priority: { ...DEFAULT_SETTINGS.priority } }),
-    },
-    {
-      id: 'F',
-      title: 'F. 云同步（多设备共用一份数据，可选）',
-      open: false,
       render: renderCloudSection,
       resetNote: '只关掉云同步开关，本地数据一个都不删',
       reset: () => patchSettings({ cloud: { ...DEFAULT_SETTINGS.cloud } }),
     },
     {
-      id: 'G',
-      title: 'G. 数据（备份 / 恢复 / 清空）',
+      id: 'ai',
+      title: 'AI 接口（接口地址 / 模型名 / 密钥自己填）',
       open: true,
-      render: renderDataSection,
-      resetNote: '数据区不提供重置（避免误删词库），请用这一组里的导出 / 恢复按钮',
-      reset: () => Promise.resolve(),
+      render: renderAiSection,
+      resetNote: '只清掉 AI 的接口地址与密钥，其他设置一个都不动',
+      reset: () => patchSettings({ ai: { ...DEFAULT_SETTINGS.ai } }),
     },
     {
-      /**
-       * ★ T4：朗读设置。
-       *
-       * 为什么放在 G 之后而不是插进字母序列：`data-section` 的 id 被 UI 验收
-       * (`test-t1-ui` 断言 8 个分组、`test-t2-ui`/`test-t3-ui` 按 id 找 E / D 区)
-       * 当作锚点用，插队会让后面所有分组改字母、连带改测试。
-       * 用语义 id `speech` 定住它，界面标题里的字母只影响观感。
-       */
-      id: 'speech',
-      title: 'H. 语音（朗读音色 / 有道 TTS / 缓存）',
-      open: false,
-      render: renderSpeechSection,
-      resetNote: '把朗读恢复到浏览器内置语音、自动挑音色、语速 0.9，并清空有道密钥（会一并清掉语音缓存）',
-      reset: async () => {
-        await patchSettings({ speech: { ...DEFAULT_SETTINGS.speech } });
-        await clearTtsCache();
-      },
+      id: 'priority',
+      title: '复习优先度计算公式',
+      open: true,
+      render: renderPrioritySection,
+      resetNote: '恢复优先度公式的默认预设（不改任何学习记录）',
+      reset: () => patchSettings({ priority: { ...DEFAULT_SETTINGS.priority } }),
     },
   ];
 
@@ -179,38 +101,40 @@ export function renderSettingsPage(): HTMLElement {
     }
   }
 
-  // ③ 有未应用的布局修改：显式提示（草稿只在内存里，刷新即丢，**不会**写坏设置）
-  if (isLayoutDirty()) {
-    const hint = h('div', { class: 'settings-dirty-hint' });
-    hint.dataset.role = 'settings-dirty-hint';
-    hint.appendChild(h('span', { text: '⚠ C2 布局参数里有未应用的修改（不会自动保存）。' }));
-    hint.appendChild(
-      button(
-        '去应用或取消',
-        () => {
-          const target = page.querySelector('details[data-section="C2"]');
-          if (target instanceof HTMLDetailsElement) {
-            target.open = true;
-            target.scrollIntoView({ block: 'start' });
-          }
-        },
-        { variant: 'ghost' },
-      ),
-    );
-    hint.appendChild(
-      button(
-        '丢弃这些修改',
-        () => {
-          discardDraft();
-          window.location.reload();
-        },
-        { variant: 'ghost', class: 'settings-dirty-discard' },
-      ),
-    );
-    page.appendChild(hint);
-  }
+  // ③ 用户明确允许保留的「分类外壳」：只留一个可展开收起的空壳，壳内没有任何设置项
+  page.appendChild(renderDisplayShell());
+
+  // ④ 版本信息（不是设置项，是「我现在跑的是哪一版」的自报家门）。
+  //    为什么放在设置页：主页按要求只剩「设置」一个按钮，版本号放在主页会变成多余元素；
+  //    而排查问题时第一个打开的通常就是设置页。
+  page.appendChild(h('p', { class: 'note app-version-line', text: appVersionLabel() }));
 
   return page;
+}
+
+/**
+ * 「画面设置」空分类外壳。
+ *
+ * 为什么留一个空壳：用户明确说「允许保留『画面设置』这类可展开收起的分类外壳，
+ * 但分类内具体设置项除非属于保留项，否则删除」。留壳的好处是**位置感**——
+ * 一眼能看出这里原来有一整类设置、以及它现在在哪。
+ */
+function renderDisplayShell(): HTMLElement {
+  const el = details('画面设置', [], false);
+  el.dataset.section = 'display';
+  const body = el.querySelector('.section-body');
+  if (body) {
+    body.appendChild(
+      h(
+        'p',
+        { class: 'note' },
+        '本分类下的具体设置项（字号 / 颜色 / 动画 / 纸张 / 布局参数 / 语音）已按版本 0.0.1 的要求删除，'
+          + '完整源码与恢复方法见「已归档/11_设置页被删除的分区.md」。'
+          + '这些设置字段与默认值仍完整保留在程序的数据层里，恢复分区文件后即可重新生效。',
+      ),
+    );
+  }
+  return el;
 }
 
 /**

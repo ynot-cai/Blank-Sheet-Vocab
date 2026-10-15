@@ -7,9 +7,9 @@
  * 这个文件**不 import 任何自己的模块**（零运行时依赖），所以它没有任何
  * 循环依赖风险，可以被 `dbOpen` 与 `db` 同时安全引用。
  *
- * 库名 blank-sheet-vocab，**版本 6**，9 张表：
- *   一期：words / sources / settings / sessions
- *   二期：knowledgeCards / dailyContextWords / examRecords / bankQuestions / kcSessions
+ * 库名 blank-sheet-vocab，**版本 8**，6 张表：
+ *   words / sources / settings / sessions（核心数据层）
+ *   ttsCache（第三方 TTS 音频缓存）
  */
 
 /**
@@ -29,12 +29,10 @@ export const DB_NAME = 'blank-sheet-vocab';
 /**
  * 库版本：
  * - v2 给 words / sources 补云同步用的字段（见 migrateToV2）
- * - v3 新增二期四张表（知识点卡片 / 语境词 / 题目历史 / 题库），**不动一期任何数据**
- * - v4 新增二期的学习/复习会话表（阶段 04 的「保存并退出」要用），同样**纯加法**
- * - v5 **不是新功能，是修复**：有些库的版本号已经是 4 但 `kcSessions` 没建出来
- *   （升级被旧版本标签页占住 / 事务中途失败）。版本号相同就**永远不会再触发
- *   `onupgradeneeded`**，那张表永远补不上。抬到 5 能给这类库一次「重跑建表」的机会
- *   （对正常库来说是空操作）。
+ * - v3 ~ v5 **历史**：曾是知识点卡片（二期）四张表与二期会话表的建表版本。
+ *   二期已整体删除（版本 0.0.1 的「删除与归档行动」，见 已归档/01_二期工程_知识点精学.md），
+ *   但**版本号保持不变**：抬版本号会让所有老库重跑一遍升级事务，而删掉建表代码本身
+ *   已经达到目的（新库不再建这些表）。老浏览器里遗留的空表不影响任何功能。
  * - v6 R1 阶段的词级优先级：给老词补上 `priority`（见 migrateToV3Priority）。
  *   同样是「抬版本号逼一次升级」，对已经是 v6 的库是空操作。
  * - v7 T2：给老词补上 `attrs.examCount`（总考核次数，见 migrateWordRows）。
@@ -45,17 +43,11 @@ export const DB_NAME = 'blank-sheet-vocab';
 export const DB_VERSION = 8;
 
 /** 表名常量，避免各处写错字符串 */
-export const STORE = {  // ── 一期 ──
+export const STORE = {
   words: 'words',
   sources: 'sources',
   settings: 'settings',
   sessions: 'sessions',
-  // ── 二期 ──
-  knowledgeCards: 'knowledgeCards',
-  dailyContextWords: 'dailyContextWords',
-  examRecords: 'examRecords',
-  bankQuestions: 'bankQuestions',
-  kcSessions: 'kcSessions',
   /**
    * ★ T4：第三方 TTS 的音频缓存。
    *
@@ -224,44 +216,6 @@ export function backfillExamCountRow(row: Record<string, unknown>): 'backfilled'
 }
 
 /**
- * 建二期的表（v3 的四张 + v4 的会话表）。
- *
- * 为什么单独一个函数：一期那张表已经够长，而且二期表和一期表**没有任何数据关系**，
- * 分开写以后要改二期结构一眼就能找到地方。
- * @param db 数据库实例
- */
-function createKcStores(db: IDBDatabase): void {
-  if (!db.objectStoreNames.contains(STORE.knowledgeCards)) {
-    const cards = db.createObjectStore(STORE.knowledgeCards, { keyPath: 'id' });
-    cards.createIndex('status', 'status', { unique: false });
-    cards.createIndex('updatedAt', 'updatedAt', { unique: false });
-    cards.createIndex('createdAt', 'createdAt', { unique: false });
-    cards.createIndex('attrs.reviewPriority', 'attrs.reviewPriority', { unique: false });
-  }
-  if (!db.objectStoreNames.contains(STORE.dailyContextWords)) {
-    const words = db.createObjectStore(STORE.dailyContextWords, { keyPath: 'id' });
-    words.createIndex('date', 'date', { unique: false });
-    words.createIndex('spaceKey', 'spaceKey', { unique: false });
-  }
-  if (!db.objectStoreNames.contains(STORE.examRecords)) {
-    const records = db.createObjectStore(STORE.examRecords, { keyPath: 'id' });
-    records.createIndex('cardId', 'cardId', { unique: false });
-    records.createIndex('date', 'date', { unique: false });
-    records.createIndex('createdAt', 'createdAt', { unique: false });
-  }
-  if (!db.objectStoreNames.contains(STORE.bankQuestions)) {
-    const bank = db.createObjectStore(STORE.bankQuestions, { keyPath: 'id' });
-    bank.createIndex('type', 'type', { unique: false });
-    bank.createIndex('createdAt', 'createdAt', { unique: false });
-  }
-  if (!db.objectStoreNames.contains(STORE.kcSessions)) {
-    const kcSessions = db.createObjectStore(STORE.kcSessions, { keyPath: 'id' });
-    kcSessions.createIndex('type', 'type', { unique: false });
-    kcSessions.createIndex('updatedAt', 'updatedAt', { unique: false });
-  }
-}
-
-/**
  * 在 onupgradeneeded 里建表建索引，并做版本迁移。
  *
  * 说明：所有 `createObjectStore` 都先 `contains()` 判断，
@@ -317,8 +271,6 @@ export function createSchema(db: IDBDatabase, oldVersion: number, transaction: I
   if (!db.objectStoreNames.contains(STORE.ttsCache)) {
     db.createObjectStore(STORE.ttsCache, { keyPath: 'key' });
   }
-  // 二期：只新增表，不动一期数据
-  createKcStores(db);
   // v1 → v2：给来源补 updatedAt（只动 sources，与词表迁移互不干扰）
   if (oldVersion > 0 && oldVersion < 2) migrateToV2(transaction);
   /**

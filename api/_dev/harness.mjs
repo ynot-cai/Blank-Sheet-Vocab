@@ -26,15 +26,6 @@ export const ROUTES = {
   '/api/sync-push': () => import('../sync-push.ts'),
   '/api/sync-purge': () => import('../sync-purge.ts'),
   '/api/ai-proxy': () => import('../ai-proxy.ts'),
-  // T4：无状态 TTS 转发（与 ai-proxy 同一套模式，上游固定为 TTS_TARGET）
-  '/api/tts-proxy': () => import('../tts-proxy.ts'),
-  // 二期（知识点）：路由名同样是连字符形式
-  '/api/kc-list': () => import('../kc-list.ts'),
-  '/api/kc-push': () => import('../kc-push.ts'),
-  // 二期阶段 05：三张小表（语境词 / 题目历史 / 题库）
-  '/api/context-words': () => import('../context-words.ts'),
-  '/api/exam-history': () => import('../exam-history.ts'),
-  '/api/bank-questions': () => import('../bank-questions.ts'),
 };
 
 /**

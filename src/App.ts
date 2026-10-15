@@ -3,82 +3,41 @@ import * as dao from './dao';
 import { button, h } from './ui/dom';
 import { registerRoute, setFallback, startRouter, currentPath, navigate } from './ui/router';
 import { renderHomePage } from './ui/pages/HomePage';
-import { renderImportPage } from './ui/pages/ImportPage';
-import { renderListPage } from './ui/pages/ListPage';
-import { renderMergePage } from './ui/pages/MergePage';
 import { renderSettingsPage } from './ui/pages/SettingsPage';
-import { renderLearnPage } from './ui/pages/LearnPage';
-import { renderMemorizePage } from './ui/pages/MemorizePage';
-import { renderReviewPage } from './ui/pages/ReviewPage';
 import { mountSyncBanner } from './ui/components/SyncBanner';
-import { renderFooter } from './ui/components/Footer';
 import { maybeShowInstallHint, registerServiceWorker, setBannerHost } from './services/pwa';
 import { toastOk, toastWarn } from './ui/components/Toast';
-import { renderAboutPage } from './ui/pages/AboutPage';
-import { renderKcHomePage } from './ui/pages/KcHomePage';
-import { renderKcImportPage } from './ui/pages/KcImportPage';
-import { renderKcCardListPage } from './ui/pages/KcCardListPage';
-import { renderKcCardEditPage } from './ui/pages/KcCardEditPage';
-import { renderKcCardViewPage } from './ui/pages/KcCardViewPage';
-import { renderKcStudyPage } from './ui/pages/KcStudyPage';
-import { renderKcExamPage } from './ui/pages/KcExamPage';
-import { renderKcReviewPage } from './ui/pages/KcReviewPage';
-import { renderKcSettingsPage } from './ui/pages/KcSettingsPage';
-import { renderKcBankPage } from './ui/pages/KcBankPage';
-import { renderDevLayoutPage } from './ui/pages/DevLayoutPage';
 
 /**
- * 顶部导航按钮（全部点亮）。
+ * 顶部导航按钮。
  *
- * ★ R3：删掉了 `/memorize`「记忆」这一项。
- *   记忆环节现在是**背诵流程的内嵌环节**（背诵页的「再背一个」点够次数后按钮变「记忆」，
- *   右下角还有独立的「再次记忆」），主界面和顶栏都不再需要独立入口。
- *   路由本身**保留**（`/memorize` 仍然可用、背记页照常跳得过去），
- *   所以没有任何「孤儿链接」：全项目搜索 `#/memorize` / `navigate('/memorize')` 已确认无残留。
+ * ★ 版本 0.0.1「删除与归档行动」：顶栏**只保留「设置」一个入口**。
+ *   录入 / 背诵 / 单词列表 / 复习 / 知识点 五个入口随各自模块一起归档删除
+ *   （见 已归档/ 目录下 01~12 号模块文档）。
+ *   现在整个程序的可达界面只有两页：主页（`/home`）与设置页（`/settings`）。
  */
-const NAV: { path: string; label: string }[] = [
-  { path: '/import', label: '录入' },
-  { path: '/learn', label: '背诵' },
-  { path: '/list', label: '单词列表' },
-  { path: '/review', label: '复习' },
-  // 二期入口：数据与一期完全独立，只是共用同一套同步通道（见二期主提示词第 7 节）
-  { path: '/kc', label: '知识点' },
-  { path: '/settings', label: '设置' },
-];
+const NAV: { path: string; label: string }[] = [{ path: '/settings', label: '设置' }];
 
-/** 路由表 */
+/**
+ * 路由表。
+ *
+ * ★ 版本 0.0.1：只保留主页与设置页两条路由。
+ *   被拔掉的页面（录入 / 合并 / 单词列表 / 背诵 / 记忆 / 复习 / 关于 /
+ *   知识点十一个页面 / 布局调试页）连同它们的源码一起进了「已归档」，
+ *   路由在这里一并删除 —— 不留「死路由」，因为它们的目标模块已经不在程序里了。
+ */
 function registerRoutes(): void {
   registerRoute('/home', () => renderHomePage());
-  registerRoute('/import', () => renderImportPage());
-  registerRoute('/merge', () => renderMergePage());
-  registerRoute('/list', () => renderListPage());
   registerRoute('/settings', () => renderSettingsPage());
-  registerRoute('/learn', (ctx) => renderLearnPage(ctx));
-  registerRoute('/memorize', () => renderMemorizePage());
-  registerRoute('/review', (ctx) => renderReviewPage(ctx));
-  // 数据说明页（阶段 07）：首页底部的 footer 与设置页都能进来
-  registerRoute('/about', () => renderAboutPage());
-  // ── 二期（知识点精学）──
-  registerRoute('/kc', () => renderKcHomePage());
-  registerRoute('/kc/import', () => renderKcImportPage());
-  registerRoute('/kc/list', () => renderKcCardListPage());
-  // 带参数的路由走 query（一期路由是精确匹配的 Map，没有动态段）：#/kc/edit?id=xxx
-  registerRoute('/kc/edit', (ctx) => renderKcCardEditPage(ctx));
-  registerRoute('/kc/view', (ctx) => renderKcCardViewPage(ctx));
-  registerRoute('/kc/study', (ctx) => renderKcStudyPage(ctx));
-  registerRoute('/kc/exam', (ctx) => renderKcExamPage(ctx));
-  registerRoute('/kc/review', (ctx) => renderKcReviewPage(ctx));
-  registerRoute('/kc/settings', () => renderKcSettingsPage());
-  registerRoute('/kc/bank', () => renderKcBankPage());
-  // 布局调试页（阶段 M1 手机适配诊断）：#/dev/layout
-  // 保留在生产构建里（`?probe=1` 会被 probeLayout.mjs 用无头浏览器打），
-  // 顶栏没有入口，只有知道地址才进得来；它只读不写，不改任何用户数据。
-  registerRoute('/dev/layout', (ctx) => renderDevLayoutPage(ctx.query));
   setFallback('/home');
 }
 
 /**
  * 本地文件夹权限黄条：浏览器重启后需要用户点一下才能恢复读写权限。
+ *
+ * ★ 保留说明：这条黄条属于**数据层**（本地文件夹自动备份）的一部分，不是设置项。
+ *   设置页的「数据」分区已归档，但连接权限的恢复入口必须留着 ——
+ *   否则已经连过本地文件夹的用户在浏览器重启后再也没有办法恢复备份写入。
  */
 function renderPermissionBanner(container: HTMLElement): void {
   const draw = (): void => {
@@ -125,10 +84,7 @@ export function renderApp(root: HTMLElement): void {
     navBox.appendChild(h('span', { class: 'brand', text: '白纸单词' }));
     for (const item of NAV) {
       const btn = button(item.label, () => navigate(item.path));
-      // 二期是一整棵子树（/kc、/kc/import、/kc/list…），
-      // 所以 /kc 这个入口在它的**所有子路由**下都该点亮
-      const active = currentPath() === item.path || (item.path === '/kc' && currentPath().startsWith('/kc/'));
-      btn.classList.toggle('active', active);
+      btn.classList.toggle('active', currentPath() === item.path);
       navBox.appendChild(btn);
     }
   };
@@ -137,7 +93,6 @@ export function renderApp(root: HTMLElement): void {
   root.appendChild(navBox);
   root.appendChild(bannerBox);
   root.appendChild(outlet);
-  root.appendChild(renderFooter());
   renderPermissionBanner(bannerBox);
   // 云同步失败时的轻提示 / 常驻提示（不阻断任何操作）
   mountSyncBanner(bannerBox, () => {
@@ -150,7 +105,7 @@ export function renderApp(root: HTMLElement): void {
       .catch(() => toastWarn('同步失败，数据已存本地'));
   });
 
-  // PWA（阶段 06）：新版本提示条与「添加到主屏幕」引导都挂在同一个容器里。
+  // PWA：新版本提示条与「添加到主屏幕」引导都挂在同一个容器里。
   // 注册失败（例如 http 打开）只打日志，页面照常用。
   setBannerHost(bannerBox);
   registerServiceWorker();
@@ -162,18 +117,12 @@ export function renderApp(root: HTMLElement): void {
 
   // 关页面前提醒导出（距上次手动导出超过 7 天时提醒）
   window.addEventListener('beforeunload', (ev) => {
-    const { remindOnClose, lastManualExportAt } = getBackupSettings();
+    const { remindOnClose, lastManualExportAt } = appBackupSettings;
     if (!remindOnClose || !localfile.isLinked()) return;
     if (lastManualExportAt !== null && Date.now() - lastManualExportAt < 7 * 86_400_000) return;
     ev.preventDefault();
     ev.returnValue = '';
   });
-}
-
-/** 读备份设置（避免在 App 里直接碰 dao / config 的缓存细节） */
-function getBackupSettings(): { remindOnClose: boolean; lastManualExportAt: number | null } {
-  const raw = appBackupSettings;
-  return raw;
 }
 
 /** 由 main.ts 注入的备份设置快照 */

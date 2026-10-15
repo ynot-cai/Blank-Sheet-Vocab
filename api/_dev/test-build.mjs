@@ -186,6 +186,18 @@ console.log('\n[5] 没有「写了但没接上」的孤儿文件');
   const orphans = all.filter((f) => {
     const noExt = f.replace(/\.ts$/, '');
     if (noExt.endsWith('main') || noExt.endsWith('env.d')) return false; // 入口与全局声明
+    /**
+     * 生成物：由脚本写出、不由人手写，所以「没有 import 它的文件」是**正常**的，
+     * 不能算孤儿。清单必须显式列出，避免这条豁免变成「什么都能塞进来的后门」。
+     *
+     * - `src/core/presets.ts`：由 `npm run presets`（`scripts/build-presets.mjs`）
+     *   从 `一期预设词库/*.txt` 生成，是预设词库的数据索引。
+     *   ⚠️ 版本 0.0.1 的教训：它一度被当成「录入页的死代码」删掉，
+     *   但 `npm run presets` 会把它重新写出来，`--check` 也会因此报不一致 ——
+     *   删生成物是错的，要么连生成脚本一起改，要么留着。
+     */
+    const GENERATED = ['src/core/presets'];
+    if (GENERATED.includes(noExt)) return false;
     return !referenced.has(noExt) && !referenced.has(`${noExt}/index`);
   });
   check('没有未被任何文件引用的模块', orphans.length === 0, orphans.join(', '));
