@@ -3,7 +3,6 @@ import { appVersionLabel } from '../../core/version';
 import { button, details, h } from '../dom';
 import { renderAiSection } from './settings/AiSection';
 import { renderCloudSection } from './settings/CloudSection';
-import { renderPrioritySection } from './settings/PrioritySection';
 import { patchSettings } from './settings/ctx';
 
 /** 一个设置分组的定义 */
@@ -13,9 +12,9 @@ interface Section {
   /** 折叠标题 */
   title: string;
   /** 默认是否展开 */
-  open: boolean;
-  /** 渲染分组内容 */
-  render: () => HTMLElement;
+  defaultOpen: boolean;
+  /** 渲染分组内容；返回 `null` 表示「暂时留空」（只挂壳，不摆控件） */
+  render: (() => HTMLElement) | null;
   /** 描述「重置该分组」会恢复什么（写在错误提示里，让用户知道点下去会变什么） */
   resetNote: string;
   /** 执行重置（**只动这一组的字段**） */
@@ -23,30 +22,28 @@ interface Section {
 }
 
 /**
- * 设置页。
+ * 设置页（版本 0.0.3）。
  *
- * ★ 版本 0.0.1「删除与归档行动」：**只保留三项**
- *   1. 同步（云同步：开关 / 后端地址 / 同步码 / 手动同步 / 强制覆盖）
- *   2. AI 接口（接口地址 / 模型名 / 密钥）
- *   3. 复习优先度计算公式（预设三档 + 自定义表达式）
- *   另外保留一个**空的「画面设置」分类外壳**（用户明确允许保留这类可展开收起的外壳，
- *   但壳里的具体设置项不属于保留项，已全部删除）。
+ * ★ **分区改成三个：数据 / AI / 外观**（用户 2026-10-15 指定：
+ *   「之前的设置的分区删掉，新的分区我手动划分，现在有以下几个分区 1 数据 2 AI 3 外观」）。
  *
- * ── 被删掉的五个分区去哪了 ──
- *   A. 星号参数（背诵/记忆/复习的规模）
- *   C. 画面与纸张
- *   C2. 布局参数
- *   D. 记忆与练习
- *   H. 语音（朗读音色 / 有道 TTS / 缓存）
- *   G. 数据（备份 / 恢复 / 清空）—— 该分区的**全部内容**也已删除
- *   六份分区的完整源码见 已归档/11_设置页被删除的分区.md，可直接按原路径还原。
+ * ── 与 0.0.1 的关系 ──
+ * 0.0.1 曾把设置页砍到三项（同步 / AI 接口 / 复习优先度计算公式）。
+ * 0.0.3 按用户的新划分**整段替换**：
+ * - 「同步」→ 归入 **数据** 区（同一个 `CloudSection`，只是换了归属与标题）；
+ * - 「AI 接口」→ **AI** 区（原 `AiSection`，一字未改）；
+ * - 「复习优先度计算公式」→ **不给界面入口**（用户明确说「因为我要重做这个公式」）。
+ *   注意：**代码与数据都还在**（`core/priority.ts`、`settings.priority`），只是界面上碰不到，
+ *   等公式重做完再决定它挂在哪一区；
+ * - 「外观」区**暂时留空**——用户说分区内容由他手动划分，未经确认不许自行加设置项。
  *
- * ⚠️ 这些分区对应的**设置字段与默认值仍然完整保留在 `core/config.ts` 里**
- *   （数据层不动），所以把分区文件放回、在下面的 `sections` 数组里加回一行，
- *   功能立刻就能恢复，不需要改任何数据。
+ * ── 为什么每份被砍掉的分区都还有归档文档 ──
+ * 0.0.1 归档的六个分区（星号参数 / 画面与纸张 / 布局参数 / 记忆与练习 / 语音 / 数据备份）
+ * 完整源码在 `已归档/11_设置页被删除的分区.md`。**用户已明确「旧的八个分区不恢复」**，
+ * 所以本版**没有**把它们装回来；将来若要其中的某几项，按那份文档单独还原即可。
  *
- * ── 骨架加固（原 T1 的成果，保留）──
- * 每个分区独立 try/catch：某一组渲染失败只影响它自己，其他分组照常可用，
+ * ── 骨架加固（沿用 0.0.1 的成果）──
+ * 每个分区独立 `try/catch`：某一组渲染失败只影响它自己，其他分组照常可用，
  * 并给一个「重置该分组」的自救出口。
  */
 export function renderSettingsPage(): HTMLElement {
@@ -54,44 +51,52 @@ export function renderSettingsPage(): HTMLElement {
   page.appendChild(h('h2', { class: 'page-title', text: '设置' }));
   page.appendChild(h('p', { class: 'note' }, '设置改动即存，存在本机浏览器里。'));
 
-  /** 保留的三个分区（顺序即界面顺序） */
+  /** 三个分区（顺序即界面顺序：数据 / AI / 外观） */
   const sections: Section[] = [
     {
-      id: 'sync',
-      title: '同步',
-      open: true,
+      id: 'data',
+      title: '数据',
+      defaultOpen: true,
       render: renderCloudSection,
-      resetNote: '只关掉云同步开关，本地数据一个都不删',
+      resetNote: '只关掉云同步开关并清掉后端地址与同步码，本地数据一个都不删',
       reset: () => patchSettings({ cloud: { ...DEFAULT_SETTINGS.cloud } }),
     },
     {
       id: 'ai',
-      title: 'AI 接口（接口地址 / 模型名 / 密钥自己填）',
-      open: true,
+      title: 'AI',
+      defaultOpen: true,
       render: renderAiSection,
       resetNote: '只清掉 AI 的接口地址与密钥，其他设置一个都不动',
       reset: () => patchSettings({ ai: { ...DEFAULT_SETTINGS.ai } }),
     },
     {
-      id: 'priority',
-      title: '复习优先度计算公式',
-      open: true,
-      render: renderPrioritySection,
-      resetNote: '恢复优先度公式的默认预设（不改任何学习记录）',
-      reset: () => patchSettings({ priority: { ...DEFAULT_SETTINGS.priority } }),
+      id: 'appearance',
+      title: '外观',
+      defaultOpen: false,
+      render: null, // 留空：具体设置项由用户手动划分
+      resetNote: '外观区暂时没有可重置的设置项',
+      reset: () => Promise.resolve(),
     },
   ];
 
   for (const section of sections) {
     // ① 骨架先挂上：即使下面渲染失败，分组标题也一定在页面上
-    const el = details(section.title, [], section.open);
+    const el = details(section.title, [], section.defaultOpen);
     el.dataset.section = section.id;
     page.appendChild(el);
 
     const body = el.querySelector('.section-body');
     if (!body) continue; // details() 一定建 body；真没有就只留骨架，不影响其他分组
 
-    // ② 内容独立 try/catch
+    // ② 留空的分区：只挂壳，并说明为什么是空的
+    if (section.render === null) {
+      body.appendChild(
+        h('p', { class: 'note' }, '本分区的具体设置项由用户手动划分，尚未确定，因此暂时留空。'),
+      );
+      continue;
+    }
+
+    // ③ 内容独立 try/catch
     try {
       body.appendChild(section.render());
     } catch (err) {
@@ -101,40 +106,10 @@ export function renderSettingsPage(): HTMLElement {
     }
   }
 
-  // ③ 用户明确允许保留的「分类外壳」：只留一个可展开收起的空壳，壳内没有任何设置项
-  page.appendChild(renderDisplayShell());
-
-  // ④ 版本信息（不是设置项，是「我现在跑的是哪一版」的自报家门）。
-  //    为什么放在设置页：主页按要求只剩「设置」一个按钮，版本号放在主页会变成多余元素；
-  //    而排查问题时第一个打开的通常就是设置页。
+  // 版本信息（不是设置项，是「我现在跑的是哪一版」的自报家门）
   page.appendChild(h('p', { class: 'note app-version-line', text: appVersionLabel() }));
 
   return page;
-}
-
-/**
- * 「画面设置」空分类外壳。
- *
- * 为什么留一个空壳：用户明确说「允许保留『画面设置』这类可展开收起的分类外壳，
- * 但分类内具体设置项除非属于保留项，否则删除」。留壳的好处是**位置感**——
- * 一眼能看出这里原来有一整类设置、以及它现在在哪。
- */
-function renderDisplayShell(): HTMLElement {
-  const el = details('画面设置', [], false);
-  el.dataset.section = 'display';
-  const body = el.querySelector('.section-body');
-  if (body) {
-    body.appendChild(
-      h(
-        'p',
-        { class: 'note' },
-        '本分类下的具体设置项（字号 / 颜色 / 动画 / 纸张 / 布局参数 / 语音）已按版本 0.0.1 的要求删除，'
-          + '完整源码与恢复方法见「已归档/11_设置页被删除的分区.md」。'
-          + '这些设置字段与默认值仍完整保留在程序的数据层里，恢复分区文件后即可重新生效。',
-      ),
-    );
-  }
-  return el;
 }
 
 /**

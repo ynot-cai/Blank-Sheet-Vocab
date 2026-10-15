@@ -4,39 +4,65 @@ import { button, h } from './ui/dom';
 import { registerRoute, setFallback, startRouter, currentPath, navigate } from './ui/router';
 import { renderHomePage } from './ui/pages/HomePage';
 import { renderSettingsPage } from './ui/pages/SettingsPage';
+import { PLACEHOLDER_SPECS, renderPlaceholderPage } from './ui/pages/PlaceholderPage';
 import { mountSyncBanner } from './ui/components/SyncBanner';
 import { maybeShowInstallHint, registerServiceWorker, setBannerHost } from './services/pwa';
 import { toastOk, toastWarn } from './ui/components/Toast';
 
 /**
- * 顶部导航按钮。
+ * 顶部浅白栏的全局入口（版本 0.0.3）。
  *
- * ★ 版本 0.0.1「删除与归档行动」：顶栏**只保留「设置」一个入口**。
- *   录入 / 背诵 / 单词列表 / 复习 / 知识点 五个入口随各自模块一起归档删除
- *   （见 已归档/ 目录下 01~12 号模块文档）。
- *   现在整个程序的可达界面只有两页：主页（`/home`）与设置页（`/settings`）。
+ * ── 两排的分工（`逻辑与交互要求.md` §5.1）──
+ * - **第一排**：会进入学习 / 练习的——录入、背诵、复习、拼写强化。
+ *   以后凡涉及实际背诵工作的按钮，一律加在第一排。
+ * - **第二排**：数据查看与系统设置——单词列表、设置。
+ *
+ * 白栏上的这一排是**全局入口**（用户在 0.0.3 明确选择），不是页面工具栏；
+ * 首页时右侧**留空**（首页自己已经有一整套按钮了）。
  */
-const NAV: { path: string; label: string }[] = [{ path: '/settings', label: '设置' }];
+const NAV: { path: string; label: string }[] = [
+  { path: '/import', label: '录入' },
+  { path: '/learn', label: '背诵' },
+  { path: '/review', label: '复习' },
+  { path: '/spell', label: '拼写强化' },
+  { path: '/list', label: '单词列表' },
+  { path: '/settings', label: '设置' },
+];
 
 /**
- * 路由表。
+ * **白栏整体消失**的界面（`逻辑与交互要求.md` §5.1）。
+ * 判据不是「哪几个页面」，而是「**进去就是练**」——背诵、复习、拼写强化。
+ * 以后新增的全屏练习界面，也要加进这里。
+ */
+const FULLSCREEN_PATHS = ['/learn', '/review', '/spell'];
+
+/** 首页路径：白栏标题右侧留空 */
+const HOME_PATH = '/home';
+
+/**
+ * 路由表（版本 0.0.3）。
  *
- * ★ 版本 0.0.1：只保留主页与设置页两条路由。
- *   被拔掉的页面（录入 / 合并 / 单词列表 / 背诵 / 记忆 / 复习 / 关于 /
- *   知识点十一个页面 / 布局调试页）连同它们的源码一起进了「已归档」，
- *   路由在这里一并删除 —— 不留「死路由」，因为它们的目标模块已经不在程序里了。
+ * ⚠️ **录入 / 背诵 / 复习 / 拼写强化 / 单词列表这五项目前没有实现**：
+ * - 录入、背诵、复习、单词列表在 0.0.1 的「删除与归档行动」里被归档删除
+ *   （见 `已归档/04`、`05`、`06`、`08` 号文档），要恢复得把模块装回来；
+ * - 拼写强化是**全新的独立功能**，用户明确说「现在先别做，只做按钮」。
+ * 所以这五条路由一律指向**占位页**：点得进去、说清楚现在是什么状态、指向归档文档，
+ * 而不是让路由回落首页（那样用户会以为按钮坏了）。
  */
 function registerRoutes(): void {
-  registerRoute('/home', () => renderHomePage());
+  registerRoute(HOME_PATH, () => renderHomePage());
   registerRoute('/settings', () => renderSettingsPage());
-  setFallback('/home');
+  for (const spec of PLACEHOLDER_SPECS) {
+    registerRoute(spec.path, () => renderPlaceholderPage(spec));
+  }
+  setFallback(HOME_PATH);
 }
 
 /**
  * 本地文件夹权限黄条：浏览器重启后需要用户点一下才能恢复读写权限。
  *
  * ★ 保留说明：这条黄条属于**数据层**（本地文件夹自动备份）的一部分，不是设置项。
- *   设置页的「数据」分区已归档，但连接权限的恢复入口必须留着 ——
+ *   设置页没有它的入口，但连接权限的恢复入口必须留着 ——
  *   否则已经连过本地文件夹的用户在浏览器重启后再也没有办法恢复备份写入。
  */
 function renderPermissionBanner(container: HTMLElement): void {
@@ -69,7 +95,7 @@ function renderPermissionBanner(container: HTMLElement): void {
 }
 
 /**
- * 挂载主界面：顶栏 + 路由出口。
+ * 挂载主界面：顶部浅白栏 + 路由出口。
  * @param root 挂载点
  */
 export function renderApp(root: HTMLElement): void {
@@ -80,13 +106,24 @@ export function renderApp(root: HTMLElement): void {
   const outlet = h('main', { class: 'outlet' });
 
   const paintNav = (): void => {
+    const path = currentPath();
     navBox.replaceChildren();
+
+    // 全屏练习界面：白栏整体消失（先判它，后面的按钮就不用建了）
+    const fullscreen = FULLSCREEN_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
+    navBox.classList.toggle('nav-hidden', fullscreen);
+    if (fullscreen) return;
+
     navBox.appendChild(h('span', { class: 'brand', text: '白纸单词' }));
+
+    // 首页标题右侧留空（首页自己就是入口，再来一排全局入口是重复的）
+    if (path === HOME_PATH) return;
+
+    const actions = h('div', { class: 'nav-actions' });
     for (const item of NAV) {
-      const btn = button(item.label, () => navigate(item.path));
-      btn.classList.toggle('active', currentPath() === item.path);
-      navBox.appendChild(btn);
+      actions.appendChild(button(item.label, () => navigate(item.path)));
     }
+    navBox.appendChild(actions);
   };
 
   registerRoutes();

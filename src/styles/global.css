@@ -1,7 +1,8 @@
 /* 白纸单词 —— 全局样式与 CSS 变量（无 UI 库，全部手写） */
 
 :root {
-  --bg: #f5f6f8;
+  /* ★ 版本 0.0.3：整页底色改成「较深的白色」（原来的 #f5f6f8 更浅） */
+  --bg: #eceef2;
   --paper-bg: #ffffff;
   --fg: #1d1f23;
   --fg-dim: #6b7280;
@@ -15,6 +16,27 @@
   --shadow: 0 2px 10px rgba(20, 24, 35, 0.06);
   --shadow-lg: 0 12px 40px rgba(20, 24, 35, 0.18);
   --font: system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+
+  /* ══ 版本 0.0.3 首页 / 顶部浅白栏 / 灰栏的变量 ══
+     规格出处：开发必读/逻辑与交互要求.md §5.2（数字均为「默认值 + 可调」） */
+  /** 浅白底：首页按钮底色、顶部栏底色 */
+  --face: #fbfcfe;
+  /** 深色：白栏右侧按钮悬停时的填充 */
+  --ink-hover: #1d1f23;
+  /** 灰栏底色 */
+  --statbar-bg: #e4e6eb;
+  /** 顶部浅白栏高度 */
+  --topbar-h: 52px;
+  /** 首页按钮：圆角 / 高度（桌面与平板） */
+  --home-btn-radius: 10px;
+  --home-btn-h: 56px;
+  /** 白栏右侧小按钮：圆角 / 高度 / 描边宽度 */
+  --bar-btn-radius: 8px;
+  --bar-btn-h: 32px;
+  --bar-btn-border: 1.5px;
+  /** 灰栏高度 / 左端蓝边宽度 */
+  --statbar-h: 36px;
+  --statbar-edge: 4px;
 }
 
 * {
@@ -1914,3 +1936,194 @@ body {
 }
 
 
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   版本 0.0.3：顶部浅白栏 / 首页两排按钮 / 首页灰栏
+   规格出处：开发必读/逻辑与交互要求.md §5.2（所有数字均为「默认值 + 可调」）
+   断点：手机 <=767px / 平板 768~1024px / 桌面 >1024px（沿用 core/config.ts 的 DEVICE）
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* —— 顶部浅白栏 —— */
+.nav {
+  min-height: var(--topbar-h);
+  padding: 0 16px;
+  gap: 10px;
+  flex-wrap: nowrap;
+  background: var(--face);
+  border-bottom: 1px solid var(--line);
+}
+
+/* 全屏练习界面：白栏整体消失（背诵 / 复习 / 拼写强化） */
+.nav.nav-hidden {
+  display: none;
+}
+
+.nav .brand {
+  font-size: 16px;
+  font-weight: 700;
+  margin-right: 0;
+  letter-spacing: 1px;
+  flex: none;
+}
+
+/* 白栏右侧那一排全局入口：黑框、圆角方形、等高、悬停变深色 */
+.nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.nav-actions::-webkit-scrollbar {
+  display: none;
+}
+
+.nav-actions .btn {
+  flex: none;
+  height: var(--bar-btn-h);
+  min-height: var(--bar-btn-h);
+  padding: 0 12px;
+  font-size: 13px;
+  line-height: 1;
+  border-radius: var(--bar-btn-radius);
+  border: var(--bar-btn-border) solid var(--fg);
+  background: var(--face);
+  color: var(--fg);
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.nav-actions .btn:hover:not(:disabled) {
+  background: var(--ink-hover);
+  border-color: var(--ink-hover);
+  color: var(--face);
+}
+
+/* —— 首页：按钮区（顶部左上角，大小自适应）—— */
+.home-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 20px 0 0;
+  width: 100%;
+  max-width: 720px;
+}
+
+.home-row {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+}
+
+/* 排内均分：宽度 = 该排可用宽度 / 该排按钮数；高度固定；不随文字长度变化 */
+.home-row .home-card {
+  flex: 1 1 0;
+  min-width: 0;
+  height: var(--home-btn-h);
+  min-height: var(--home-btn-h);
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--home-btn-radius);
+  border: 1px solid var(--line);
+  background: var(--face);
+  color: var(--fg);
+  font-size: 16px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: box-shadow 120ms ease, border-color 120ms ease;
+}
+
+/* 悬停：蓝框。用 inset box-shadow 画，**尺寸不跳动** */
+.home-row .home-card:hover:not(:disabled) {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.home-row .home-card:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* —— 首页灰栏 —— */
+.statbar {
+  display: flex;
+  align-items: center;
+  height: var(--statbar-h);
+  margin: 14px 0 0;
+  padding: 0 12px 0 0;
+  max-width: 720px;
+  background: var(--statbar-bg);
+  border-left: var(--statbar-edge) solid var(--accent);
+  border-radius: 0 6px 6px 0;
+  font-size: 13px;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.statbar-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* —— 平板 768~1024px —— */
+@media (min-width: 768px) and (max-width: 1024px) {
+  .home-rows,
+  .statbar {
+    max-width: none;
+  }
+
+  .home-row .home-card {
+    font-size: 15px;
+  }
+}
+
+/* —— 手机 <=767px —— */
+@media (max-width: 767px) {
+  .nav {
+    padding: 0 12px;
+    gap: 8px;
+  }
+
+  .nav .brand {
+    font-size: 15px;
+  }
+
+  .nav-actions {
+    gap: 6px;
+  }
+
+  .nav-actions .btn {
+    padding: 0 10px;
+    font-size: 12px;
+  }
+
+  .home-rows {
+    max-width: none;
+    margin-top: 12px;
+    gap: 10px;
+  }
+
+  .home-row {
+    gap: 10px;
+  }
+
+  /* 手机：按钮高度 48px、字号 14px；**强制单排不换行** */
+  .home-row .home-card {
+    height: 48px;
+    min-height: 48px;
+    font-size: 14px;
+    padding: 0 6px;
+  }
+
+  .statbar {
+    max-width: none;
+    font-size: 12px;
+  }
+}

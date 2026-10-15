@@ -233,6 +233,68 @@ export function evalPriority(expr: string, w: Word, now: number = Date.now()): n
 }
 
 /**
+ * 批量求优先度：表达式**只校验一次、只编译一次**，然后跑遍全库。
+ *
+ * 为什么需要它（而不是循环调 `evalPriority`）：
+ * `evalPriority` 每调一次都会 `new Function(...)` 一次，而首页灰栏的「需复习」
+ * 要按优先度筛**整个词库**（预设词库一档就有几千个词，全库可上万），
+ * 逐个调会明显卡住首屏。
+ *
+ * 与 `evalPriority` 的语义保持一致：表达式非法（字符集 / 变量白名单 / 编译失败）
+ * 时返回**空 Map**（等价于「全都算 0」），并打同样的 warn。
+ * 单个词算不出有限数时**跳过该词**，不影响其它词。
+ *
+ * @param words 词列表
+ * @param settings 设置（决定用哪个表达式）
+ * @param now 当前时间戳
+ * @returns id → 优先度（保留 2 位小数，与 `computePriority` 同口径）
+ */
+export function computePriorities(
+  words: Word[],
+  settings: Settings,
+  now: number = Date.now(),
+): Map<string, number> {
+  const out = new Map<string, number>();
+  if (words.length === 0) return out;
+
+  const trimmed = activeExpr(settings).trim();
+  if (trimmed === '') return out;
+  if (!ALLOWED_CHARS_RE.test(trimmed)) {
+    console.warn('[priority] 表达式含非法字符，已忽略：', trimmed);
+    return out;
+  }
+  const allowed = new Set<string>(ALLOWED_VARS);
+  for (const id of trimmed.match(IDENT_RE) ?? []) {
+    if (!allowed.has(id)) {
+      console.warn('[priority] 表达式含非法变量，已忽略：', id);
+      return out;
+    }
+  }
+
+  // 参数名从 exprScope 取（变量的键集对所有词都一样）
+  const names = Object.keys(exprScope(words[0], now));
+  let fn: (...args: number[]) => unknown;
+  try {
+    fn = new Function(...names, `"use strict"; return (${trimmed});`) as (...args: number[]) => unknown;
+  } catch (err) {
+    console.warn('[priority] 表达式编译失败，已按 0 处理：', trimmed, err);
+    return out;
+  }
+
+  for (const w of words) {
+    const scope = exprScope(w, now);
+    try {
+      const raw = fn(...names.map((n) => scope[n] ?? 0));
+      const num = typeof raw === 'number' ? raw : Number(raw);
+      if (Number.isFinite(num)) out.set(w.id, Math.round(num * 100) / 100);
+    } catch {
+      // 单个词算错就跳过它，不让一个坏数据拖垮整个统计
+    }
+  }
+  return out;
+}
+
+/**
  * 取当前生效的表达式：customExpr 非空时优先，否则用预设。
  * @param settings 设置
  */
