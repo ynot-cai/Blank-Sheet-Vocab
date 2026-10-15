@@ -16,7 +16,7 @@
 import type { Settings } from '../core/types';
 import { normalizeApiBase } from '../core/syncHelper';
 import { splitPackedSenses } from '../core/model';
-import { SENSE_RULES_FOR_AI, normalizeAliases } from '../core/senseRules';
+import { EXAMPLE_NOT_FOUND, normalizeAliases, normalizeSenseExample, SENSE_RULES_FOR_AI } from '../core/senseRules';
 import { MANDATORY_IMPORT_RULES } from './promptRules';
 import { API_ROUTES } from '../dao/syncServer';
 
@@ -64,8 +64,14 @@ export interface ChatMessage {
 export interface ParsedWord {
   en: string;
   phonetic: string;
+  /** 单词级例句（整词用法，老字段，保留） */
   example: string;
-  senses: { text: string; aliases: string[] }[];
+  /**
+   * 义项列表。
+   * ★ 版本 0.0.6：每个义项带**自己的**例句（`example`），用户要求「为每一个义项记录例句」。
+   *   找不到时是「暂无」（由 `normalizeSenseExample()` 统一）。
+   */
+  senses: { text: string; aliases: string[]; example: string }[];
 }
 
 /** 单批解析结果 */
@@ -351,19 +357,24 @@ export const PARSE_SYSTEM_PROMPT = `你是一个英语词库结构化助手。�
 ${MANDATORY_IMPORT_RULES}
 
 输出 schema：
-{"words":[{"en":"abandon","phonetic":"/əˈbændən/","example":"He abandoned his car.","senses":[{"text":"v. 放弃","aliases":["抛弃","遗弃"]}]}]}
+{"words":[{"en":"abandon","phonetic":"/əˈbændən/","example":"He abandoned his car.","senses":[{"text":"v. 放弃","aliases":["抛弃","遗弃"],"example":"He abandoned his car."}]}]}
+
+⚠️ 注意 senses 里**每一个义项都有自己的 example**（版本 0.0.6 用户要求）：
+   优先引用**牛津词典**里该义项的例句；确实找不到就原样填 "暂无"。
+   不要拿别的义项的例句来顶，也不要编造。
 
 规则：
 1. 只输出 JSON，不要 markdown 代码块、不要任何解释文字。
-2. 义项怎么拆分、怎么挑代表、近义词怎么分隔、多词性怎么判断——**严格按下面这份规范执行**：
+2. 义项怎么拆分、怎么挑代表、近义词怎么分隔、多词性怎么处理、例句怎么给
+   —— **严格按下面这份规范执行**：
 
 ${SENSE_RULES_FOR_AI}
 
 3. 义项保留词性前缀（n. v. adj. adv. prep. 等；原文写「adj./adv.」这种多词性就原样保留）。
-   ★ 但第 4 步判定为「同源」而合并起来的义项，代表词**不加词性前缀**，
-     因为它是跨词性的（例如 run 的义项①写 "跑"，不要写 "v. 跑"）。
-4. 音标用国际音标并带斜杠；例句要简短、能体现该词主要用法；如果原文没有音标/例句就自己补一个合适的。
-5. 英文单词原样保留大小写，不要翻译，不要造词。
+   ★ 版本 0.0.6 起：**不同词性一律视为不同含义、必须拆成不同义项**
+     （旧规则「多词性判断同源、同源可合并」已作废，不要再合并跨词性的义项）。
+4. 音标用国际音标并带斜杠；单词级 example 仍要一条（整词用法）；如果原文没有音标就自己补一个合适的。
+5. 英文单词原样保留大小写，不要翻译，不要造词。短语（如 give up）照原样保留。
 6. 原文一行一个词，输出顺序与输入一致，不要漏词、不要增加原文没有的词。
 7. 主动为每个义项补 1~3 个常见近义词写进 aliases（没有就留空数组），
    但**必须逐个分隔**，且每个都是「一个纯中文说法」。`;
@@ -422,12 +433,21 @@ export function coerceParsedWord(raw: unknown): ParsedWord | null {
       );
       // 兜底：模型偶尔会把「量纲、维度」塞进一个义项，这里强制拆成多个（词性前缀复制到每一段）
       const pieces = splitPackedSenses(text);
+      /**
+       * ★ 版本 0.0.6：义项级例句。
+       * 模型返回的是**每个义项一条**；万一它只给了一条（或根本没给），
+       * 就按「找不到」处理 → 写成「暂无」，不要拿别的义项的例句来顶。
+       * 拆包出来的多个义项（pieces）里，只有第一段保留模型的 aliases 与例句
+       * ——因为拆包前它本来就是**一个**义项，例句也只对应那一个。
+       */
+      const senseExample = normalizeSenseExample(so.example);
       return pieces.map((piece, i) => ({
         text: piece,
         aliases: i === 0 ? aliases : [],
+        example: i === 0 ? senseExample : EXAMPLE_NOT_FOUND,
       }));
     })
-    .filter((s): s is { text: string; aliases: string[] } => s !== null);
+    .filter((s): s is { text: string; aliases: string[]; example: string } => s !== null);
   return {
     en,
     phonetic: typeof obj.phonetic === 'string' ? obj.phonetic.trim() : '',

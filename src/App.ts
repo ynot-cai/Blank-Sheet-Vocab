@@ -4,6 +4,9 @@ import { button, h } from './ui/dom';
 import { registerRoute, setFallback, startRouter, currentPath, navigate } from './ui/router';
 import { renderHomePage } from './ui/pages/HomePage';
 import { renderSettingsPage } from './ui/pages/SettingsPage';
+import { renderImportPage } from './ui/pages/ImportPage';
+import { renderMergePage } from './ui/pages/MergePage';
+import { renderListPage } from './ui/pages/ListPage';
 import { PLACEHOLDER_SPECS, renderPlaceholderPage } from './ui/pages/PlaceholderPage';
 import { mountSyncBanner } from './ui/components/SyncBanner';
 import { maybeShowInstallHint, registerServiceWorker, setBannerHost } from './services/pwa';
@@ -40,18 +43,25 @@ const FULLSCREEN_PATHS = ['/learn', '/review', '/spell'];
 const HOME_PATH = '/home';
 
 /**
- * 路由表（版本 0.0.3）。
+ * 路由表（版本 0.0.6）。
  *
- * ⚠️ **录入 / 背诵 / 复习 / 拼写强化 / 单词列表这五项目前没有实现**：
- * - 录入、背诵、复习、单词列表在 0.0.1 的「删除与归档行动」里被归档删除
- *   （见 `已归档/04`、`05`、`06`、`08` 号文档），要恢复得把模块装回来；
- * - 拼写强化是**全新的独立功能**，用户明确说「现在先别做，只做按钮」。
- * 所以这五条路由一律指向**占位页**：点得进去、说清楚现在是什么状态、指向归档文档，
- * 而不是让路由回落首页（那样用户会以为按钮坏了）。
+ * ★ 0.0.6 装回了三套归档模块（用户要求「恢复已归档的程序」）：
+ *   - **录入**（`/import`，含 `/merge` 合并确认页）—— 归档文档 04 / 07
+ *   - **单词列表**（`/list`）—— 归档文档 08
+ *   它们的依赖（services/fileParse、importJob、parsePipeline、presetVocab、reparse、
+ *   core/parser、core/merge）也一并装回。
+ *
+ * ⚠️ **仍然没有实现的两项**（保持占位页）：
+ *   - 背诵 `/learn`、复习 `/review`：它们共用「白纸画布」，那是本次归档里最大的一块
+ *     （`已归档/02`，2,890 行），用户本轮没有要求恢复；
+ *   - 拼写强化 `/spell`：全新的独立功能，用户明确「现在先别做，只做按钮」。
  */
 function registerRoutes(): void {
   registerRoute(HOME_PATH, () => renderHomePage());
   registerRoute('/settings', () => renderSettingsPage());
+  registerRoute('/import', () => renderImportPage());
+  registerRoute('/merge', () => renderMergePage());
+  registerRoute('/list', () => renderListPage());
   for (const spec of PLACEHOLDER_SPECS) {
     registerRoute(spec.path, () => renderPlaceholderPage(spec));
   }

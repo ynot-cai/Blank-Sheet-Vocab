@@ -1,4 +1,4 @@
-import { normalizeAliases } from './senseRules';
+import { normalizeAliases, normalizeSenseExample } from './senseRules';
 import type { Attrs, RawSourceRecord, Sense, Word } from './types';
 import { WORD_PRIORITY_DEFAULT, WORD_PRIORITY_MAX, WORD_PRIORITY_MIN } from './types';
 
@@ -33,13 +33,23 @@ export function defaultAttrs(): Attrs {
  * ★ aliases 会过一遍 `normalizeAliases`（见 core/senseRules.ts 的约束 1）：
  *   把「跑步，奔跑」这种打包项拆成两项。不拆的话判分时整串比对，
  *   用户答「跑步」或「奔跑」都会判错，而界面上完全看不出来。
- *   所有非 AI 的写入路径（合并页、卡片编辑、预设导入）都经过这里，所以在这一层兜住。
+ *   所有非 AI 的写入路径（录入页、合并页、卡片编辑、预设导入）都经过这里，所以在这一层兜住。
+ *
+ * ★ 版本 0.0.6：新增 `example`（义项级例句，用户要求）。
+ *   同样在这一层兜住：空值一律归一成「暂无」，保证「没找到例句」在数据里是显式的。
  *
  * @param text 代表词（可含词性前缀，如 "n. 苹果"）
  * @param aliases 近义词/等价说法（允许传打包项，会被拆开）
+ * @param example 义项级例句（优先牛津例句；找不到传空或省略，会写成「暂无」）
  */
-export function createSense(text: string, aliases: string[] = []): Sense {
-  return { id: uid(), text: text.trim(), aliases: normalizeAliases(aliases), enabled: true };
+export function createSense(text: string, aliases: string[] = [], example?: string): Sense {
+  return {
+    id: uid(),
+    text: text.trim(),
+    aliases: normalizeAliases(aliases),
+    example: normalizeSenseExample(example),
+    enabled: true,
+  };
 }
 
 /**

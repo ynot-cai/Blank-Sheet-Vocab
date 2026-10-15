@@ -3,6 +3,7 @@ import { appVersionLabel } from '../../core/version';
 import { button, details, h } from '../dom';
 import { renderAiSection } from './settings/AiSection';
 import { renderCloudSection } from './settings/CloudSection';
+import { renderDataSection } from './settings/DataSection';
 import { patchSettings } from './settings/ctx';
 
 /** 一个设置分组的定义 */
@@ -57,7 +58,24 @@ export function renderSettingsPage(): HTMLElement {
       id: 'data',
       title: '数据',
       defaultOpen: true,
-      render: renderCloudSection,
+      /**
+       * ★ 版本 0.0.6：按用户要求**装回归档的「数据」分区设置项**
+       *   （`已归档/11_设置页被删除的分区.md` 里的 `DataSection`）：
+       *   统计行 / 导出备份 / 从备份恢复 / 清空数据 / 本地文件夹自动备份。
+       *   「从备份恢复」就是用户说的「让之前归档的单词或数据恢复到正常列表」——
+       *   它把备份文件里的词条与来源整体写回词库。
+       *
+       *   云同步（`CloudSection`）本来就在这一区，两段并排放在同一个折叠块里：
+       *   上面「同步」、下面「备份与本地文件夹」。两者都是「数据」。
+       */
+      render: () => {
+        const box = h('div', { class: 'stack' });
+        box.appendChild(h('h4', { class: 'sub-title', text: '同步' }));
+        box.appendChild(renderCloudSection());
+        box.appendChild(h('h4', { class: 'sub-title', text: '备份与本地文件夹' }));
+        box.appendChild(renderDataSection());
+        return box;
+      },
       resetNote: '只关掉云同步开关并清掉后端地址与同步码，本地数据一个都不删',
       reset: () => patchSettings({ cloud: { ...DEFAULT_SETTINGS.cloud } }),
     },

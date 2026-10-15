@@ -1,7 +1,7 @@
 {
   "name": "blank-sheet-vocab",
   "private": true,
-  "version": "0.0.5",
+  "version": "0.0.6",
   "type": "module",
   "description": "白纸单词 —— 本地优先 + 可选云同步的背单词应用（版本 0.0.1：设置页 + 数据层）",
   "scripts": {

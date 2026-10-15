@@ -65,6 +65,20 @@ export interface Sense {
   id: string;
   text: string; // 义项文本，可含词性前缀，如 "n. 苹果"
   aliases: string[]; // 近义词/等价写法，记忆判分时视为通过
+  /**
+   * ★ 义项级例句（版本 0.0.6 新增，用户要求）。
+   *
+   * 为什么是**义项级**而不是单词级：一个词的每个义项用法不同，
+   * 单词级只放得下一句，等于让另外几个义项没有例句可看。
+   * 单词级的 `Word.example` 仍然保留（老数据与「整词用法」展示用）。
+   *
+   * 取值口径（用户指定）：**优先引用牛津词典的例句；确实找不到就填「暂无」**。
+   * 写入一律过 `core/senseRules.ts` 的 `normalizeSenseExample()`，
+   * 保证空值在数据里表现为显式的「暂无」，而不是看起来像漏填的空串。
+   *
+   * ⚠️ 可选：0.0.6 之前的老数据没有这个字段，读的时候要按缺省处理。
+   */
+  example?: string;
   enabled: boolean; // false = 被划掉
 }
 
@@ -100,6 +114,23 @@ export interface Attrs {
 export interface RawSourceRecord {
   sourceId: string;
   senses: Sense[];
+}
+
+/**
+ * 一次作答的对照结果（哪个输入框填了什么、对不对）。
+ *
+ * ★ 版本 0.0.6：这个类型原本定义在 `ui/pages/paper/AnswerCard.ts` 里
+ * （白纸流程，0.0.1 被归档）。但 `ui/components/WordCard.ts` 只用它做
+ * `answerFeedback` 的**类型标注**，于是恢复单词列表时出现「组件依赖一个已归档页面」的
+ * 反向依赖（组件不该依赖页面）。所以把它**上移到 core/types.ts**：
+ * 它是纯数据结构，本来就该在这一层。
+ * 以后恢复白纸流程时，`AnswerCard.ts` 从这里 import 即可，不要各自再定义一份。
+ */
+export interface AnswerComparison {
+  /** 用户在那个输入框里填的内容 */
+  input: string;
+  /** 是否判为正确 */
+  ok: boolean;
 }
 
 /** 单词 */

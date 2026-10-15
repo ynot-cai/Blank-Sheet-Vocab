@@ -33,22 +33,14 @@ export interface PlaceholderSpec {
   reference: string;
 }
 
-/** 五个未实现入口的说明（顺序与首页按钮一致） */
+/** 仍未实现入口的说明（顺序与首页按钮一致） */
 export const PLACEHOLDER_SPECS: PlaceholderSpec[] = [
-  {
-    path: '/import',
-    label: '录入',
-    row: 1,
-    status: 'archived',
-    note: '把粘贴或上传的生词文本解析成词条。该页面及其四个子面板在版本 0.0.1 的「删除与归档行动」中被整体归档。它的解析管线（services/ai、core/model 等）仍在程序里，所以恢复代价不高。',
-    reference: '已归档/04_录入功能.md',
-  },
   {
     path: '/learn',
     label: '背诵',
     row: 1,
     status: 'archived',
-    note: '白纸空间记忆：靠位置 + 语音建立记忆。它与背诵流程共用的「白纸画布」一起被归档，是本次归档里最大的一块。',
+    note: '白纸空间记忆：靠位置 + 语音建立记忆。它与背诵流程共用的「白纸画布」一起被归档，是本次归档里最大的一块（2,890 行）。',
     reference: '已归档/05_背诵页.md ＋ 已归档/02_白纸流程_背诵与复习的核心画布.md',
   },
   {
@@ -66,14 +58,6 @@ export const PLACEHOLDER_SPECS: PlaceholderSpec[] = [
     status: 'planned',
     note: '全新的独立功能：只做拼写，不用白纸空间。用户已明确「现在先别做，只做按钮」，因此本页只说明状态——具体行为（题面给什么、抽哪些词、判分口径、一轮多少个）尚未确定，定义清楚之前不开工。',
     reference: '关于项目/版本更新日志.md 版本 0.0.3 第五节',
-  },
-  {
-    path: '/list',
-    label: '单词列表',
-    row: 2,
-    status: 'archived',
-    note: '查看和访问单词数据：筛选、编辑属性、斩词与复活。它由用户点名归档（第 7 条要求）。数据层完好——dao/words.ts 的查询、统计、斩与复活**一个方法都没少**，缺的只是界面。',
-    reference: '已归档/08_单词列表功能.md',
   },
 ];
 
