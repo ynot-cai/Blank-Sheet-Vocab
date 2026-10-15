@@ -3,6 +3,15 @@
 # 也会让 prettier / eslint 之类的工具在不同机器上给出不同结果。
 * text=auto eol=lf
 
+# ── 例外：被 Windows 直接执行的脚本必须保持 CRLF ──
+# `cmd.exe` 传统上按 CRLF 解析 .cmd / .bat（裸 LF 在标签与多行 if(...) 块上可能出问题），
+# PowerShell 也一样。如果让上面那条 `eol=lf` 管到它们，一次 git checkout 就会把这些文件
+# 悄悄改回 LF —— 那是**看不见的功能性破坏**（脚本可能照样跑，也可能突然不跑）。
+# 2026-10-15 的启动器事故就是这一族问题的近亲，所以这里显式钉死。
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
 # 二进制文件不要做任何转换
 *.png binary
 *.jpg binary
