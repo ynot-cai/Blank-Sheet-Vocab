@@ -1,23 +1,30 @@
 @echo off
-chcp 65001 >nul
-title 白纸单词 —— 本地 API（可关闭）
+rem ===========================================================================
+rem  White Sheet Vocab - local API server (port 3000).
+rem
+rem  THIS FILE MUST STAY PURE ASCII - see the main launcher .cmd for the full reason.
+rem  Cloud sync only; local study works fine without it.
+rem ===========================================================================
+
 cd /d "%~dp0"
 
 echo ============================================================
-echo   白纸单词 本地 API（云同步用，端口 3000）
-echo   —— 纯本地背单词不需要它；关掉这个窗口不影响本地功能。
+echo   White Sheet Vocab - local API (port 3000)
+echo   Cloud sync only. Local study works without it.
 echo ============================================================
 echo.
 
 where node >nul 2>nul
 if errorlevel 1 (
-  echo [错误] 找不到 node 命令，请先安装 Node.js。
+  echo [error] node not found. Install Node.js 20.6+ first.
+  echo.
   pause
   exit /b 1
 )
 
 call npm run api
+set RC=%ERRORLEVEL%
 
 echo.
-echo 本地 API 已停止。
+echo [api] stopped. exit code = %RC%
 pause

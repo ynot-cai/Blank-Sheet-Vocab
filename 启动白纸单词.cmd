@@ -1,53 +1,28 @@
 @echo off
-chcp 65001 >nul
-title 白纸单词 —— 本地启动器
+rem ===========================================================================
+rem  White Sheet Vocab - local launcher.
+rem
+rem  THIS FILE MUST STAY PURE ASCII.
+rem  Do not put any Chinese in it - not even inside rem comments.
+rem
+rem  Why: cmd.exe reads .cmd files byte-by-byte using the SYSTEM ANSI CODEPAGE
+rem  (936 / GBK on a Chinese Windows), NOT UTF-8. A UTF-8 Chinese character can
+rem  end with a lead byte that swallows the following CR, merging two lines into
+rem  one. That breaks if(...) blocks and the script aborts at once - the window
+rem  flashes and disappears. (Hit for real on 2026-10-15.)
+rem  `chcp 65001` only changes OUTPUT encoding; it cannot change how cmd reads
+rem  the file itself, so it does not help.
+rem
+rem  All Chinese messages live in scripts\start-local.ps1, which is saved as
+rem  UTF-8 WITH BOM so PowerShell 5.1 decodes it correctly.
+rem ===========================================================================
+
 cd /d "%~dp0"
 
-echo ============================================================
-echo   白纸单词  blank-sheet-vocab  —— 本地启动器
-echo ============================================================
-echo.
-
-rem ── 1. 检查 Node ──
-where node >nul 2>nul
-if errorlevel 1 (
-  echo [错误] 找不到 node 命令。
-  echo        请先安装 Node.js 20.6 或更高版本：https://nodejs.org/
-  echo.
-  pause
-  exit /b 1
-)
-for /f "delims=" %%v in ('node -v') do set NODEVER=%%v
-echo [1/3] Node.js 已就绪：%NODEVER%
-
-rem ── 2. 依赖 ──
-if not exist "node_modules" (
-  echo [2/3] 首次运行：正在安装依赖，可能要几分钟...
-  call npm install
-  if errorlevel 1 (
-    echo.
-    echo [错误] 依赖安装失败。请检查网络后重试。
-    pause
-    exit /b 1
-  )
-) else (
-  echo [2/3] 依赖已就绪：node_modules
-)
-
-rem ── 3. 本地 API（云同步用；纯本地背单词不需要它，可以直接关掉那个窗口）──
-echo [3/3] 启动本地 API（端口 3000）与前端...
-start "白纸单词-API" /min "%~dp0启动本地API.cmd"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\start-local.ps1"
+set RC=%ERRORLEVEL%
 
 echo.
-echo ------------------------------------------------------------
-echo   前端地址：http://127.0.0.1:5173/
-echo   浏览器会自动打开；关掉这个窗口即停止程序。
-echo ------------------------------------------------------------
-echo.
-
-rem --open：等 vite 真正监听成功后再开浏览器，避免「网页打不开」
-call npm run dev -- --open
-
-echo.
-echo 程序已停止。
+if not "%RC%"=="0" echo [launcher] launcher exited with code %RC%
+echo [launcher] You can close this window now.
 pause
