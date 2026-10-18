@@ -1,4 +1,6 @@
 import './styles/global.css';
+// 白纸（背诵）界面的样式：四按钮固定尺寸、单词落点、单词卡、入口页
+import './styles/paper.css';
 import { DEFAULT_SETTINGS, setSettingsCache } from './core/config';
 import { openDB } from './core/db';
 import * as dao from './dao';

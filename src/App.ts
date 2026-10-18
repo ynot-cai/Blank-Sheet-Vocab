@@ -7,6 +7,8 @@ import { renderSettingsPage } from './ui/pages/SettingsPage';
 import { renderImportPage } from './ui/pages/ImportPage';
 import { renderMergePage } from './ui/pages/MergePage';
 import { renderListPage } from './ui/pages/ListPage';
+import { renderLearnPage } from './ui/pages/LearnPage';
+import { renderLearnPaperPage } from './ui/pages/LearnPaperPage';
 import { PLACEHOLDER_SPECS, renderPlaceholderPage } from './ui/pages/PlaceholderPage';
 import { mountSyncBanner } from './ui/components/SyncBanner';
 import { maybeShowInstallHint, registerServiceWorker, setBannerHost } from './services/pwa';
@@ -37,7 +39,7 @@ const NAV: { path: string; label: string }[] = [
  * 判据不是「哪几个页面」，而是「**进去就是练**」——背诵、复习、拼写强化。
  * 以后新增的全屏练习界面，也要加进这里。
  */
-const FULLSCREEN_PATHS = ['/learn', '/review', '/spell'];
+const FULLSCREEN_PATHS = ['/learn/paper', '/review', '/spell'];
 
 /** 首页路径：白栏标题右侧留空 */
 const HOME_PATH = '/home';
@@ -65,6 +67,14 @@ function registerRoutes(): void {
   for (const spec of PLACEHOLDER_SPECS) {
     registerRoute(spec.path, () => renderPlaceholderPage(spec));
   }
+  /**
+   * ★ 背诵（版本 0.0.9）：入口页 + 白纸界面。
+   * 写在占位页循环**之后**，覆盖掉 `PLACEHOLDER_SPECS` 里原先的 `/learn` 占位
+   * （路由表是 `Map`，后来者覆盖前者）。
+   * ⚠️ `/learn` 是**入口页**（要保留顶栏那排全局入口），只有 `/learn/paper` 才全屏。
+   */
+  registerRoute('/learn', () => renderLearnPage());
+  registerRoute('/learn/paper', () => renderLearnPaperPage());
   setFallback(HOME_PATH);
 }
 

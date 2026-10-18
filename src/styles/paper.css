@@ -1,0 +1,521 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   白纸（背诵）界面样式 —— 版本 0.0.9
+   规格出处：开发必读/逻辑与交互要求.md 第 6 节 + 本版提示词第四节
+   ⚠️ 按钮宽高来自 `PAPER_UI`（core/config.ts），这里用 CSS 变量接同一份数字，
+      文字只做省略号截断，**永远不许把盒子撑大**（上一版「按钮大小不断变化」的根因）。
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.paper-page {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--bg);
+  /* dvh：手机地址栏收起/展开时高度会变 */
+  height: 100dvh;
+}
+
+/* 纸面：单词的绝对定位基准 */
+.paper-sheet {
+  position: relative;
+  flex: none;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 2px 24px rgba(20, 24, 35, 0.08);
+}
+
+/* ── 单词落点容器：位置是相对纸面的百分比，resize 后相对位置不变 ──
+   纵向排布：上面一行「单词 + 义项数」，下面是中文意思 */
+.paper-word-zone {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.paper-word-row {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 3px;
+}
+
+.paper-word {
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  transition: color 0.2s, transform 0.2s, opacity 0.4s;
+  /* 触摸热区：padding 必须与 layout.ts 的 WORD_*_PADDING 常量一致，
+     否则碰撞检测用的矩形比实际渲染的小，屏幕上就会出现「贴在一起」的缝 */
+  padding: 6px 2px;
+}
+
+/* 出现的动画（设置里 animation 关掉时由 no-anim 兜住） */
+.paper-word.anim-in {
+  animation: paper-in 0.45s ease;
+}
+
+@keyframes paper-in {
+  from {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.paper-stage-no-anim .paper-word.anim-in {
+  animation: none;
+}
+
+/* 义项数角标：右上角、浅灰小数字（只有 >1 个义项才渲染） */
+.paper-badge {
+  position: absolute;
+  top: -2px;
+  right: -10px;
+  color: #bbb;
+  font-size: 12px;
+  line-height: 1;
+  transform: translateY(-0.1em);
+  user-select: none;
+  pointer-events: none;
+}
+
+/* 中文意思（只显示义项代表，不含近义词）：点单词切换显示/隐藏 */
+.paper-meaning {
+  margin-top: 2px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #000;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 2px 8px;
+  max-width: 260px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.paper-meaning.hidden {
+  visibility: hidden;
+}
+
+/* ── 按钮组：尺寸固定，位置随断点切换 ── */
+.paper-controls {
+  position: absolute;
+  z-index: 30;
+  display: flex;
+}
+
+/* 手机：底部一整排 4 个，等分宽度、固定高度 */
+.paper-controls.phone {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: row;
+  gap: var(--paper-btn-gap-x);
+  padding: var(--paper-btn-bottom-pad) var(--paper-btn-side-pad);
+  background: linear-gradient(to top, rgba(236, 238, 242, 0.96), rgba(236, 238, 242, 0.72));
+}
+
+.paper-controls.phone .paper-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  height: var(--paper-btn-h);
+}
+
+/* 平板/桌面：右下角竖排长方形，固定宽度 */
+.paper-controls.wide {
+  right: var(--paper-btn-margin);
+  bottom: var(--paper-btn-margin);
+  flex-direction: column;
+  gap: var(--paper-btn-gap-y);
+  padding: var(--paper-btn-pad);
+  background: rgba(236, 238, 242, 0.9);
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(20, 24, 35, 0.08);
+}
+
+.paper-controls.wide .paper-btn {
+  width: var(--paper-btn-w);
+  height: var(--paper-btn-h);
+}
+
+/* 按钮统一样式：蓝框 + 白底 + 黑字；按下/悬停略微变灰变深 */
+.paper-btn {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--fg);
+  background: #fff;
+  border: 1.5px solid var(--accent);
+  border-radius: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.paper-btn:hover:not(:disabled) {
+  background: #eef1f6;
+}
+
+.paper-btn:active:not(:disabled) {
+  background: #dfe4ec;
+  border-color: var(--accent-dark);
+}
+
+.paper-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 主按钮（下一个）加粗一点，但仍同尺寸 */
+.paper-btn-primary {
+  font-weight: 600;
+}
+
+.paper-btn-danger {
+  border-color: var(--danger);
+}
+
+/* ── 统计行：灰字小字 ── */
+.paper-stats {
+  position: absolute;
+  z-index: 29;
+  font-size: 12px;
+  color: var(--fg-dim);
+  user-select: none;
+  pointer-events: none;
+}
+
+/* 手机：中间正下方（按钮带上方居中） */
+.paper-stats.phone {
+  left: 0;
+  right: 0;
+  text-align: center;
+  bottom: calc(var(--paper-btn-h) + var(--paper-btn-bottom-pad) * 2 + var(--paper-stats-gap));
+}
+
+/* 宽屏：按钮组上方、右对齐 */
+.paper-stats.wide {
+  right: var(--paper-btn-margin);
+  text-align: right;
+}
+
+/* ══ 单词卡 ══ */
+.paper-card-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(20, 24, 35, 0.28);
+}
+
+.paper-card {
+  position: relative;
+  box-sizing: border-box;
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100dvh - 64px);
+  overflow: auto;
+  padding: 20px;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: var(--shadow-lg);
+}
+
+/* 右上角关闭 */
+.paper-card-close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  width: 30px;
+  height: 30px;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--fg-dim);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.paper-card-close:hover {
+  color: var(--fg);
+}
+
+/* 第 1 行：英文（大黑粗） + 中文（仅义项代表） */
+.paper-card-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-right: 30px;
+}
+
+.paper-card-word {
+  font-size: 28px;
+  font-weight: 700;
+  color: #000;
+  word-break: break-word;
+}
+
+.paper-card-word-input {
+  font-size: 28px;
+  font-weight: 700;
+  color: #000;
+  width: 100%;
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.paper-card-senses {
+  font-size: 14px;
+  color: var(--fg);
+}
+
+/* 第 2 行：音标 + 发音 */
+.paper-card-phonetic-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 14px;
+  color: var(--fg-dim);
+}
+
+/* 第 3 行：例句（最多两行，超出给「查看全部」） */
+.paper-card-example {
+  margin-top: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--fg-dim);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.paper-card-example.expanded {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+}
+
+/* 第 4 行：按钮区 */
+.paper-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.paper-card-actions .paper-btn {
+  height: 36px;
+}
+
+/* ── 编辑态的中文列表 ── */
+.paper-sense-list {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.paper-sense-item {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 6px;
+  border: 1px dashed transparent;
+  border-radius: 8px;
+  cursor: grab;
+}
+
+.paper-sense-item:hover {
+  border-color: var(--line);
+  background: #fafbfd;
+}
+
+.paper-sense-item.dragging {
+  opacity: 0.45;
+}
+
+.paper-sense-item.drop-target {
+  border-color: var(--accent);
+  background: #eef4ff;
+}
+
+.paper-sense-text {
+  font-size: 14px;
+  color: var(--fg);
+  padding: 1px 3px;
+  border-radius: 4px;
+}
+
+.paper-sense-text:focus {
+  outline: 1px solid var(--accent);
+  background: #fff;
+}
+
+/* 近义词：比代表义项更灰 */
+.paper-sense-alias {
+  font-size: 13px;
+  color: #a8afbar;
+  color: #a8afba;
+}
+
+/* 右键菜单（只有「删除」一项） */
+.paper-context-menu {
+  position: fixed;
+  z-index: 80;
+  min-width: 96px;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.paper-context-menu button {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  color: var(--fg);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.paper-context-menu button:hover {
+  background: #f2f4f8;
+}
+
+.paper-context-menu button.danger {
+  color: var(--danger);
+}
+
+/* 斩之后的提示：右上角（用户要求把原来的右下角绿条改到右上角） */
+.paper-toast-top {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: #0b5c3a;
+  background: #e6f7ef;
+  border: 1px solid #b7e6cf;
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+
+.paper-toast-top button {
+  font: inherit;
+  font-size: 13px;
+  color: var(--accent-dark);
+  background: transparent;
+  border: none;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* ══ 背诵入口页 ══ */
+.learn-entry {
+  position: relative;
+  min-height: calc(100dvh - var(--topbar-h));
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  padding: 24px 16px 96px;
+}
+
+.learn-entry-title {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.learn-entry-sub {
+  font-size: 13px;
+  color: var(--fg-dim);
+  text-align: center;
+}
+
+/* 左下角的「开始背诵」 */
+.learn-start {
+  position: fixed;
+  left: 20px;
+  bottom: 20px;
+  z-index: 40;
+  height: 48px;
+  padding: 0 22px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--fg);
+  background: #fff;
+  border: 1.5px solid var(--accent);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 120ms ease, transform 120ms ease;
+}
+
+.learn-start:hover {
+  background: #eef1f6;
+}
+
+.learn-start:active {
+  background: #dfe4ec;
+}
+
+/* 点击后的动画：纸片散开再收起，然后进白纸界面 */
+.learn-start.burst {
+  animation: learn-burst 520ms ease forwards;
+}
+
+@keyframes learn-burst {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  45% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.86);
+    opacity: 0;
+  }
+}
+
+/* 全屏白纸出现时把顶栏藏掉（背诵属于全屏练习界面） */
+.nav.nav-hidden {
+  display: none;
+}
