@@ -77,6 +77,14 @@ function measureText(text: string, fontSize: number, fontFamily: string): { w: n
   }
 }
 
+/** 中文意思一行的字号（与 paper.css 的 .paper-meaning 保持一致） */
+const MEANING_FONT_PX = 14;
+/** 中文意思盒子的最大宽度（与 paper.css 的 max-width 一致） */
+const MEANING_MAX_W = 260;
+/** 中文意思盒子的左右内边距之和（2px padding * 2 + 边框） */
+const MEANING_PAD_X = 10;
+/** 中文意思盒子的上下内边距 */
+const MEANING_PAD_Y = 8;
 /** 造一个白纸舞台 */
 export function createPaperStage(opts: PaperStageOptions): PaperStageHandle {
   const settings = getSettings();
@@ -111,6 +119,25 @@ export function createPaperStage(opts: PaperStageOptions): PaperStageHandle {
    * ★ 修复「与按钮重叠」的关键：`avoid` 现在是**向外扩过**的按钮矩形，
    *   并且手机端把可用区的下边界**收到 avoid 顶边**，两者严丝合缝。
    */
+  /**
+   * 算中文意思那块「盒子」的尺寸。
+   *
+   * ★ 用户第 3 条：上一版布点只按**英文**的宽高算占位矩形，中文比英文宽（最多 260px）
+   *   时就会伸出纸边。现在把中文也量出来，宽度取 `min(260, 文本宽+内边距)`，
+   *   高度按可能换行数估算；`buildZone` 里再把 `max-width` 设成这个宽度，
+   *   中文就被强制约束在盒子里换行，不会溢出画面。
+   * @param word 词
+   */
+  const meaningBox = (word: Word): { w: number; h: number } => {
+    const text = formatSensesBrief(word.senses);
+    const m = measureText(text, MEANING_FONT_PX, settings.display.fontFamily);
+    const inner = MEANING_MAX_W - MEANING_PAD_X;
+    const lines = Math.max(1, Math.ceil(m.w / Math.max(1, inner)));
+    return {
+      w: Math.min(MEANING_MAX_W, Math.ceil(m.w) + MEANING_PAD_X + 2),
+      h: Math.ceil(MEANING_FONT_PX * 1.5 * lines) + MEANING_PAD_Y + 2,
+    };
+  };
   const doLayout = (words: Word[]): Record<string, Placement> => {
     const margin = tier.edgeMarginPx;
     const box = paperButtonBox(viewport);
@@ -137,7 +164,10 @@ export function createPaperStage(opts: PaperStageOptions): PaperStageHandle {
 
     const metrics = words.map((w) => {
       const m = measureText(w.en, fontSize, settings.display.fontFamily);
-      return wordBoxPx(m.w, m.h, isPhone);
+      const wordBox = wordBoxPx(m.w, m.h, isPhone);
+      // ★ 用户第 3 条：占位矩形 = 英文盒子 ∪ 中文盒子，否则中文会伸出纸边
+      const mb = meaningBox(w);
+      return { widthPx: Math.max(wordBox.widthPx, mb.w), heightPx: wordBox.heightPx + mb.h };
     });
     const meanW = metrics.length > 0 ? metrics.reduce((s, m) => s + m.widthPx, 0) / metrics.length : 0;
     const rowH = wordRowHeightPx(fontSize);
@@ -205,6 +235,8 @@ export function createPaperStage(opts: PaperStageOptions): PaperStageHandle {
       class: 'paper-meaning hidden',
       text: formatSensesBrief(word.senses),
       title: '点击打开单词卡',
+      // ★ 用户第 3 条：宽度直接约束到布点预算的盒子里，中文永远不会伸出画面
+      style: { maxWidth: `${meaningBox(word).w}px` },
     });
     meaning.addEventListener('click', (ev) => {
       ev.stopPropagation();

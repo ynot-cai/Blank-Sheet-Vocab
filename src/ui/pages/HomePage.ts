@@ -6,33 +6,22 @@ import { h } from '../dom';
 import { navigate } from '../router';
 
 /**
- * 首页（版本 0.0.3）。
+ * 首页六个入口。
  *
- * ── 结构 ──
- * ```
- * 顶部浅白栏：白纸单词            （标题右侧留空，见 App.ts）
- * 第一排：录入 · 背诵 · 复习 · 拼写强化     ← 会进入学习/练习的
- * 第二排：单词列表 · 设置                 ← 数据查看与系统设置
- * 灰栏：▌未背 N · 已背 N · 已斩 N · 需复习 N
- * ```
- * 规格出处：`开发必读/逻辑与交互要求.md` §5.1 / §5.2。
+ * ★ 版本 0.0.10（用户第 1 条）：**全部水平排列**、蓝框 + 白底 + 黑字、面积增大、
+ *   **等宽等高**、字号大于白纸界面按钮（白纸按钮字号 = 单词字号）。
+ *   宽屏 6 个一行；手机自动换行 2 列 × 3 排（仍是水平排列）。
  *
- * ── 两排的分工不是随便排的 ──
- * 用户的要求是「后续涉及实际背诵工作的按钮也放在第一排」，
- * 所以判据是**功能性质**（会不会进入学习/练习），不是数量或常用度。
- * 以后新增按钮时按这条判据归排，`PLACEHOLDER_SPECS` 里也有同样的 `row` 标记。
+ * ⚠️ 顺序沿用上一版（先是会进入学习/练习的，再是数据与设置），
+ *   只是把「分两排」改成「一个水平容器里自动换行」，**没有新增任何视觉元素**。
  */
-const ROWS: { path: string; label: string }[][] = [
-  [
-    { path: '/import', label: '录入' },
-    { path: '/learn', label: '背诵' },
-    { path: '/review', label: '复习' },
-    { path: '/spell', label: '拼写强化' },
-  ],
-  [
-    { path: '/list', label: '单词列表' },
-    { path: '/settings', label: '设置' },
-  ],
+const BUTTONS: { path: string; label: string }[] = [
+  { path: '/import', label: '录入' },
+  { path: '/learn', label: '背诵' },
+  { path: '/review', label: '复习' },
+  { path: '/spell', label: '拼写强化' },
+  { path: '/list', label: '单词列表' },
+  { path: '/settings', label: '设置' },
 ];
 
 /**
@@ -80,24 +69,20 @@ function computeStatLine(words: Word[]): string {
 export function renderHomePage(): HTMLElement {
   const page = h('div', { class: 'page home-page' });
 
-  // ── 两排按钮 ──
-  const rowsBox = h('div', { class: 'home-rows' });
-  for (const row of ROWS) {
-    const rowEl = h('div', { class: 'home-row' });
-    for (const item of row) {
-      rowEl.appendChild(
-        h('button', {
-          class: 'home-card',
-          type: 'button',
-          text: item.label,
-          dataset: { path: item.path },
-          onclick: () => navigate(item.path),
-        }),
-      );
-    }
-    rowsBox.appendChild(rowEl);
+  // ── 六个按钮：一个水平容器，靠 CSS grid 等分；手机自动换成 2 列 × 3 排 ──
+  const buttonsBox = h('div', { class: 'home-buttons' });
+  for (const item of BUTTONS) {
+    buttonsBox.appendChild(
+      h('button', {
+        class: 'home-card',
+        type: 'button',
+        text: item.label,
+        dataset: { path: item.path },
+        onclick: () => navigate(item.path),
+      }),
+    );
   }
-  page.appendChild(rowsBox);
+  page.appendChild(buttonsBox);
 
   // ── 灰栏 ──
   const statText = h('span', { class: 'statbar-text', text: '统计读取中…' });

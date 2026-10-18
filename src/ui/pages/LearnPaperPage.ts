@@ -94,8 +94,15 @@ export function renderLearnPaperPage(): HTMLElement {
 
   /** 待放上纸的词（按优先级抽好，顺序就是出场顺序） */
   let queue: Word[] = [];
-  /** 已经放上纸的词 id */
+  /** 已经放上纸的词 id（按出场顺序） */
+  const shownOrder: string[] = [];
   const shown = new Set<string>();
+  /**
+   * ★ 每个词**当时算出来的落点**。
+   * 用户第 4 条：保存退出后再次进入，位置与「已经出现」都要原样保留，
+   * 所以落点必须一起存进会话；不存的话恢复时只能重排，位置就变了。
+   */
+  const placements: Record<string, { x: number; y: number }> = {};
   let session: Session | null = null;
   let destroyed = false;
 
@@ -126,13 +133,16 @@ export function renderLearnPaperPage(): HTMLElement {
       btnNext.disabled = true;
       return;
     }
-    const placements = stage.layout(queue.filter((w) => shown.has(w.id) || w.id === next.id));
-    const p = placements[next.id];
+    const points = stage.layout(queue.filter((w) => shown.has(w.id) || w.id === next.id));
+    const p = points[next.id];
     if (!p) {
       btnNext.disabled = true;
       return;
     }
     shown.add(next.id);
+    shownOrder.push(next.id);
+    // 记下落点：保存时一起存，恢复时原样还原
+    placements[next.id] = { x: p.x, y: p.y };
     // 最后一个出现的词自动显示中文
     stage.addWord(next, p, true);
     refreshStats();
@@ -146,9 +156,11 @@ export function renderLearnPaperPage(): HTMLElement {
       const s: Session = {
         id: session?.id ?? `learn-${Date.now()}`,
         type: 'learn',
-        wordIds: queue.filter((w) => shown.has(w.id)).map((w) => w.id),
-        placements: {},
-        shownIds: [...shown],
+        // ★ 存**整个队列的顺序**（不只是已出现的），这样恢复后「下一个」接着原先的抽词顺序往下走
+        wordIds: queue.map((w) => w.id),
+        // ★ 存每个词的真实落点，恢复时才能一模一样地摆回去
+        placements: { ...placements },
+        shownIds: [...shownOrder],
         memorizeCount: {},
         spellEnabled: false,
         failedIds: [],
@@ -161,7 +173,7 @@ export function renderLearnPaperPage(): HTMLElement {
       };
       await dao.session.saveSession(s);
       session = s;
-      toastOk(`已保存并退出（${s.wordIds.length} 个词在纸上）`);
+      toastOk(`已保存并退出（${s.shownIds.length} 个词在纸上）`);
       navigate('/home');
     })();
   });
@@ -192,11 +204,38 @@ export function renderLearnPaperPage(): HTMLElement {
     stats.style.bottom = `${window.innerHeight - box.group.y + PAPER_UI.statsGap}px`;
   }
 
-  // ── 初始化：取词、抽词、放第一个 ──
+  // ── 初始化：优先**恢复上次保存的这张纸**，没有才重新抽词 ──
   void (async () => {
     try {
       const all = await dao.words.listAlive();
       const usable = all.filter((w) => w.status !== 'chopped');
+      const byId = new Map(usable.map((w) => [w.id, w]));
+
+      const saved = await dao.session.loadSession();
+      if (saved && !saved.finished && saved.type === 'learn' && saved.wordIds.length > 0) {
+        const restored = saved.wordIds.map((id) => byId.get(id)).filter((w): w is Word => w !== undefined);
+        if (restored.length > 0) {
+          session = saved;
+          queue = restored;
+          for (const [id, p] of Object.entries(saved.placements ?? {})) placements[id] = p;
+          // ★ 关键：把「已经出现」的词**按当时的落点**一次性摆回去，不需要再点「下一个」
+          for (const id of saved.shownIds ?? []) {
+            const w = byId.get(id);
+            const p = placements[id];
+            if (w && p) {
+              shown.add(id);
+              shownOrder.push(id);
+              stage.addWord(w, p, false);
+            }
+          }
+          if (shown.size > 0) stage.showMeaning(shownOrder[shownOrder.length - 1]);
+          refreshStats();
+          if (!queue.some((w) => !shown.has(w.id))) btnNext.disabled = true;
+          toastOk(`已恢复上次的这张纸（${shown.size} 个词在位）`);
+          return;
+        }
+      }
+
       queue = pickForLearn(usable, MAX_ON_PAPER);
       if (queue.length === 0) {
         toastOk('词库是空的，先去「录入」加词');

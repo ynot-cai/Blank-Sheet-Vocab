@@ -2127,3 +2127,67 @@ body {
     font-size: 12px;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   版本 0.0.10：首页按钮统一规格（用户第 1 条）
+   —— 全部水平排列、蓝框白底黑字、面积增大、等宽等高、字号大于单词字号。
+   规格：首页字号 28px > 白纸按钮字号（= 单词字号，默认 24px）> 旧值。
+   宽屏 6 个一行；手机 2 列 × 3 排（仍是水平排列，自动换行）。
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.home-buttons {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+  margin: 20px 0 0;
+  width: 100%;
+}
+
+.home-buttons .home-card {
+  /* 等宽等高：宽度由 grid 的 1fr 等分，高度固定 */
+  width: 100%;
+  min-width: 0;
+  height: 72px;
+  min-height: 72px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  font-weight: 600;
+  color: #000;
+  background: #fff;
+  border: 2px solid var(--accent);
+  border-radius: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+/* 悬停/按下：略微变灰变深（用户明确要求，不加其它装饰） */
+.home-buttons .home-card:hover:not(:disabled) {
+  background: #eef1f6;
+}
+
+.home-buttons .home-card:active:not(:disabled) {
+  background: #dfe4ec;
+  border-color: var(--accent-dark);
+}
+
+/* 手机：2 列 × 3 排，字号仍大于单词字号（24px） */
+@media (max-width: 767px) {
+  .home-buttons {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+  }
+
+  .home-buttons .home-card {
+    height: 64px;
+    min-height: 64px;
+    font-size: 26px;
+    border-radius: 10px;
+  }
+}

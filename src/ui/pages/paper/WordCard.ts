@@ -5,7 +5,6 @@
  *   由它去刷新白纸上的中文（`PaperStage.refreshWord`）。上一版只改了库里的数据，
  *   纸上那份文本是烘死的，所以「背诵期间改中文不立即显示」。
  */
-import { createSense } from '../../../core/model';
 import type { Word } from '../../../core/types';
 import { button, h, textInput } from '../../dom';
 import { EXAMPLE_NOT_FOUND } from '../../../core/senseRules';
@@ -147,13 +146,8 @@ export function openWordCard(opts: WordCardOptions): () => void {
 
         list.appendChild(item);
       });
-      // 加一条空义项
-      const addBtn = h('button', { type: 'button', class: 'paper-btn', text: '+ 添加中文意思' });
-      addBtn.addEventListener('click', () => {
-        current = { ...current, senses: [...current.senses, createSense('')] };
-        draw();
-      });
-      list.appendChild(addBtn);
+      // ⚠️ 用户第 5 条：删掉了原先自己加的「+ 添加中文意思」按钮——
+      //    需求只写了「可修改每一条、右键删除、拖拽排序」，没要求新增。
       card.appendChild(list);
     }
 

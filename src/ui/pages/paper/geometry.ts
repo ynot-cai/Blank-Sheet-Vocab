@@ -13,8 +13,29 @@
  *   而真实按钮比它大一圈 → 词落进那圈空隙就直接压住按钮。
  *   现在一律**向外扩** `PAPER_UI.avoidExtraPx`，扩出来的就是「词与按钮的最小间隙」。
  */
-import { PAPER_UI } from '../../../core/config';
+import { getSettings, PAPER_UI } from '../../../core/config';
 import { deviceKind, type DeviceKind } from '../../device';
+
+/**
+ * ★ 版本 0.0.10（用户第 2 条）：白纸按钮的**字号与单词相同**、等宽等高、面积增大。
+ *
+ * 所以按钮尺寸不再写死像素，而是**由单词字号推导**：
+ *   按钮高 = 单词字号 + 上下内边距；按钮宽 = 单词字号 × 系数（宽屏竖排时定宽）。
+ * 这样用户把单词字号调大，按钮会跟着等比变大，不会出现「字把按钮撑破」。
+ *
+ * 与首页的关系（用户明确）：**首页按钮字号 > 单词字号 = 白纸按钮字号**。
+ * 首页的字号写死在 `global.css`（宽屏 28px / 手机 26px），白纸按钮读这里的单词字号。
+ * @returns 本设备形态下的按钮宽高与字号
+ */
+export function paperButtonMetrics(): { width: number; height: number; font: number } {
+  const font = Math.max(12, Math.round(getSettings().display.fontSize));
+  const kind = deviceKind(window.innerWidth);
+  if (kind === 'phone') {
+    // 手机是等分宽度，width 只是参考值（CSS 用 flex:1 等分）
+    return { width: 0, height: font + 22, font };
+  }
+  return { width: Math.round(font * 8), height: font + 20, font };
+}
 
 /** 一个矩形（视口坐标，像素） */
 export interface Box {
@@ -53,17 +74,16 @@ export function paperButtonBox(viewport?: { width: number; height: number }): Pa
   const kind = deviceKind(vw);
 
   let group: Box;
+  const m = paperButtonMetrics();
   if (kind === 'phone') {
-    const { btnHeight, bottomPad, sidePad } = PAPER_UI.phone;
-    // 横带高度 = 按钮高 + 上下各一份 bottomPad；左右各留 sidePad
-    const height = btnHeight + bottomPad * 2;
+    const { bottomPad } = PAPER_UI.phone;
+    // 横带高度 = 按钮高 + 上下各一份 bottomPad
+    const height = m.height + bottomPad * 2;
     group = { x: 0, y: Math.max(0, vh - height), width: vw, height };
-    // sidePad 只影响按钮本身，不影响组框（组框本来就是通的）
-    void sidePad;
   } else {
-    const { btnWidth, btnHeight, gapY, margin, pad } = PAPER_UI.wide;
-    const height = btnHeight * 4 + gapY * 3 + pad * 2;
-    const width = btnWidth + pad * 2;
+    const { gapY, margin, pad } = PAPER_UI.wide;
+    const height = m.height * 4 + gapY * 3 + pad * 2;
+    const width = m.width + pad * 2;
     group = {
       x: Math.max(0, vw - margin - width),
       y: Math.max(0, vh - margin - height),
@@ -84,17 +104,16 @@ export function paperButtonBox(viewport?: { width: number; height: number }): Pa
  */
 export function applyPaperButtonVars(root: HTMLElement): void {
   const s = root.style;
-  s.setProperty('--paper-btn-h', `${PAPER_UI.phone.btnHeight}px`);
+  const m = paperButtonMetrics();
+  s.setProperty('--paper-btn-h', `${m.height}px`);
+  s.setProperty('--paper-btn-w', `${m.width}px`);
+  // ★ 字数与单词相同（用户第 2 条）
+  s.setProperty('--paper-btn-font', `${m.font}px`);
   s.setProperty('--paper-btn-gap-x', `${PAPER_UI.phone.gapX}px`);
   s.setProperty('--paper-btn-side-pad', `${PAPER_UI.phone.sidePad}px`);
   s.setProperty('--paper-btn-bottom-pad', `${PAPER_UI.phone.bottomPad}px`);
-  s.setProperty('--paper-btn-w', `${PAPER_UI.wide.btnWidth}px`);
   s.setProperty('--paper-btn-gap-y', `${PAPER_UI.wide.gapY}px`);
   s.setProperty('--paper-btn-margin', `${PAPER_UI.wide.margin}px`);
   s.setProperty('--paper-btn-pad', `${PAPER_UI.wide.pad}px`);
   s.setProperty('--paper-stats-gap', `${PAPER_UI.statsGap}px`);
-  // 宽屏按钮高与手机不同，用类名区分（.paper-controls.wide 里覆盖高度）
-  if (deviceKind(window.innerWidth) !== 'phone') {
-    s.setProperty('--paper-btn-h', `${PAPER_UI.wide.btnHeight}px`);
-  }
 }

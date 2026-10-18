@@ -519,3 +519,31 @@
 .nav.nav-hidden {
   display: none;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   版本 0.0.10 覆盖（用户第 2、5 条）
+   —— 白纸按钮与首页同一套视觉语言：蓝框、白底、黑字、等宽等高、面积增大；
+      字号 = 单词字号（由 geometry.ts 写成 --paper-btn-font）。
+   —— 同时**去掉**按钮组容器的灰底/阴影/圆角这些我自己加的装饰（第 5 条）。
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.paper-btn {
+  font-size: var(--paper-btn-font, 14px);
+  color: #000;
+  background: #fff;
+  border: 2px solid var(--accent);
+  border-radius: 12px;
+}
+
+/* 按钮组容器：不加任何背景/阴影/圆角，只是一个定位盒子 */
+.paper-controls.phone,
+.paper-controls.wide {
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+}
+
+/* 卡片里的按钮不跟单词字号走（卡片自身字号独立），保持紧凑 */
+.paper-card .paper-btn {
+  font-size: 13px;
+}
