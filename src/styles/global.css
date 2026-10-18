@@ -2254,3 +2254,31 @@ body {
 .site-footer-by {
   color: var(--fg-dim);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   版本 0.0.12：白条里 title 变成「回主界面」按钮；说明文字与 title 对调，
+   且**只在主界面**出现（顶替主界面上缺失的那排按钮）。
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* title 现在是 <button>：去掉按钮默认外观，只保留旧版 .brand 的文字观感 */
+.nav .brand {
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin-right: 2px;
+  cursor: pointer;
+  color: var(--fg);
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: 1px;
+}
+
+.nav .brand:hover {
+  opacity: 0.78;
+}
+
+/* 说明文字排在 title 之后（原先是排在前面），不再需要右侧留白 */
+.nav-tagline {
+  margin-right: 0;
+}

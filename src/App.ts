@@ -137,11 +137,15 @@ export function renderApp(root: HTMLElement): void {
     navBox.classList.toggle('nav-hidden', fullscreen);
     if (fullscreen) return;
 
-    navBox.appendChild(h('span', { class: 'nav-tagline', text: '用白纸单词——个人自用的背单词工具' }));
-    navBox.appendChild(h('span', { class: 'brand', text: '白纸单词' }));
-
-    // 首页标题右侧留空（首页自己就是入口，再来一排全局入口是重复的）
-    if (path === HOME_PATH) return;
+    // title：改成按钮，点它回主界面（用户要求：所有有白条的页面都能回主界面）
+    const brand = h('button', { class: 'brand', type: 'button', text: '白纸单词', title: '回到主界面' });
+    brand.addEventListener('click', () => navigate(HOME_PATH));
+    navBox.appendChild(brand);
+    // 说明文字**只在主界面**出现：它顶替主界面本来缺失的那排按钮
+    if (path === HOME_PATH) {
+      navBox.appendChild(h('span', { class: 'nav-tagline', text: '用白纸单词——个人自用的背单词工具' }));
+      return;
+    }
 
     const actions = h('div', { class: 'nav-actions' });
     for (const item of NAV) {
