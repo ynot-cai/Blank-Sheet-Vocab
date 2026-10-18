@@ -2,7 +2,7 @@
 
 :root {
   /* ★ 版本 0.0.3：整页底色改成「较深的白色」（原来的 #f5f6f8 更浅） */
-  --bg: #eceef2;
+  --bg: #f9fafb;
   --paper-bg: #ffffff;
   --fg: #1d1f23;
   --fg-dim: #6b7280;
@@ -2190,4 +2190,67 @@ body {
     font-size: 26px;
     border-radius: 10px;
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   版本 0.0.11：主页视觉回到旧版风格 + 用户点名的 6 处修改
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ③ 取消蓝框：主页卡片回到旧版描边，悬停也不再变蓝 */
+.home-grid .home-card:hover {
+  border-color: var(--line);
+}
+
+/* ⑤ 白条里标题左侧的说明文字：不加粗、比标题浅 */
+.nav-tagline {
+  font-weight: 400;
+  font-size: 13px;
+  color: var(--fg-dim);
+  margin-right: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ② 底部横条：满宽（比上方白条更宽）、更高，内容居中两行 */
+.site-footer {
+  flex: none;
+  width: 100%;
+  padding: 14px 16px;
+  background: var(--paper-bg);
+  border-top: 1px solid var(--line);
+  text-align: center;
+}
+
+.site-footer-line {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--fg-dim);
+  line-height: 1.8;
+}
+
+.site-footer-brand {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.site-footer-link {
+  padding: 0 6px;
+  min-height: 0;
+  height: 22px;
+  font-size: 13px;
+  color: var(--fg-dim);
+  background: transparent;
+  border: none;
+}
+
+.site-footer-link:hover {
+  color: var(--fg);
+}
+
+.site-footer-by {
+  color: var(--fg-dim);
 }

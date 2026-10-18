@@ -1,101 +1,69 @@
-import { getSettings, HOME_UI } from '../../core/config';
-import { computePriorities } from '../../core/priority';
-import type { Word } from '../../core/types';
+import type { WordStats } from '../../core/types';
 import * as dao from '../../dao';
 import { h } from '../dom';
 import { navigate } from '../router';
 
 /**
- * 首页六个入口。
+ * 主页（版本 0.0.11）—— **视觉恢复为归档旧版风格**，只做用户点名的 6 处修改。
  *
- * ★ 版本 0.0.10（用户第 1 条）：**全部水平排列**、蓝框 + 白底 + 黑字、面积增大、
- *   **等宽等高**、字号大于白纸界面按钮（白纸按钮字号 = 单词字号）。
- *   宽屏 6 个一行；手机自动换行 2 列 × 3 排（仍是水平排列）。
+ * 依据：`git show e266e72:src/ui/pages/HomePage.ts`（旧版源码）与旧版 `global.css` 里
+ * 仍然保留的 `.home-grid` / `.home-card` / `.home-label` / `.home-desc` 规则。
+ * 任何没点名的参数（间距、圆角、阴影、字号）一律沿用旧版那几条 CSS，**不自己另写一套**。
  *
- * ⚠️ 顺序沿用上一版（先是会进入学习/练习的，再是数据与设置），
- *   只是把「分两排」改成「一个水平容器里自动换行」，**没有新增任何视觉元素**。
+ * 六处修改：
+ *   ① 底色 `--bg` 从 `#f5f6f8` 小幅提亮（在 global.css 的 :root 里改）；
+ *   ② 底部新增横条（`ui/components/Footer.ts`，在 App.ts 里全局挂载）；
+ *   ③ **取消蓝框**：按钮回到旧版 `1px solid var(--line)`，不再有蓝色边框/蓝色悬停；
+ *   ④ 统计项目与旧版一致，并在前面加前缀「当前词库：」；
+ *   ⑤ 上方白条里、标题左侧加一行不加深的说明文字（在 App.ts 里渲染）；
+ *   ⑥ 整体沿用 `.page` / `.note` 这些与录入页共享的类，观感与录入页一致。
+ *
+ * 入口沿用旧版的五个（录入/背诵/复习/单词列表/设置），另外保留「拼写强化」——
+ * 那是用户 0.0.3 要求加、且当前仍在首页上的入口，**没有删**。
  */
-const BUTTONS: { path: string; label: string }[] = [
-  { path: '/import', label: '录入' },
-  { path: '/learn', label: '背诵' },
-  { path: '/review', label: '复习' },
-  { path: '/spell', label: '拼写强化' },
-  { path: '/list', label: '单词列表' },
-  { path: '/settings', label: '设置' },
+const ENTRIES: { path: string; label: string; desc: string }[] = [
+  { path: '/import', label: '录入', desc: '粘贴或上传单词/短语/缩写，解析成词条' },
+  { path: '/learn', label: '背诵', desc: '白纸空间记忆：靠位置 + 语音建立记忆' },
+  { path: '/review', label: '复习', desc: '按复习优先度分组抽取' },
+  { path: '/spell', label: '拼写强化', desc: '只做拼写，不用白纸空间' },
+  { path: '/list', label: '单词列表', desc: '筛选 / 编辑属性 / 斩词复活' },
+  { path: '/settings', label: '设置', desc: '同步 / AI 接口 / 数据' },
 ];
 
 /**
- * 灰栏的统计口径（`逻辑与交互要求.md` §5.2.4）。
- *
- * ⚠️ **「未背」= unlearned + learning**：用户明确说灰栏**不需要「学习中」**这一项，
- * 灰栏只有四个位置（未背 / 已背 / 已斩 / 需复习）。把「学习中」并进「未背」，
- * 四个状态数才刚好等于全库总数（否则学习中的词会在所有计数里凭空消失）。
- *
- * ⚠️ **「需复习」= 复习优先度 > `HOME_UI.needReviewThreshold`**。
- * 优先度是**没有上界**的表达式值，阈值 100 目前的实际含义约等于
- * 「未背 + 200 天以上没复习」（默认 balanced 预设下从未复习的词约 499.5）。
- * 用户已说明以后会重做优先度公式，届时阈值要重新标定——它在这里是一个具名常量，
- * 就是为了那一天只改一处。
- * @param words 全库存活词条
- */
-function computeStatLine(words: Word[]): string {
-  let unlearned = 0;
-  let learned = 0;
-  let chopped = 0;
-  for (const w of words) {
-    if (w.status === 'learned') learned += 1;
-    else if (w.status === 'chopped') chopped += 1;
-    else unlearned += 1; // unlearned + learning
-  }
-
-  const settings = getSettings();
-  const threshold = HOME_UI.needReviewThreshold;
-  let needReview = 0;
-  try {
-    const priorities = computePriorities(words, settings);
-    for (const p of priorities.values()) if (p > threshold) needReview += 1;
-  } catch (err) {
-    // 优先度算不出来不该让整条灰栏消失——那是「数字不对」，不是「页面坏了」
-    console.warn('[home] 需复习统计失败', err);
-    return `未背 ${unlearned} · 已背 ${learned} · 已斩 ${chopped} · 需复习 统计失败`;
-  }
-
-  return `未背 ${unlearned} · 已背 ${learned} · 已斩 ${chopped} · 需复习 ${needReview}`;
-}
-
-/**
- * 渲染首页。
+ * 渲染主页。
  */
 export function renderHomePage(): HTMLElement {
   const page = h('div', { class: 'page home-page' });
+  page.appendChild(h('h2', { class: 'page-title', text: '白纸单词' }));
+  page.appendChild(
+    h(
+      'p',
+      { class: 'note' },
+      '本地离线、单用户的背单词工具。条目可以是单词、短语（give up）或缩写（NASA / etc.）。数据存在本机浏览器里，不联网（AI 解析除外）。',
+    ),
+  );
 
-  // ── 六个按钮：一个水平容器，靠 CSS grid 等分；手机自动换成 2 列 × 3 排 ──
-  const buttonsBox = h('div', { class: 'home-buttons' });
-  for (const item of BUTTONS) {
-    buttonsBox.appendChild(
-      h('button', {
-        class: 'home-card',
-        type: 'button',
-        text: item.label,
-        dataset: { path: item.path },
-        onclick: () => navigate(item.path),
-      }),
-    );
+  const grid = h('div', { class: 'home-grid' });
+  for (const entry of ENTRIES) {
+    const card = h('button', { class: 'home-card', type: 'button', dataset: { path: entry.path } });
+    card.appendChild(h('span', { class: 'home-label', text: entry.label }));
+    card.appendChild(h('span', { class: 'home-desc', text: entry.desc }));
+    card.addEventListener('click', () => navigate(entry.path));
+    grid.appendChild(card);
   }
-  page.appendChild(buttonsBox);
+  page.appendChild(grid);
 
-  // ── 灰栏 ──
-  const statText = h('span', { class: 'statbar-text', text: '统计读取中…' });
-  const statbar = h('div', { class: 'statbar' }, statText);
-  page.appendChild(statbar);
-
+  // ── 统计：项目与旧版一致（总词数 / 未背 / 学习中 / 已背 / 已斩），加前缀「当前词库：」──
+  const statLine = h('p', { class: 'note', text: '当前词库：读取中…' });
+  page.appendChild(statLine);
   void (async () => {
     try {
-      const words = await dao.words.listAlive();
-      statText.textContent = computeStatLine(words);
+      const st: WordStats = await dao.words.stats();
+      statLine.textContent = `当前词库：总词数 ${st.total} · 未背 ${st.unlearned} · 学习中 ${st.learning} · 已背 ${st.learned} · 已斩 ${st.chopped}`;
     } catch (err) {
       console.error('[home] 词库统计读取失败', err);
-      statText.textContent = '统计读取失败（词库打不开？）';
+      statLine.textContent = '当前词库：统计读取失败';
     }
   })();
 

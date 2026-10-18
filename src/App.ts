@@ -9,6 +9,8 @@ import { renderMergePage } from './ui/pages/MergePage';
 import { renderListPage } from './ui/pages/ListPage';
 import { renderLearnPage } from './ui/pages/LearnPage';
 import { renderLearnPaperPage } from './ui/pages/LearnPaperPage';
+import { renderAboutPage } from './ui/pages/AboutPage';
+import { renderFooter } from './ui/components/Footer';
 import { PLACEHOLDER_SPECS, renderPlaceholderPage } from './ui/pages/PlaceholderPage';
 import { mountSyncBanner } from './ui/components/SyncBanner';
 import { maybeShowInstallHint, registerServiceWorker, setBannerHost } from './services/pwa';
@@ -75,6 +77,7 @@ function registerRoutes(): void {
    */
   registerRoute('/learn', () => renderLearnPage());
   registerRoute('/learn/paper', () => renderLearnPaperPage());
+  registerRoute('/about', () => renderAboutPage());
   setFallback(HOME_PATH);
 }
 
@@ -134,6 +137,7 @@ export function renderApp(root: HTMLElement): void {
     navBox.classList.toggle('nav-hidden', fullscreen);
     if (fullscreen) return;
 
+    navBox.appendChild(h('span', { class: 'nav-tagline', text: '用白纸单词——个人自用的背单词工具' }));
     navBox.appendChild(h('span', { class: 'brand', text: '白纸单词' }));
 
     // 首页标题右侧留空（首页自己就是入口，再来一排全局入口是重复的）
@@ -150,6 +154,7 @@ export function renderApp(root: HTMLElement): void {
   root.appendChild(navBox);
   root.appendChild(bannerBox);
   root.appendChild(outlet);
+  root.appendChild(renderFooter());
   renderPermissionBanner(bannerBox);
   // 云同步失败时的轻提示 / 常驻提示（不阻断任何操作）
   mountSyncBanner(bannerBox, () => {
