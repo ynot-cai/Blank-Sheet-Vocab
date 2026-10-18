@@ -2282,3 +2282,128 @@ body {
 .nav-tagline {
   margin-right: 0;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   版本 0.0.13：背诵选择页面（三、排版方案 A/B）
+   左栏两页签 + 右栏内容 + 底部「记录成绩 / 开始背诵」。风格沿用录入页的 .card / .note。
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.learn-select {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100dvh - var(--topbar-h));
+  padding-bottom: 76px;
+}
+
+.learn-select-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 18px 16px;
+  flex: 1;
+}
+
+.learn-select-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: none;
+  width: 132px;
+}
+
+.learn-nav-item {
+  padding: 10px 12px;
+  text-align: left;
+  font: inherit;
+  font-size: 14px;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.learn-nav-item:hover {
+  background: var(--paper-bg);
+  border-color: var(--line);
+}
+
+/* 亮起的那一项：沿用旧版强调色做左侧竖条，不加其它装饰 */
+.learn-nav-item.is-active {
+  background: var(--paper-bg);
+  border-color: var(--line);
+  font-weight: 700;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.learn-select-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.learn-picker summary {
+  cursor: pointer;
+  margin-bottom: 8px;
+}
+
+.learn-archive-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.learn-archive-row .field-label {
+  min-width: 120px;
+}
+
+/* 底部固定条：记录成绩 + 开始背诵 */
+.learn-select-bottom {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  padding: 12px 20px;
+  background: var(--paper-bg);
+  border-top: 1px solid var(--line);
+}
+
+.learn-start-btn {
+  min-width: 140px;
+  height: 40px;
+}
+
+@media (max-width: 767px) {
+  .learn-select-body {
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .learn-select-nav {
+    flex-direction: row;
+    width: 100%;
+  }
+
+  .learn-nav-item {
+    flex: 1;
+    text-align: center;
+  }
+
+  .learn-select-bottom {
+    justify-content: space-between;
+    padding: 10px 12px;
+  }
+
+  .learn-start-btn {
+    min-width: 120px;
+  }
+}

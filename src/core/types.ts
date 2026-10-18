@@ -472,3 +472,37 @@ export interface WordStats {
   learned: number;
   chopped: number;
 }
+
+/**
+ * 白纸存档（版本 0.0.13，用户「白纸存档机制」）。
+ *
+ * 组成（用户 2.1 明确定义）：**临时优先级表 + 分布种子 + 已出现单词名单**。
+ *
+ * 与 `Session` 的分工：
+ * - `Session` 是「这台设备上正在进行中的那一轮」，全局唯一（`sessions` 表里只有一条）；
+ * - `PaperArchive` 是「一张张存下来的纸」，可以有很多张（正在进行的 + 已背完的）。
+ * 所以单独一张表，不去挤 `sessions`。
+ */
+export interface PaperArchive {
+  id: string;
+  /** 纸名；「背完了」不命名时记成日期 `YYYY-MM-DD` */
+  name: string;
+  /**
+   * 临时优先级表：`wordId → 临时优先级`。
+   * **0 表示该词不在这一轮里**（「下一个」遇到 0 就停）。
+   * 背完了之后按用户要求**清空这张表**（永久存档不再需要它）。
+   */
+  priorityTable: Record<string, number>;
+  /** 分布种子（布点用，保证同一张纸位置稳定） */
+  seed: string;
+  /** 已出现单词名单（按出现顺序） */
+  shownIds: string[];
+  /** 每个词当时的落点 */
+  placements: Record<string, { x: number; y: number }>;
+  /** 是否记录成绩（用户 2.2/三：勾选后该白纸不再记录任何考核信息） */
+  recordScores: boolean;
+  /** draft = 进行中（可继续背诵）；finished = 已背完（永久存档） */
+  status: 'draft' | 'finished';
+  createdAt: number;
+  updatedAt: number;
+}

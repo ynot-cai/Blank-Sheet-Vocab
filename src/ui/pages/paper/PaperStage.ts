@@ -30,7 +30,7 @@ export interface PaperStageHandle {
   /** 纸面像素尺寸 */
   paperSize: { width: number; height: number };
   /** 算一遍布点，返回 id → 归一化中心坐标 */
-  layout(words: Word[]): Record<string, Placement>;
+  layout(words: Word[], seedText?: string): Record<string, Placement>;
   /** 把一个词放上纸 */
   addWord(word: Word, placement: Placement, showMeaning?: boolean): void;
   /** 切换某个词的中文显隐 */
@@ -138,7 +138,7 @@ export function createPaperStage(opts: PaperStageOptions): PaperStageHandle {
       h: Math.ceil(MEANING_FONT_PX * 1.5 * lines) + MEANING_PAD_Y + 2,
     };
   };
-  const doLayout = (words: Word[]): Record<string, Placement> => {
+  const doLayout = (words: Word[], seedText?: string): Record<string, Placement> => {
     const margin = tier.edgeMarginPx;
     const box = paperButtonBox(viewport);
     // 纸张居中偏移（视口 → 纸面坐标）

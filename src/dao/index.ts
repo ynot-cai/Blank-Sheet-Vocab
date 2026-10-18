@@ -6,3 +6,4 @@ export * as session from './session';
 export * as syncData from './syncData';
 export * as cloudSync from './cloudSync';
 export * as syncScheduler from './syncScheduler';
+export * as papers from './papers';

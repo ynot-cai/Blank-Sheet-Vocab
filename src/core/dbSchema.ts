@@ -40,7 +40,7 @@ export const DB_NAME = 'blank-sheet-vocab';
  * - v8 T4：新增 `ttsCache` 表（第三方 TTS 的音频缓存）。**纯加法**：
  *   只建一张新表，不动任何已有数据；对用户不可见（缓存丢了只是重新合成一次）。
  */
-export const DB_VERSION = 8;
+export const DB_VERSION = 9;
 
 /** 表名常量，避免各处写错字符串 */
 export const STORE = {
@@ -58,6 +58,8 @@ export const STORE = {
    * 备份/导出**不会**碰这张表（见 services/backup.ts 的导出范围），所以缓存不会撑大备份。
    */
   ttsCache: 'ttsCache',
+  /** ★ v9：白纸存档（临时优先级表 + 种子 + 已出现名单 + 落点） */
+  papers: 'papers',
 } as const;
 
 /**
@@ -270,6 +272,12 @@ export function createSchema(db: IDBDatabase, oldVersion: number, transaction: I
    */
   if (!db.objectStoreNames.contains(STORE.ttsCache)) {
     db.createObjectStore(STORE.ttsCache, { keyPath: 'key' });
+  }
+  // ★ v9：白纸存档。纯加法，新建表 + 两个索引（按状态筛 draft、按时间排序）
+  if (!db.objectStoreNames.contains(STORE.papers)) {
+    const papers = db.createObjectStore(STORE.papers, { keyPath: 'id' });
+    papers.createIndex('status', 'status', { unique: false });
+    papers.createIndex('updatedAt', 'updatedAt', { unique: false });
   }
   // v1 → v2：给来源补 updatedAt（只动 sources，与词表迁移互不干扰）
   if (oldVersion > 0 && oldVersion < 2) migrateToV2(transaction);
