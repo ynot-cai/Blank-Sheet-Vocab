@@ -37,6 +37,9 @@ export function paperButtonMetrics(): { width: number; height: number; font: num
   return { width: Math.round(font * 8), height: font + 20, font };
 }
 
+/** 白纸界面的按钮个数（下一个 / 再次记忆 / 背完了 / 保存并退出 / 删除这张纸） */
+export const PAPER_BUTTON_COUNT = 5;
+
 /** 一个矩形（视口坐标，像素） */
 export interface Box {
   x: number;
@@ -82,7 +85,7 @@ export function paperButtonBox(viewport?: { width: number; height: number }): Pa
     group = { x: 0, y: Math.max(0, vh - height), width: vw, height };
   } else {
     const { gapY, margin, pad } = PAPER_UI.wide;
-    const height = m.height * 4 + gapY * 3 + pad * 2;
+    const height = m.height * PAPER_BUTTON_COUNT + gapY * (PAPER_BUTTON_COUNT - 1) + pad * 2;
     const width = m.width + pad * 2;
     group = {
       x: Math.max(0, vw - margin - width),
