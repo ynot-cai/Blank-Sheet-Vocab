@@ -137,8 +137,16 @@ export function renderApp(root: HTMLElement): void {
     navBox.classList.toggle('nav-hidden', fullscreen);
     if (fullscreen) return;
 
-    // title：改成按钮，点它回主界面（用户要求：所有有白条的页面都能回主界面）
-    const brand = h('button', { class: 'brand', type: 'button', text: '白纸单词', title: '回到主界面' });
+    /**
+     * title：点它回主界面（用户要求：所有有白条的页面都能回主界面）。
+     *
+     * ★ 提示词 10 第 1 条：title **不得呈现按钮视觉样式**——
+     *   不显示点击反馈（按下态 / 高亮 / 动画反馈）、不显示按钮边框。
+     *   所以这里不再用 `<button>`，改用 `<span>`：按钮的默认外观、焦点环、按下态
+     *   从根上就不存在，不需要靠一堆 `:hover/:active` 去「压掉」。
+     *   点击行为照旧（点击标题区域 = 回主界面）。
+     */
+    const brand = h('span', { class: 'brand', text: '白纸单词', title: '回到主界面' });
     brand.addEventListener('click', () => navigate(HOME_PATH));
     navBox.appendChild(brand);
     // 说明文字**只在主界面**出现：它顶替主界面本来缺失的那排按钮
