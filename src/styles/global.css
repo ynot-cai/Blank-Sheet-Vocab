@@ -2407,3 +2407,38 @@ body {
     min-width: 120px;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   版本 0.0.15：底部白条「看得见」的修正
+   实测（无头 Chrome，视口 1258）：白条本来已是通栏 1258px、高 76px、内容居中。
+   它「消失」的真实原因是：纯白 #fff 落在提亮后的 #f9fafb 底上，几乎无对比度。
+   修正方式（不引入新配色，全部用已有 token）：
+     ① 吸底（sticky bottom），滚动时永远看得到，不会「翻不到」；
+     ② 保留纯白底 + 加粗一点的上边线，让白条与页面之间有明确分界；
+     ③ 两行内容强制居中（flex + text-align 双保险）。
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.site-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  width: 100%;
+  padding: 16px;
+  background: #fff;
+  border-top: 1px solid var(--line);
+  box-shadow: 0 -1px 0 rgba(20, 24, 35, 0.04);
+  text-align: center;
+  margin-top: auto;
+}
+
+.site-footer-line {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--fg-dim);
+  line-height: 1.9;
+  text-align: center;
+}
