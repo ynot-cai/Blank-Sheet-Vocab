@@ -77,12 +77,35 @@ function measureText(text: string, fontSize: number, fontFamily: string): { w: n
   }
 }
 
+/**
+ * 中英混排的宽度估算（不依赖 canvas）。
+ *
+ * ★ 为什么必须自己估：`measureText` 在某些字体串下会失败并回退到
+ *   `字符数 × 字号 × 0.6`，而这个系数对**中文**严重偏小（中文一个字约 1 个字宽）。
+ *   实测后果：中文盒子只给了 40px，`放弃` 被挤成「放」+「弃」两行。
+ *   这里按字符类别逐字累加：CJK / 全角标点按 1 个字宽，其余按 0.55。
+ * @param text 文本
+ * @param fontSize 字号（像素）
+ */
+function estimateTextWidth(text: string, fontSize: number): number {
+  let w = 0;
+  for (const ch of text) {
+    const code = ch.codePointAt(0) ?? 0;
+    const wide =
+      (code >= 0x2e80 && code <= 0x9fff) ||
+      (code >= 0x3000 && code <= 0x303f) ||
+      (code >= 0xf900 && code <= 0xfaff) ||
+      (code >= 0xff00 && code <= 0xffef);
+    w += wide ? fontSize : fontSize * 0.55;
+  }
+  return w;
+}
 /** 中文意思一行的字号（与 paper.css 的 .paper-meaning 保持一致） */
 const MEANING_FONT_PX = 14;
 /** 中文意思盒子的最大宽度（与 paper.css 的 max-width 一致） */
 const MEANING_MAX_W = 260;
 /** 中文意思盒子的左右内边距之和（2px padding * 2 + 边框） */
-const MEANING_PAD_X = 10;
+const MEANING_PAD_X = 18;
 /** 中文意思盒子的上下内边距 */
 const MEANING_PAD_Y = 8;
 /** 造一个白纸舞台 */
@@ -130,11 +153,11 @@ export function createPaperStage(opts: PaperStageOptions): PaperStageHandle {
    */
   const meaningBox = (word: Word): { w: number; h: number } => {
     const text = formatSensesBrief(word.senses);
-    const m = measureText(text, MEANING_FONT_PX, settings.display.fontFamily);
+    const m = { w: estimateTextWidth(text, MEANING_FONT_PX) };
     const inner = MEANING_MAX_W - MEANING_PAD_X;
     const lines = Math.max(1, Math.ceil(m.w / Math.max(1, inner)));
     return {
-      w: Math.min(MEANING_MAX_W, Math.ceil(m.w) + MEANING_PAD_X + 2),
+      w: Math.min(MEANING_MAX_W, Math.max(Math.ceil(m.w), MEANING_FONT_PX * 2) + MEANING_PAD_X + 4),
       h: Math.ceil(MEANING_FONT_PX * 1.5 * lines) + MEANING_PAD_Y + 2,
     };
   };

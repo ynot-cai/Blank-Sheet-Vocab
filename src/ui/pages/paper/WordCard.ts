@@ -160,7 +160,7 @@ export function openWordCard(opts: WordCardOptions): () => void {
     card.appendChild(ph);
 
     // ── 第 3 行：例句（最多两行，超出给「查看全部」） ──
-    const exampleText = current.example.trim();
+    const exampleText = (current.example ?? '').trim();
     const ex = h('div', { class: 'paper-card-example', text: exampleText === '' ? EXAMPLE_NOT_FOUND : exampleText });
     card.appendChild(ex);
     if (exampleText.length > 80) {
