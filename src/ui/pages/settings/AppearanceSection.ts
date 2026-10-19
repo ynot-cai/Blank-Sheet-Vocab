@@ -40,11 +40,22 @@ export function renderAppearanceSection(): HTMLElement {
   // ─── 分辨率大小 ───
   const resBox = h('div', { class: 'stack' });
 
+  /**
+   * 「自定义尺寸」是不是**用户刚选的**。
+   *
+   * ★ 为什么需要这个页面内的标记（实测踩过）：分辨率的当前值是从 `settings.paper`
+   *   反推出来的（`resolutionValueOf`），而「自定义」与某个预设**可能指向同一对宽高**——
+   *   例如先在 1920×1080 档，再选「自定义尺寸」，宽高没变，反推出来仍是 1920×1080 那一档，
+   *   于是两个宽高输入框永远不出现，用户看不到也改不了自己的尺寸。
+   *   所以「自定义」按**用户的选择**记，而不是按宽高去猜。
+   */
+  let customChosen = resolutionValueOf(currentSettings().paper) === 'custom';
+
   /** 重画「自定义尺寸」的两个输入框（只在选了自定义时出现） */
   const renderCustomSize = (): void => {
     resBox.replaceChildren();
+    if (!customChosen) return;
     const paper = currentSettings().paper;
-    if (paper.mode !== 'fixed' || resolutionValueOf(paper) !== 'custom') return;
     const row = h('div', { class: 'row' });
     row.appendChild(
       h(
@@ -80,6 +91,7 @@ export function renderAppearanceSection(): HTMLElement {
       select(options, resolutionValueOf(currentSettings().paper), (v) => {
         const preset = PAPER_RESOLUTIONS.find((r) => r.value === v);
         if (!preset) return;
+        customChosen = v === 'custom';
         void (async () => {
           if (v === 'auto') await patchPaper({ mode: 'auto' });
           else if (v === 'custom') await patchPaper({ mode: 'fixed' });
