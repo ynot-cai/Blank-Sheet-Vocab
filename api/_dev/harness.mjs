@@ -26,6 +26,7 @@ export const ROUTES = {
   '/api/sync-push': () => import('../sync-push.ts'),
   '/api/sync-purge': () => import('../sync-purge.ts'),
   '/api/ai-proxy': () => import('../ai-proxy.ts'),
+  '/api/tts-proxy': () => import('../tts-proxy.ts'),
 };
 
 /**

@@ -342,6 +342,31 @@ export interface SpeechSettings {
   variant: 'single' | 'normal+slow';
 }
 
+/**
+ * ★ 版本 0.0.19（提示词 10）：考核严格程度的三档。
+ *
+ * 用户原话：「考核严格程度：提供『低、中、高』三档选项；当前仅需设置选项，
+ * 具体含义后续再定义。」——所以这里只有取值，**不许**在代码里给它编任何行为。
+ */
+export type ExamStrictness = 'low' | 'medium' | 'high';
+
+/**
+ * ★ 版本 0.0.19（提示词 10）：设置页主分类「背诵设置」的字段。
+ *
+ * ⚠️ 这三项目前**只存不用**（用户：考核功能尚未实现 / 含义后续再定义）：
+ *   - `everyWords`：用户明说是「暂时定义一个占位变量（不产生实际作用）」；
+ *   - `countPerExam` / `strictness`：只要求能设置。
+ *   将来实现考核时**才**去读它们，现在任何地方读它都不许拿来做判断。
+ */
+export interface ExamSettings {
+  /** 每出现几个单词进行一次考核（占位变量，不产生实际作用） */
+  everyWords: number;
+  /** 每次考核涉及的单词数量 */
+  countPerExam: number;
+  /** 考核严格程度：低 / 中 / 高（当前仅设置选项） */
+  strictness: ExamStrictness;
+}
+
 /** 备份设置 */
 export interface BackupSettings {
   remindOnClose: boolean; // 关闭页面前提醒导出
@@ -436,6 +461,8 @@ export interface Settings {
   learnPick: LearnPickSettings;
   ai: AiSettings;
   practice: PracticeSettings;
+  /** ★ 0.0.19（提示词 10）：背诵设置 —— 考核频率 / 每次考核数 / 严格程度（当前只存不用） */
+  exam: ExamSettings;
   /** ★ T4：朗读（TTS）—— 语音来源 / 语音挑选 / 语速 / 有道密钥 / 变体 */
   speech: SpeechSettings;
   backup: BackupSettings;

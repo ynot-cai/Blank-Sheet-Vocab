@@ -2,37 +2,25 @@ import { getSettings } from '../../core/config';
 import { formatSensesBrief, humanizeDays } from '../../core/model';
 import { getFailRate } from '../../core/priority';
 import type { AnswerComparison, Sense, Word } from '../../core/types';
+import { speak } from '../../services/tts';
 import { button, h, textInput } from '../dom';
 import { renderSenseEditor } from './SenseEditor';
 
 /**
  * 朗读一个词（单词卡上的 🔊）。
  *
- * ⚠️ **版本 0.0.6 的降级说明**：原来这里调的是 `services/tts` 的 `speak()`
- * ——那是一整套三级降级（浏览器语音 → 有道 TTS → 本地缓存）+ 音色挑选 + 签名代理。
- * 那一整块在 0.0.1 被归档（见 `已归档/12_语音朗读模块.md`），而 0.0.6 只恢复
- * 「录入 / 合并 / 单词列表」，**没有**恢复语音设置分区与有道转发接口。
- * 所以这里退回**浏览器内置语音**这一条最简路径：单词卡上的 🔊 仍然能用，
- * 只是没有音色挑选 / 有道音源 / 缓存。
+ * ★ 版本 0.0.19：恢复归档的完整朗读链路 —— 直接调 `services/tts` 的 `speak()`。
+ *   它是一整套三级降级（缓存 → 有道 TTS → 浏览器语音）+ 音色挑选 + 签名代理，
+ *   并且读的是设置页「音频设置」里的语音来源 / 语速 / 口音 / 有道密钥。
  *
- * 要恢复完整能力：按 12 号归档文档把 `services/tts` 装回来，
- * 然后把这个函数换回 `import { speak } from '../../services/tts'` 即可。
- * @param text 要朗读的文本
- * @param rate 语速（设置页「语音」分区已归档，这里读的是 speech 设置的默认值 0.9）
- * @param lang 口音（同上，默认 en-US）
+ *   0.0.6~0.0.18 期间这里只能走浏览器内置语音（因为整套 `services/tts` 被归档删掉了）；
+ *   本版按 `已归档/12_语音朗读模块.md` 原样恢复后，这里换回 `speak()`，
+ *   设置页的「音频设置」才真正生效（否则那一个分区就成了摆设）。
+ * @param word 要朗读的单词
  */
-function speakWithBrowser(text: string, rate: number, lang: string): void {
-  try {
-    if (typeof window.speechSynthesis === 'undefined') return;
-    const u = new SpeechSynthesisUtterance(text);
-    u.rate = rate;
-    u.lang = lang;
-    // 先取消上一条：连点 🔊 时不取消会排队读一长串
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(u);
-  } catch (err) {
-    console.warn('[wordcard] 浏览器内置语音不可用', err);
-  }
+function speakWord(word: Word): void {
+  const speech = getSettings().speech;
+  speak(word.en, { rate: speech.rate, lang: speech.accent });
 }
 
 /** 单词卡参数 */
@@ -124,9 +112,8 @@ export function renderWordCard(word: Word, opts: WordCardOptions = {}): HTMLElem
     phRow.appendChild(
       button(
         '🔊',
-        // ★ 0.0.6：读 `speech` 设置的语速/口音，但走浏览器内置语音（见 speakWithBrowser 的说明）
-        () =>
-          speakWithBrowser(current.en, getSettings().speech.rate, getSettings().speech.accent),
+        // ★ 0.0.19：走恢复后的完整朗读链路（设置页「音频设置」决定语音来源 / 语速 / 口音）
+        () => speakWord(current),
         { variant: 'ghost', class: 'mini', title: '朗读这个单词' },
       ),
     );

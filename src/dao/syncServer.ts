@@ -150,6 +150,7 @@ export const API_ROUTES = {
   syncPush: '/api/sync-push',
   syncPurge: '/api/sync-purge',
   aiProxy: '/api/ai-proxy',
+  ttsProxy: '/api/tts-proxy',
 } as const;
 
 /**

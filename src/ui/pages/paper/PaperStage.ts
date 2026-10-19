@@ -21,7 +21,7 @@ import { activeSenses, formatSensesBrief } from '../../../core/model';
 import type { Word } from '../../../core/types';
 import { controlTier, deviceKind, minColsFor } from '../../device';
 import { h } from '../../dom';
-import { paperButtonBox } from './geometry';
+import { paperButtonBox, paperFontMetrics } from './geometry';
 
 /** 舞台句柄 */
 export interface PaperStageHandle {
@@ -100,9 +100,7 @@ function estimateTextWidth(text: string, fontSize: number): number {
   }
   return w;
 }
-/** 中文意思一行的字号（与 paper.css 的 .paper-meaning 保持一致） */
-const MEANING_FONT_PX = 14;
-/** 中文意思盒子的最大宽度（与 paper.css 的 max-width 一致） */
+/** 中文意思盒子的最大宽度（与 paper.css 的 max-width 一致；实际用值按字号等比缩放） */
 const MEANING_MAX_W = 260;
 /** 中文意思盒子的左右内边距之和（2px padding * 2 + 边框） */
 const MEANING_PAD_X = 18;
@@ -113,10 +111,24 @@ export function createPaperStage(opts: PaperStageOptions): PaperStageHandle {
   const settings = getSettings();
   const viewport = { width: window.innerWidth, height: window.innerHeight };
   const paperSize = resolvePaperSize(settings.paper, viewport);
+  /**
+   * ★ 版本 0.0.19（外观 → 分辨率大小）：纸面按设置里的**逻辑分辨率**布点，
+   *   再等比缩进窗口——调大分辨率就是「同样一屏塞下更多更小的字」。
+   *   自适应窗口时 paperSize 就是窗口尺寸，缩放系数恒为 1（行为与本版之前完全一致）。
+   *   只缩小、不放大（`Math.min(1, …)`）：小分辨率不该被拉大，否则这个选项失去意义。
+   */
+  const fitScale = Math.min(1, viewport.width / Math.max(1, paperSize.width), viewport.height / Math.max(1, paperSize.height));
   const kind = deviceKind(viewport.width);
   const isPhone = kind === 'phone';
   const tier = controlTier(viewport.width);
-  const fontSize = Math.round(settings.display.fontSize * (isPhone ? 1 : 1));
+  /**
+   * ★ 版本 0.0.19（外观 → 字体大小）：单词 / 中文 / 角标 / 统计的**同一份**字号组。
+   *   相对比例由 `paperFontMetrics()` 统一算，这里不再各自写死。
+   */
+  const font = paperFontMetrics();
+  const fontSize = font.word;
+  /** 中文意思的最大宽度按字号等比缩放（否则字号一大就被挤成很多行） */
+  const meaningMaxW = Math.round(MEANING_MAX_W * font.scale);
 
   const root = h('div', {
     class: `paper-sheet${settings.display.animation ? '' : ' paper-stage-no-anim'}`,
@@ -125,6 +137,9 @@ export function createPaperStage(opts: PaperStageOptions): PaperStageHandle {
       height: `${paperSize.height}px`,
       // 纸张在视口里居中：布点算的是「纸面坐标」，DOM 也贴在纸面上，所以只要让纸居中即可
       position: 'relative',
+      // 逻辑分辨率 → 窗口：等比缩小（transform 不改变布局坐标，纸内一切仍是逻辑 px）
+      transform: fitScale === 1 ? undefined : `scale(${fitScale})`,
+      transformOrigin: 'center center',
     },
   });
 
@@ -153,25 +168,29 @@ export function createPaperStage(opts: PaperStageOptions): PaperStageHandle {
    */
   const meaningBox = (word: Word): { w: number; h: number } => {
     const text = formatSensesBrief(word.senses);
-    const m = { w: estimateTextWidth(text, MEANING_FONT_PX) };
-    const inner = MEANING_MAX_W - MEANING_PAD_X;
+    const m = { w: estimateTextWidth(text, font.meaning) };
+    const inner = meaningMaxW - MEANING_PAD_X;
     const lines = Math.max(1, Math.ceil(m.w / Math.max(1, inner)));
     return {
-      w: Math.min(MEANING_MAX_W, Math.max(Math.ceil(m.w), MEANING_FONT_PX * 2) + MEANING_PAD_X + 4),
-      h: Math.ceil(MEANING_FONT_PX * 1.5 * lines) + MEANING_PAD_Y + 2,
+      w: Math.min(meaningMaxW, Math.max(Math.ceil(m.w), font.meaning * 2) + MEANING_PAD_X + 4),
+      h: Math.ceil(font.meaning * 1.5 * lines) + MEANING_PAD_Y + 2,
     };
   };
   const doLayout = (words: Word[], seedText?: string): Record<string, Placement> => {
     const margin = tier.edgeMarginPx;
     const box = paperButtonBox(viewport);
-    // 纸张居中偏移（视口 → 纸面坐标）
-    const offsetX = (viewport.width - paperSize.width) / 2;
-    const offsetY = (viewport.height - paperSize.height) / 2;
+    /**
+     * 纸张居中偏移（视口 → 纸面坐标）。
+     * ★ 0.0.19：纸面被 `fitScale` 等比缩过，所以视觉上的左/上边距是
+     *   `(视口 - 纸面 × 缩放) / 2`，再除以缩放才能换算回**逻辑坐标**。
+     */
+    const offsetX = (viewport.width - paperSize.width * fitScale) / 2;
+    const offsetY = (viewport.height - paperSize.height * fitScale) / 2;
     const avoid = {
-      x: box.avoid.x - offsetX,
-      y: box.avoid.y - offsetY,
-      width: box.avoid.width,
-      height: box.avoid.height,
+      x: (box.avoid.x - offsetX) / fitScale,
+      y: (box.avoid.y - offsetY) / fitScale,
+      width: box.avoid.width / fitScale,
+      height: box.avoid.height / fitScale,
     };
 
     // 可用区：减边距；手机再把下边界收到避让区顶边

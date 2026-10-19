@@ -19,6 +19,7 @@ import { navigate, registerCleanup } from '../router';
 import { createPaperStage, type PaperStageHandle } from './paper/PaperStage';
 import { applyPaperButtonVars, paperButtonBox } from './paper/geometry';
 import { renderWordCard } from '../components/WordCard';
+import { mountSpeechGate } from '../components/SpeechGate';
 
 /** 从 hash 里取 `?paper=<id>` */
 function readPaperId(): string {
@@ -48,6 +49,15 @@ export function renderLearnPaperPage(): HTMLElement {
     onMeaningClick: (word) => showWordCard(word),
   });
   page.appendChild(stage.root);
+
+  /**
+   * ★ 版本 0.0.19：恢复归档的「语音解锁层」（iOS 首次朗读必须在用户手势里触发）。
+   *
+   * 它自己判断要不要出现：只有 iOS/iPadOS 这类有 WebKit 手势限制、且本设备还没解锁过时
+   * 才盖一层「点击开始」；桌面/安卓**完全不出现**，不会成为多出来的视觉元素。
+   * 做法照归档 `已归档/12` 第 12 节与 `已归档/02` 白纸流程的调用方式（挂在页面根上）。
+   */
+  mountSpeechGate(page, () => undefined);
 
   /**
    * ★ 版本 0.0.17（用户纠正）：单词卡 = **归档版的正中弹窗**。

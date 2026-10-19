@@ -82,7 +82,8 @@
   top: -2px;
   right: -10px;
   color: #bbb;
-  font-size: 12px;
+  /* ★ 0.0.19：字号跟「字体大小」等比走（由 geometry.ts 写成变量） */
+  font-size: var(--paper-badge-font, 12px);
   line-height: 1;
   transform: translateY(-0.1em);
   user-select: none;
@@ -92,7 +93,8 @@
 /* 中文意思（只显示义项代表，不含近义词）：点单词切换显示/隐藏 */
 .paper-meaning {
   margin-top: 2px;
-  font-size: 14px;
+  /* ★ 0.0.19：字号跟「字体大小」等比走（由 geometry.ts 写成变量） */
+  font-size: var(--paper-meaning-font, 14px);
   line-height: 1.5;
   color: #000;
   background: rgba(255, 255, 255, 0.92);
@@ -198,7 +200,8 @@
 .paper-stats {
   position: absolute;
   z-index: 29;
-  font-size: 12px;
+  /* ★ 0.0.19：字号跟「字体大小」等比走（由 geometry.ts 写成变量） */
+  font-size: var(--paper-stats-font, 12px);
   color: var(--fg-dim);
   user-select: none;
   pointer-events: none;

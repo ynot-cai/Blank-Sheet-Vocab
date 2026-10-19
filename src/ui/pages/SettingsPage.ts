@@ -2,8 +2,11 @@ import { DEFAULT_SETTINGS } from '../../core/config';
 import { appVersionLabel } from '../../core/version';
 import { button, details, h } from '../dom';
 import { renderAiSection } from './settings/AiSection';
+import { renderAppearanceSection } from './settings/AppearanceSection';
 import { renderCloudSection } from './settings/CloudSection';
 import { renderDataSection } from './settings/DataSection';
+import { renderExamSection } from './settings/ExamSection';
+import { renderSpeechSection } from './settings/SpeechSection';
 import { patchSettings } from './settings/ctx';
 
 /** 一个设置分组的定义 */
@@ -23,10 +26,17 @@ interface Section {
 }
 
 /**
- * 设置页（版本 0.0.3）。
+ * 设置页（版本 0.0.19）。
  *
- * ★ **分区改成三个：数据 / AI / 外观**（用户 2026-10-15 指定：
- *   「之前的设置的分区删掉，新的分区我手动划分，现在有以下几个分区 1 数据 2 AI 3 外观」）。
+ * ★ **分区现在是五个：数据 / AI / 外观 / 背诵设置 / 音频设置**。
+ *   - 「数据」「AI」：0.0.3 用户手动划分时的两个分区，内容一路保留；
+ *   - 「外观」：0.0.3 时留空（用户说具体项由他手动划分），0.0.19 按提示词 10 装进
+ *     **分辨率大小** 与 **字体大小** 两项（见 `settings/AppearanceSection.ts`）；
+ *   - 「背诵设置」：0.0.19 新增（提示词 10），三项考核配置当前只存值
+ *     （见 `settings/ExamSection.ts`）；
+ *   - 「音频设置」：0.0.19 新增（提示词 10「完全按照旧版本的样子原封不动地恢复」），
+ *     组件是归档 `已归档/11` 第 4 节 `SpeechSection.ts` 的原样写回，
+ *     配套的整套语音朗读模块按 `已归档/12_语音朗读模块.md` 一字不改恢复。
  *
  * ── 与 0.0.1 的关系 ──
  * 0.0.1 曾把设置页砍到三项（同步 / AI 接口 / 复习优先度计算公式）。
@@ -35,13 +45,12 @@ interface Section {
  * - 「AI 接口」→ **AI** 区（原 `AiSection`，一字未改）；
  * - 「复习优先度计算公式」→ **不给界面入口**（用户明确说「因为我要重做这个公式」）。
  *   注意：**代码与数据都还在**（`core/priority.ts`、`settings.priority`），只是界面上碰不到，
- *   等公式重做完再决定它挂在哪一区；
- * - 「外观」区**暂时留空**——用户说分区内容由他手动划分，未经确认不许自行加设置项。
+ *   等公式重做完再决定它挂在哪一区。
  *
  * ── 为什么每份被砍掉的分区都还有归档文档 ──
  * 0.0.1 归档的六个分区（星号参数 / 画面与纸张 / 布局参数 / 记忆与练习 / 语音 / 数据备份）
- * 完整源码在 `已归档/11_设置页被删除的分区.md`。**用户已明确「旧的八个分区不恢复」**，
- * 所以本版**没有**把它们装回来；将来若要其中的某几项，按那份文档单独还原即可。
+ * 完整源码在 `已归档/11_设置页被删除的分区.md`。本版按用户要求只恢复了**语音**那一区
+ * （音频设置），其余仍**没有**装回来；将来若要其中的某几项，按那份文档单独还原即可。
  *
  * ── 骨架加固（沿用 0.0.1 的成果）──
  * 每个分区独立 `try/catch`：某一组渲染失败只影响它自己，其他分组照常可用，
@@ -91,9 +100,44 @@ export function renderSettingsPage(): HTMLElement {
       id: 'appearance',
       title: '外观',
       defaultOpen: false,
-      render: null, // 留空：具体设置项由用户手动划分
-      resetNote: '外观区暂时没有可重置的设置项',
-      reset: () => Promise.resolve(),
+      /**
+       * ★ 版本 0.0.19（提示词 10 第 2 条）：外观区不再是空的，装了两项——
+       *   分辨率大小（可调尺寸选项）/ 字体大小（只影响白纸界面本体，相对比例不变）。
+       *   具体实现见 `settings/AppearanceSection.ts`。
+       */
+      render: renderAppearanceSection,
+      resetNote: '把分辨率恢复成自适应窗口、字体大小恢复成默认值，其他设置一个都不动',
+      reset: () =>
+        patchSettings({ paper: { ...DEFAULT_SETTINGS.paper }, display: { ...DEFAULT_SETTINGS.display } }),
+    },
+    {
+      id: 'exam',
+      title: '背诵设置',
+      defaultOpen: false,
+      /**
+       * ★ 版本 0.0.19（提示词 10 第 2 条）：新增主分类「背诵设置」——
+       *   每出现几个单词进行一次考核（占位变量）/ 每次考核数 / 考核严格程度（低中高）。
+       *   三项当前**只存值**，不参与任何判断（见 `settings/ExamSection.ts`）。
+       */
+      render: renderExamSection,
+      resetNote: '把考核频率、每次考核数、严格程度恢复成默认值，其他设置一个都不动',
+      reset: () => patchSettings({ exam: { ...DEFAULT_SETTINGS.exam } }),
+    },
+    {
+      id: 'speech',
+      title: '音频设置',
+      defaultOpen: false,
+      /**
+       * ★ 版本 0.0.19（提示词 10 第 2 条）：新增主分类「音频设置」，
+       *   用户要求「完全按照旧版本的样子原封不动地恢复」。
+       *   → 组件是归档 `已归档/11` 第 4 节的 `SpeechSection.ts` **原样写回**，
+       *     它依赖的整套语音朗读模块（`services/tts/` + `api/tts-proxy.ts`）也已按
+       *     `已归档/12_语音朗读模块.md` 逐字恢复，所以这里只是把分区挂回设置页。
+       *   ⚠️ 归档里那一分区的标题是「语音」，本版按用户提示词 10 叫「音频设置」。
+       */
+      render: renderSpeechSection,
+      resetNote: '把语音来源、语速、口音、有道密钥恢复成默认值，语音缓存不删',
+      reset: () => patchSettings({ speech: { ...DEFAULT_SETTINGS.speech } }),
     },
   ];
 

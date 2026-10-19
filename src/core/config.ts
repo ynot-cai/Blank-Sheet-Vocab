@@ -1,4 +1,4 @@
-import type { DeepPartial, LayoutColsOverride, LayoutSettings, LayoutTier, PriorityPreset, Settings, SpeechSettings } from './types';
+import type { DeepPartial, ExamSettings, LayoutColsOverride, LayoutSettings, LayoutTier, PriorityPreset, Settings, SpeechSettings } from './types';
 
 /**
  * 白纸（背诵）界面的固定尺寸参数（版本 0.0.9）。
@@ -50,9 +50,65 @@ export const PAPER_UI = {
   statsGap: 6,
 } as const;
 
+/**
+ * 白纸界面「字体大小」的基准字号（版本 0.0.19）。
+ *
+ * ★ 用户提示词 10 第 2 条：外观里新增「字体大小」，它影响白纸界面**本体**的
+ *   单词 / 中文含义 / 按钮 / 义项数角标 / 统计信息，且**相对大小比例保持不变**；
+ *   单词卡等弹窗不受影响。
+ *
+ * 实现口径：单词字号 = `display.fontSize`（本来就是白纸的单词字号，按钮字号也读它，
+ * 见 ui/pages/paper/geometry.ts）；中文 / 角标 / 统计按下面这组比例跟着缩放。
+ * 比例取自本版之前的**实际渲染值**（单词 24px 时：中文 14px、角标 12px、统计 12px），
+ * 所以默认档（24）的观感与之前**完全一致**，调大调小只是等比缩放。
+ */
+export const PAPER_FONT_BASE_PX = 24;
+
+/** 白纸界面其余文字相对单词字号的缩放比例（中文 / 义项数角标 / 统计行） */
+export const PAPER_FONT_RATIOS = {
+  meaning: 14 / PAPER_FONT_BASE_PX,
+  badge: 12 / PAPER_FONT_BASE_PX,
+  stats: 12 / PAPER_FONT_BASE_PX,
+} as const;
+
+/**
+ * 外观 →「字体大小」的可调区间（像素）。
+ * 下限 12 保证中文/角标还能看清（12 × 14/24 ≈ 7px 已经是极限），上限 48 够大。
+ */
+export const PAPER_FONT_SIZE_RANGE: NumRange = { min: 12, max: 48 };
+
+/**
+ * 外观 →「分辨率大小」的可选项（用户提示词 10：「提供可调的分辨率尺寸选项」）。
+ *
+ * ★ 含义：白纸**画布的逻辑分辨率**（px）。纸面按这个尺寸布点，
+ *   再等比缩放进窗口（见 ui/pages/paper/PaperStage.ts 的 fitScale）——
+ *   所以调大分辨率 = 同样一屏能摆下更多、更小的字，调小则反之。
+ *   选「自适应窗口」时不缩放，直接铺满窗口（与之前的行为一致）。
+ *
+ * `value` 是写进设置的值（`custom` 表示用户自己填宽高），
+ * 实际尺寸由 `settings.paper` 的 `mode/width/height` 决定（沿用旧版字段，不新造数据结构）。
+ */
+export const PAPER_RESOLUTIONS: readonly { value: string; label: string; width: number; height: number }[] = [
+  { value: 'auto', label: '自适应窗口', width: 0, height: 0 },
+  { value: '1280x720', label: '1280 × 720', width: 1280, height: 720 },
+  { value: '1440x900', label: '1440 × 900', width: 1440, height: 900 },
+  { value: '1920x1080', label: '1920 × 1080', width: 1920, height: 1080 },
+  { value: '2560x1440', label: '2560 × 1440', width: 2560, height: 1440 },
+  { value: 'custom', label: '自定义尺寸', width: 0, height: 0 },
+] as const;
+
+/**
+ * 把设置里的纸张参数解析成「分辨率大小」下拉的当前值。
+ * @param paper 纸张设置（旧版字段：mode / width / height）
+ */
+export function resolutionValueOf(paper: Settings['paper']): string {
+  if (paper.mode !== 'fixed') return 'auto';
+  const hit = PAPER_RESOLUTIONS.find((r) => r.width === paper.width && r.height === paper.height);
+  return hit ? hit.value : 'custom';
+}
+
 /** 星号参数：所有可调数字集中在这里，代码里不许写死 */
-export const DEFAULTS = {
-  memorizeMaxPick: 10, // 一次「记忆」最多抽几个（只抽已出现在纸上的词；上一轮未通过的词作为额外项，可超过它）
+export const DEFAULTS = {  memorizeMaxPick: 10, // 一次「记忆」最多抽几个（只抽已出现在纸上的词；上一轮未通过的词作为额外项，可超过它）
   memorizeTargetCount: 1, // 每词至少记忆几次，「背完了」按钮才出现（默认 1 = 至少记一次）
   memorizeEvery: 3, // 每背几个新词，「再背一个」按钮自动变成「记忆」
   failCountCap: 2, // 属性② 未通过次数上限
@@ -421,6 +477,21 @@ const DEFAULT_SPEECH: SpeechSettings = {
   variant: 'single',
 };
 
+/**
+ * ★ 版本 0.0.19（提示词 10）：背诵设置（考核）的默认值。
+ *
+ * ⚠️ **这三个数字都只是占位默认值**，用户对它们的原话是：
+ *   - 「每出现几个单词进行一次考核：当前考核功能尚未实现，暂时定义一个占位变量（不产生实际作用）」；
+ *   - 「每次考核数：设置每次考核涉及的单词数量」；
+ *   - 「考核严格程度：提供『低、中、高』三档选项；当前仅需设置选项，具体含义后续再定义」。
+ *   所以代码里**没有任何地方**读它们做判断（读它就是「擅自实现用户没让做的功能」）。
+ */
+const DEFAULT_EXAM: ExamSettings = {
+  everyWords: 10,
+  countPerExam: 5,
+  strictness: 'medium',
+};
+
 /** 默认设置（缺字段时用它补齐；AI 三项只是预填，用户可随意改） */
 export const DEFAULT_SETTINGS: Settings = {  ...DEFAULTS,
   paper: { mode: 'auto', ratio: 'A4', width: 1200, height: 800 },
@@ -454,6 +525,8 @@ export const DEFAULT_SETTINGS: Settings = {  ...DEFAULTS,
   // ★ T3：hintFails 默认 false —— 「提示只是辅助，看答案对错」。
   //   拨到 true 之后，用了「朗诵一遍」的考核一律记未通过（哪怕答案本身是对的）。
   practice: { autoSpeak: true, speakRate: 1, speakLang: 'en-US', hintFails: false },
+  // ★ 0.0.19：背诵设置（考核频率 / 每次考核数 / 严格程度）——当前只存不用
+  exam: DEFAULT_EXAM,
   // ★ T4：朗读设置（语音来源 / 语音挑选 / 语速 / 有道密钥 / 变体）
   speech: DEFAULT_SPEECH,
   backup: { remindOnClose: true, lastManualExportAt: null },

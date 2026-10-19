@@ -1958,6 +1958,11 @@ body {
   display: none;
 }
 
+/* ★ 0.0.19：全屏练习界面里底部白条也要藏（否则它会盖住白纸右下角最后一个按钮） */
+.site-footer.footer-hidden {
+  display: none;
+}
+
 .nav .brand {
   font-size: 16px;
   font-weight: 700;
@@ -2461,4 +2466,342 @@ body {
   color: var(--fg-dim);
   line-height: 1.9;
   text-align: center;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   版本 0.0.19（提示词 10 第 3 条）：背诵选取界面视觉优化
+   —— 只做两件事：**加线**、**改框**；不新增任何一个字的文本（用户明确要求）。
+   配色 / 间距 / 圆角全部沿用已有 token（--line / --paper-bg / --radius / --accent）。
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* 左右两栏之间一条竖线（原来只是一段留白，两栏看起来是一坨） */
+.learn-select-nav {
+  padding-right: 14px;
+  border-right: 1px solid var(--line);
+}
+
+.learn-select-main {
+  padding-left: 18px;
+}
+
+/* 页标题下一条横线：把「标题」与「选项区」分开 */
+.learn-select-main > .page-title {
+  padding-bottom: 8px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+/* 左栏页签改成「实框」：未选中也有边框；选中态仍是左侧强调竖条（旧版观感） */
+.learn-nav-item {
+  background: var(--paper-bg);
+  border: 1px solid var(--line);
+}
+
+/* 四个方式：一个外框 + 行间一条线（原来是无框的一堆行，看着散） */
+.learn-methods {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper-bg);
+  overflow: hidden;
+}
+
+.learn-methods .radio-line {
+  margin: 0;
+  padding: 11px 14px;
+  border-radius: 0;
+  /* ★ 手机上一行长文字会把单选框挤到上一行（实测截图）：这里禁止换行，
+     让文字在右侧自己的宽度里换行，单选框始终跟着第一行 */
+  align-items: flex-start;
+  flex-wrap: nowrap;
+}
+
+.learn-methods .radio-line > input[type='radio'] {
+  flex: none;
+  margin-top: 3px;
+}
+
+.learn-methods .radio-line > .field-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.learn-methods .radio-line + .radio-line {
+  border-top: 1px solid var(--line);
+}
+
+.learn-methods .radio-line:hover {
+  background: #f7f9fc;
+}
+
+/* 方式3 的折叠列表：工具条与列表之间一条线，行与行之间一条线 */
+.learn-picker-toolbar {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.learn-picker-list {
+  gap: 0;
+}
+
+.learn-picker-list .learn-row {
+  margin: 0;
+  padding: 8px 4px;
+  border-radius: 0;
+  /* 勾选框始终对齐第一行文字（手机上中文意思会换行） */
+  align-items: flex-start;
+}
+
+.learn-picker-list .learn-row + .learn-row {
+  border-top: 1px solid var(--line);
+}
+
+.learn-picker-pager {
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+/* 「继续背诵」的存档列表：外框一条线、行间一条线、列对齐 */
+.learn-archive-list {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper-bg);
+  overflow: hidden;
+}
+
+.learn-archive-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.learn-archive-row + .learn-archive-row {
+  border-top: 1px solid var(--line);
+}
+
+.learn-archive-row .field-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 底部条的上边线加粗一档：它是「操作区」，要与内容区有明确分界 */
+.learn-select-bottom {
+  border-top: 2px solid var(--line);
+}
+
+/* ── 方式4「AI 智能勾选」：口述条件 + 确认界面 ── */
+.learn-ai-start {
+  gap: 10px;
+}
+
+/* 「确认界面」标题与上面的方式列表之间留一口气（实测贴在一起） */
+.learn-ai-confirm {
+  margin-top: 14px;
+}
+
+.learn-ai-confirm > .card-title {
+  margin: 2px 0 10px;
+}
+
+/* 选中词那一列：勾选框与多行文字对齐到第一行 */
+.learn-ai-list .radio-line {
+  align-items: flex-start;
+}
+
+.learn-ai-input {
+  width: 100%;
+  min-height: 64px;
+  resize: vertical;
+  font: inherit;
+  line-height: 1.6;
+}
+
+.learn-ai-log {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper-bg);
+}
+
+.learn-ai-turn {
+  display: flex;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.learn-ai-who {
+  flex: none;
+  width: 26px;
+  color: var(--fg-dim);
+}
+
+.learn-ai-turn.user .learn-ai-text {
+  color: var(--fg);
+}
+
+.learn-ai-turn.assistant .learn-ai-text {
+  color: var(--accent-dark);
+}
+
+.learn-ai-list .learn-ai-rows {
+  gap: 0;
+}
+
+.learn-ai-list .radio-line {
+  margin: 0;
+  padding: 6px 2px;
+  border-radius: 0;
+}
+
+.learn-ai-list .radio-line + .radio-line {
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 767px) {
+  .learn-select-nav {
+    padding-right: 0;
+    padding-bottom: 10px;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .learn-select-main {
+    padding-left: 0;
+  }
+
+  .learn-archive-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 6px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   版本 0.0.19（提示词 10）：恢复归档的「语音引导层」（iOS 首次解锁朗读用）
+   —— 结构由 src/ui/components/SpeechGate.ts 建，只在 iOS 类设备首次进入时出现；
+      配色沿用页面的深色遮罩与白字，不引入新配色。
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.speech-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+  background: rgba(20, 24, 35, 0.92);
+  color: #fff;
+}
+
+.speech-gate-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.speech-gate-hint {
+  margin: 0;
+  font-size: 13px;
+  color: #cfd3da;
+}
+
+.speech-gate-warn {
+  color: #ffd479;
+}
+
+.speech-gate-btn {
+  margin-top: 8px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   版本 0.0.19（提示词 07 §2.3 / 提示词 10 修 Bug）：单词列表里的「白纸存档」区
+   —— 用户原话：「在单词列表中另开一块区域，可查看、重命名该存档。」
+      这里只给这块区域做框与行线，配色沿用卡片（.card）的既有 token。
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.list-papers {
+  margin-top: 22px;
+}
+
+.list-papers-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 8px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.list-papers-head .card-title {
+  margin: 0;
+}
+
+.papers-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.papers-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 2px;
+}
+
+.papers-row + .papers-row {
+  border-top: 1px solid var(--line);
+}
+
+.papers-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.papers-meta {
+  font-size: 13px;
+  color: var(--fg-dim);
+  white-space: nowrap;
+}
+
+.papers-detail-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 46vh;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.papers-detail-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 10px;
+}
+
+.papers-detail-row + .papers-detail-row {
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 767px) {
+  .papers-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 6px;
+  }
 }
