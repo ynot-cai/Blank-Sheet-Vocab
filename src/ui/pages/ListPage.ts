@@ -97,6 +97,12 @@ export function renderListPage(): HTMLElement {
   const tableBox = h('div', { class: 'table-box' });
   const pagerBox = h('div', {});
   const batchBox = h('div', {});
+  /**
+   * ★ 版本 0.0.19（提示词 07 §2.3 末句 / 提示词 10 修 Bug）：
+   *   「在单词列表中另开一块区域，可查看、重命名该存档。」
+   *   这里就是那块区域：白纸存档列表（进行中 + 已背完），每行「查看 / 重命名」。
+   */
+  const papersBox = h('div', { class: 'list-papers' });
 
   page.appendChild(head);
   page.appendChild(statsBox);
@@ -104,6 +110,7 @@ export function renderListPage(): HTMLElement {
   page.appendChild(tableBox);
   page.appendChild(pagerBox);
   page.appendChild(batchBox);
+  page.appendChild(papersBox);
 
   /** 由当前筛选状态构造查询条件（翻页/改每页条数只动 page/pageSize） */
   const buildQuery = (): WordQuery => ({
@@ -488,6 +495,109 @@ export function renderListPage(): HTMLElement {
     await load();
   };
 
+  /**
+   * 白纸存档区：查看 / 重命名（用户提示词 07 §2.3、提示词 10「修 Bug」）。
+   *
+   * 数据来自 `dao.papers`（`list()` 已按 `updatedAt` 降序）。
+   * 「查看」＝ 弹窗列出这张纸上的单词（按存档里的已出现顺序），
+   * 「重命名」＝ 输入框改名后落库（`papers.rename`）。
+   */
+  const renderPapers = async (): Promise<void> => {
+    papersBox.replaceChildren();
+    let papers: Awaited<ReturnType<typeof dao.papers.list>> = [];
+    try {
+      papers = await dao.papers.list();
+    } catch (err) {
+      console.error('[list] 读取白纸存档失败', err);
+    }
+    const card = h('div', { class: 'card list-papers-card' });
+    const cardHead = h('div', { class: 'list-papers-head' });
+    cardHead.appendChild(h('h3', { class: 'card-title', text: '白纸存档' }));
+    cardHead.appendChild(h('span', { class: 'field-hint', text: `共 ${papers.length} 张` }));
+    card.appendChild(cardHead);
+
+    if (papers.length === 0) {
+      card.appendChild(h('p', { class: 'note', text: '还没有白纸存档。背诵时点「保存并退出」或「背完了」就会在这里留一张。' }));
+      papersBox.appendChild(card);
+      return;
+    }
+
+    const list = h('div', { class: 'papers-list' });
+    for (const p of papers) {
+      const row = h('div', { class: 'papers-row' });
+      row.appendChild(h('span', { class: 'papers-name', text: p.name === '' ? '（未命名）' : p.name }));
+      row.appendChild(
+        h('span', { class: 'papers-meta', text: `${p.shownIds.length} 词 · ${p.status === 'finished' ? '已背完' : '进行中'}` }),
+      );
+      row.appendChild(
+        button(
+          '查看',
+          () => {
+            void openPaperDetail(p);
+          },
+          { variant: 'ghost' },
+        ),
+      );
+      row.appendChild(
+        button(
+          '重命名',
+          () => {
+            void (async () => {
+              const next = await promptModal('重命名白纸存档', '输入新的名字；留空则记为「（未命名）」。', p.name);
+              if (next === null) return;
+              await dao.papers.rename(p.id, next.trim());
+              toastOk('已重命名');
+              await renderPapers();
+            })();
+          },
+          { variant: 'ghost' },
+        ),
+      );
+      list.appendChild(row);
+    }
+    card.appendChild(list);
+    papersBox.appendChild(card);
+  };
+
+  /**
+   * 「查看」一张白纸存档：把存档里的「已出现单词」按顺序列出来。
+   *
+   * 说明：这里**只读**，不改存档；改名在列表行上。
+   * @param paper 存档
+   */
+  const openPaperDetail = async (paper: import('../../core/types').PaperArchive): Promise<void> => {
+    const all = await dao.words.getAll();
+    const byId = new Map(all.map((w) => [w.id, w]));
+    const body = h('div', { class: 'stack paper-detail' });
+    body.appendChild(
+      h('p', { class: 'field-hint' }, `状态：${paper.status === 'finished' ? '已背完（永久存档）' : '进行中'}　词数：${paper.shownIds.length}`),
+    );
+    body.appendChild(
+      h('p', { class: 'field-hint' }, `创建：${new Date(paper.createdAt).toLocaleString()}　最后改动：${new Date(paper.updatedAt).toLocaleString()}`),
+    );
+    if (paper.shownIds.length === 0) {
+      body.appendChild(h('p', { class: 'note', text: '这张纸上还没有出现过单词。' }));
+    } else {
+      const list = h('div', { class: 'papers-detail-list' });
+      for (const id of paper.shownIds) {
+        const w = byId.get(id);
+        if (!w) continue;
+        const line = h('div', { class: 'papers-detail-row' });
+        line.appendChild(h('span', { class: 'field-label', text: w.en }));
+        line.appendChild(h('span', { class: 'field-hint', text: w.senses.map((s) => s.text).join(' / ') }));
+        list.appendChild(line);
+      }
+      body.appendChild(list);
+    }
+    openModal({
+      title: `白纸存档 —— ${paper.name === '' ? '（未命名）' : paper.name}`,
+      width: '640px',
+      body,
+      actions: [{ text: '关闭', variant: 'ghost', onClick: (close) => close() }],
+    });
+  };
+
   void load();
+  void renderPapers();
   return page;
 }
