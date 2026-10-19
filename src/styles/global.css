@@ -2805,3 +2805,265 @@ body {
     row-gap: 6px;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   版本 0.0.20（用户本轮要求）：单词列表「卡片 / 单词」双视图 + 收藏 + 单词卡新排版
+   —— 全部沿用已有 token（--line / --paper-bg / --radius / --accent / --warn），不引入新配色。
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 视图切换条（页面上方，卡片 / 单词） ── */
+.list-viewbar {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  margin: 10px 0 6px;
+  background: var(--paper-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.list-view-btn {
+  min-width: 78px;
+  height: 32px;
+  padding: 0 14px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--fg-dim);
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.list-view-btn:hover {
+  color: var(--fg);
+  background: #f2f4f8;
+}
+
+.list-view-btn.is-active {
+  color: var(--fg);
+  font-weight: 700;
+  background: #eef1f6;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+/* ── 卡片视图：桌面多列网格、手机单列（同一份 DOM，不靠媒体查询切显隐） ── */
+.list-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.list-card {
+  margin-bottom: 0;
+  gap: 8px;
+}
+
+/* 选中态：蓝框（与表格的 .row-selected 同一语义） */
+.list-card.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.list-card-check {
+  flex: none;
+}
+
+/* ★ 卡片标题：单词不许被拆成「hostil / e」——实测踩过（flex 挤压 + word-break: break-word）。
+   单词保持自身长度（超长用省略号），音标与优先级徽章放到同一行或换行。 */
+.list-card-title {
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+.list-card .link-btn.list-card-en {
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--fg);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  word-break: keep-all;
+}
+
+.list-card .link-btn.list-card-en:hover {
+  color: var(--accent);
+}
+
+/* 卡片第二行：音标 + 词级优先级徽章（放主标题行会被挤到第二行，干脆单独一行） */
+.list-card-sub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 18px;
+}
+
+.list-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+/* ★ 收藏星标（卡片与表格共用同一个函数渲染） */
+.fav-btn {
+  min-width: 30px;
+  padding: 0 4px;
+  font-size: 17px;
+  line-height: 1;
+  color: var(--fg-dim);
+}
+
+.fav-btn.is-on {
+  color: var(--warn);
+}
+
+/* 手机上卡片单列 */
+@media (max-width: 767px) {
+  .list-cards {
+    grid-template-columns: 1fr;
+  }
+
+  /* ★ 视图现在由页面显式选择，所以手机选「单词」视图时表格必须能显示（横向滚动） */
+  .list-table,
+  .table-box .table {
+    display: table;
+  }
+}
+
+/* ── 单词卡新排版（用户提示词 04 §三，见 components/WordCard.ts 的注释） ── */
+.word-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.word-head-edit {
+  align-items: center;
+}
+
+.word-en-input {
+  flex: 1;
+  min-width: 160px;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+/* 编辑态的「中文部分」：一个义项一行，行内是「词性，义项代表，近义词…」 */
+.word-senses-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0;
+}
+
+.sense-edit-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0;
+  padding: 4px 6px;
+  border: 1px dashed transparent;
+  border-radius: 8px;
+  cursor: grab;
+}
+
+.sense-edit-row:hover {
+  border-color: var(--line);
+  background: #fafbfd;
+}
+
+.sense-edit-row.dragging {
+  opacity: 0.45;
+}
+
+/* 拖拽落点：目标被「挤开」的视觉提示 */
+.sense-edit-row.drop-target {
+  border-color: var(--accent);
+  background: #eef4ff;
+}
+
+.sense-edit-text {
+  font-size: 15px;
+  color: #000;
+  padding: 1px 1px;
+  border-radius: 4px;
+  outline: none;
+}
+
+.sense-edit-sep {
+  color: var(--fg-dim);
+  font-size: 14px;
+}
+
+/* 近义词：比义项代表更灰（用户明确要求） */
+.sense-edit-alias {
+  font-size: 14px;
+  color: var(--fg-dim);
+  padding: 1px 1px;
+  border-radius: 4px;
+  outline: none;
+}
+
+.sense-edit-text:focus,
+.sense-edit-alias:focus {
+  background: #fff;
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* 义项的右键菜单（只有「删除」一项） */
+.sense-ctx-menu {
+  position: fixed;
+  z-index: 80;
+  min-width: 96px;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.sense-ctx-menu .btn {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  text-align: left;
+  font-size: 13px;
+  color: var(--danger);
+}
+
+/* 例句：最多两行，超过才给「查看全部」 */
+.word-example {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.word-example.expanded {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+}
+
+.word-card-foot {
+  margin-top: 10px;
+}
+
+/* 编辑态「例句」那一行：输入框占满剩余宽度 */
+.word-example-edit .input {
+  flex: 1;
+  min-width: 180px;
+}
+
+/* 卡片自带的右上角 X（调用方传 onClose 时才有；弹窗与白纸页用的是外部的 X） */
+.word-card-close {
+  position: static;
+  margin-left: auto;
+  align-self: flex-start;
+}

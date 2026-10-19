@@ -73,7 +73,6 @@ export function renderLearnPaperPage(): HTMLElement {
     card.appendChild(
       renderWordCard(word, {
         editable: true,
-        allowViewSenses: true,
         onChange: (next) => {
           void (async () => {
             await dao.words.put(next);
@@ -94,7 +93,14 @@ export function renderLearnPaperPage(): HTMLElement {
     card.appendChild(h('div', { class: 'answer-hint', text: '点击卡片外部关闭；卡内可以直接修改' }));
     const onDocClick = (ev: MouseEvent): void => {
       const t = ev.target;
-      if (t instanceof Element && t.closest('.answer-card') === null) {
+      /**
+       * 点卡片外部关闭。
+       *
+       * ★ 0.0.20：义项的右键菜单（`.sense-ctx-menu`）挂在 `body` 上、**不在** `.answer-card` 里，
+       *   所以必须一并排除——否则「右键 → 点删除」的第一下就把整张卡关掉了（实测踩过：
+       *   删除菜单点了没反应，卡先没了）。菜单自己会在点任意处后关闭。
+       */
+      if (t instanceof Element && t.closest('.answer-card') === null && t.closest('.sense-ctx-menu') === null) {
         document.removeEventListener('click', onDocClick, true);
         card.remove();
       }
