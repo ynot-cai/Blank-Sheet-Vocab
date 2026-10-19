@@ -92,6 +92,14 @@ function renderCurrent(): void {
     outlet.appendChild(document.createTextNode(`页面渲染失败：${err instanceof Error ? err.message : String(err)}`));
   }
   outlet.scrollTop = 0;
+  /**
+   * ★ 版本 0.0.19：换页时把**窗口**滚动位置也归零。
+   *
+   * 为什么必须补这一句：`outlet.scrollTop = 0` 只清页面容器自己的滚动，而本站的滚动
+   * 其实发生在 `window` 上。实测（v019 截图）：从「设置 → 音频设置」（长页面）滚到底部
+   * 再点「背诵」，新页面直接停在被滚走的位置，标题和左栏第一个页签一进来就不见了。
+   */
+  window.scrollTo({ top: 0, left: 0 });
 }
 
 /** 页面元素 → 清理回调（路由切换时自动执行） */

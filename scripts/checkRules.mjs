@@ -156,8 +156,17 @@ const rulesText = readFileSync(RULES_FILE, 'utf8');
     pass('R2', '出题提示词已包含"无时间限制"片段');
   }
 
-  // AI_RULES.md 本身必须包含这两段
-  if (!rulesText.includes(IMPORT_SNIPPET) || !rulesText.includes(EXAM_SNIPPET)) {
+  // AI_RULES 第 4 节原文必须包含这两段。
+  //
+  // ★ 版本 0.0.19：这份「第 4 节」的现行位置是 **归档文档**
+  //   `已归档/原始文档/AI_RULES.md`，不再是 `开发必读/逻辑与交互要求.md`。
+  //   原因（用户明令）：0.0.18 起「开发必读」两份文档只许写用户原话，
+  //   而 4.1/4.2 这两段是旧 AI_RULES 的原话，用户没有说过 →
+  //   不许再写进「开发必读」，原文完整保存在归档里（见本脚本头部的说明）。
+  //   所以这里查归档那份；归档缺失时才回落到现行规则文档。
+  const archivedRulesFile = join(ROOT, '已归档', '原始文档', 'AI_RULES.md');
+  const rulesSource = existsSync(archivedRulesFile) ? readFileSync(archivedRulesFile, 'utf8') : rulesText;
+  if (!rulesSource.includes(IMPORT_SNIPPET) || !rulesSource.includes(EXAM_SNIPPET)) {
     fail('R2', 'AI_RULES.md 第 4 节自身内容不完整');
   }
 }

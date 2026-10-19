@@ -127,6 +127,8 @@ export function renderApp(root: HTMLElement): void {
   const navBox = h('nav', { class: 'nav' });
   const bannerBox = h('div', { class: 'banner-box' });
   const outlet = h('main', { class: 'outlet' });
+  /** ★ 0.0.19：底部白条要在全屏练习界面一并藏起来（见 paintNav 的说明） */
+  const footer = renderFooter();
 
   const paintNav = (): void => {
     const path = currentPath();
@@ -135,6 +137,16 @@ export function renderApp(root: HTMLElement): void {
     // 全屏练习界面：白栏整体消失（先判它，后面的按钮就不用建了）
     const fullscreen = FULLSCREEN_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
     navBox.classList.toggle('nav-hidden', fullscreen);
+    /**
+     * ★ 版本 0.0.19：**全屏练习界面连底部白条也一起藏**。
+     *
+     * 为什么必须改：白纸界面是 `position: fixed; inset: 0` 的全屏层，而底部白条
+     * 是 `position: sticky; bottom: 0; z-index: 20` —— 它永远盖在全屏层上面。
+     * 实测（1280×860，`docs` 里的 v019 截图）：白纸右下角五个按钮里的第 5 个
+     * 「删除这张纸」被白条整条盖住，用户根本点不到。
+     * 处理方式与顶栏一致（全屏练习界面里顶栏本来就是 `display: none`）。
+     */
+    footer.classList.toggle('footer-hidden', fullscreen);
     if (fullscreen) return;
 
     /**
@@ -166,7 +178,7 @@ export function renderApp(root: HTMLElement): void {
   root.appendChild(navBox);
   root.appendChild(bannerBox);
   root.appendChild(outlet);
-  root.appendChild(renderFooter());
+  root.appendChild(footer);
   renderPermissionBanner(bannerBox);
   // 云同步失败时的轻提示 / 常驻提示（不阻断任何操作）
   mountSyncBanner(bannerBox, () => {

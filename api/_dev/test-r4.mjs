@@ -29,6 +29,16 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** 规则文件的现行位置（版本 0.0.1 起） */
 const RULES_PATH = '开发必读/逻辑与交互要求.md';
+/**
+ * ★ 版本 0.0.19：旧 `AI_RULES.md` 的**原文**存这里（0.0.1 起就没有再从根目录读过）。
+ *
+ * 为什么 R1~R4 条与第 4 节片段改从这里抠：0.0.18 按用户铁律把「开发必读」两份文档
+ * 改成**只写用户原话**，而 R1~R4 的标题措辞、4.1/4.2 的必含片段都是旧 AI_RULES 的原话、
+ * 用户没说过 → 不许再写进「开发必读」。所以这些字样只能对着归档件核；
+ * 而「提示词里到底有没有这两段」仍然照原样对 `src/services/promptRules.ts` 与
+ * `src/services/ai.ts` 断言（那才是真正影响 AI 行为的东西）。
+ */
+const AI_RULES_ARCHIVE = '已归档/原始文档/AI_RULES.md';
 
 const { MANDATORY_IMPORT_RULES, MANDATORY_EXAM_RULES } = await import('../../src/services/promptRules.ts');
 const { PARSE_SYSTEM_PROMPT, coerceParsedWord } = await import('../../src/services/ai.ts');
@@ -85,9 +95,13 @@ const pkg = JSON.parse(read('package.json'));
 check('package.json 里有 npm run rules:check', pkg.scripts?.['rules:check'] === 'node scripts/checkRules.mjs', String(pkg.scripts?.['rules:check']));
 
 const rulesText = read(RULES_PATH);
+const archiveText = existsSync(join(ROOT, AI_RULES_ARCHIVE)) ? read(AI_RULES_ARCHIVE) : rulesText;
+check(`旧 AI_RULES 原文在：${AI_RULES_ARCHIVE}`, existsSync(join(ROOT, AI_RULES_ARCHIVE)));
 for (const r of ['R1', 'R2', 'R3', 'R4']) {
-  check(`规则文件里有 ${r} 条`, rulesText.includes(`## ${r}`), `找不到 "## ${r}"`);
+  check(`${r} 条在规则原文里（归档件）`, archiveText.includes(`## ${r}`), `找不到 "## ${r}"`);
 }
+// 现行规则文件必须存在且非空（内容口径由用户铁律决定，这里只验「在」）
+check('现行规则文件非空', rulesText.trim().length > 200, `只有 ${rulesText.length} 字符`);
 
 // 真的跑一次自检脚本：退出码必须是 0（不改断言、不放水，脚本原样跑）
 let rulesCheckOk = false;
@@ -101,14 +115,27 @@ try {
 check('npm run rules:check 退出码为 0（全绿）', rulesCheckOk, rulesCheckErr);
 
 // ─────────────────────────────── [2] 第 4 节必含片段
-console.log('\n[2] 规则文件第 4 节的必含片段真的进了提示词');
-const wantImport = blockAfter(rulesText, '### 4.1');
-const wantExam = blockAfter(rulesText, '### 4.2');
-check('4.1 能从规则文件里抠出来', typeof wantImport === 'string' && wantImport.length > 100);
-check('4.2 能从规则文件里抠出来', typeof wantExam === 'string' && wantExam.length > 50);
+console.log('\n[2] 规则原文第 4 节的必含片段真的进了提示词');
+const wantImport = blockAfter(archiveText, '### 4.1');
+const wantExam = blockAfter(archiveText, '### 4.2');
+check('4.1 能从归档的规则原文里抠出来', typeof wantImport === 'string' && wantImport.length > 100);
+check('4.2 能从归档的规则原文里抠出来', typeof wantExam === 'string' && wantExam.length > 50);
 
-check('promptRules 里的录入片段与规则文件**逐字相同**', MANDATORY_IMPORT_RULES === wantImport);
-check('promptRules 里的出题片段与规则文件**逐字相同**', MANDATORY_EXAM_RULES === wantExam);
+/**
+ * 录入片段的口径：**包含**规则原文 4.1 的必含首句即可，不再要求「逐字相同」。
+ *
+ * 为什么放宽（版本 0.0.19 说明）：0.0.6 按用户提示词 02 把这段扩写过——
+ * 新增「不同词性一律视为不同含义、必须拆成不同义项」「每个义项配一条例句」等要求，
+ * 原 4.1 的第 3~5 条也被替换。所以两者**必然**不再逐字相同；
+ * 旧断言（对着现行规则文件比对）在 0.0.18 改文档后已经恒为失败，
+ * 这里改成「必含首句」＋「出题片段仍逐字相同」，把真正要守的东西守住。
+ */
+check(
+  'promptRules 的录入片段仍含规则原文 4.1 的必含首句',
+  MANDATORY_IMPORT_RULES.includes('含义相近的中文意思合并为一个义项'),
+  MANDATORY_IMPORT_RULES.slice(0, 80),
+);
+check('promptRules 里的出题片段与规则原文**逐字相同**', MANDATORY_EXAM_RULES === wantExam);
 
 check('录入提示词（PARSE_SYSTEM_PROMPT）含 4.1 原文', PARSE_SYSTEM_PROMPT.includes(MANDATORY_IMPORT_RULES));
 
