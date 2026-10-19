@@ -27,11 +27,52 @@ const STAT_ITEMS: { key: keyof WordStats; label: string; status: WordStatus | nu
 ];
 
 /**
- * 单词列表页：统计条 + 筛选 + 表格 + 批量操作 + 导出导入 + 重算优先度。
+ * 单词列表页（版本 0.0.20）：统计条 + **视图切换（卡片 / 单词）** + 筛选 + 视图内容
+ * + 批量操作 + 导出导入 + 重算优先度 + 白纸存档区。
+ *
+ * ★ 0.0.20 的改动（用户本轮要求）：
+ *   1. 页面上方新增「卡片 / 单词」切换；两个视图共用同一套筛选/搜索/排序/批量编辑/收藏；
+ *   2. 卡片视图补全功能（勾选、星标收藏、义项、属性、操作菜单），桌面多列网格、手机单列；
+ *   3. 新增「收藏」：词上加 `favorite` 字段、筛选区加「只看收藏」、批量条加收藏/取消收藏。
+ */
+
+/** 视图类型 */
+type ListView = 'card' | 'word';
+
+/** 视图选择存本机（下次进来还是上次那个视图） */
+const VIEW_KEY = 'blank-sheet-vocab.listView';
+
+/**
+ * 读上次选的视图（默认卡片：本轮把卡片视图做成主视图）。
+ */
+function readView(): ListView {
+  try {
+    return localStorage.getItem(VIEW_KEY) === 'word' ? 'word' : 'card';
+  } catch {
+    return 'card';
+  }
+}
+
+/**
+ * 记住视图选择（隐私模式下写不进去也不影响使用）。
+ * @param v 视图
+ */
+function writeView(v: ListView): void {
+  try {
+    localStorage.setItem(VIEW_KEY, v);
+  } catch {
+    /* 忽略 */
+  }
+}
+
+/**
+ * 渲染单词列表页。
  */
 export function renderListPage(): HTMLElement {
   const page = h('div', { class: 'page list-page' });
   let state: ListFilterState = defaultFilterState();
+  /** 当前视图（卡片 / 单词） */
+  let view: ListView = readView();
   let items: Word[] = [];
   let total = 0;
   /**
@@ -93,6 +134,40 @@ export function renderListPage(): HTMLElement {
     ),
   );
 
+  /**
+   * 视图切换条（用户：在页面上方添加一个切换按钮，点击可在「卡片」与「单词」之间切换）。
+   * 两个按钮是一组分段控件，当前视图亮起。
+   */
+  const viewBar = h('div', { class: 'list-viewbar' });
+  const cardViewBtn = button('卡片', () => setView('card'), { variant: 'ghost', class: 'list-view-btn' });
+  const wordViewBtn = button('单词', () => setView('word'), { variant: 'ghost', class: 'list-view-btn' });
+  viewBar.appendChild(cardViewBtn);
+  viewBar.appendChild(wordViewBtn);
+
+  /** 按当前视图给两个按钮上「亮起」状态 */
+  const paintViewSwitch = (): void => {
+    for (const [btn, key] of [
+      [cardViewBtn, 'card'],
+      [wordViewBtn, 'word'],
+    ] as [HTMLButtonElement, ListView][]) {
+      const on = view === key;
+      btn.classList.toggle('is-active', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+  };
+
+  /**
+   * 切视图：记住选择并重画内容区（筛选条件与选中集合都不动）。
+   * @param next 目标视图
+   */
+  const setView = (next: ListView): void => {
+    if (view === next) return;
+    view = next;
+    writeView(next);
+    paintViewSwitch();
+    renderAll();
+  };
+
   const filtersBox = h('div', {});
   const tableBox = h('div', { class: 'table-box' });
   const pagerBox = h('div', {});
@@ -105,12 +180,14 @@ export function renderListPage(): HTMLElement {
   const papersBox = h('div', { class: 'list-papers' });
 
   page.appendChild(head);
+  page.appendChild(viewBar);
   page.appendChild(statsBox);
   page.appendChild(filtersBox);
   page.appendChild(tableBox);
   page.appendChild(pagerBox);
   page.appendChild(batchBox);
   page.appendChild(papersBox);
+  paintViewSwitch();
 
   /** 由当前筛选状态构造查询条件（翻页/改每页条数只动 page/pageSize） */
   const buildQuery = (): WordQuery => ({
@@ -118,6 +195,8 @@ export function renderListPage(): HTMLElement {
     status: effectiveStatuses(state),
     sourceId: state.sourceId || undefined,
     needSpell: state.needSpellOnly ? true : undefined,
+    // ★ 0.0.20：只看收藏（两个视图共用）
+    favorite: state.favoriteOnly ? true : undefined,
     minFailCount: state.minFailCount ?? undefined,
     minPriority: state.minPriority ?? undefined,
     // ★ R3：词级优先级精确筛选
@@ -209,15 +288,19 @@ export function renderListPage(): HTMLElement {
       }),
     );
 
-    // 桌面渲染表格、手机渲染卡片流；用 CSS 媒体查询二选一显示（见 global.css）
-    // 第 5 个参数传「整个筛选结果」的全选态，让表头勾选框能显示部分选中（indeterminate）
-    tableBox.replaceChildren(
-      renderListTable(items, sources, selected, handlers, failCap, {
-        selectedCount: selected.size,
-        matchedCount: matchedIds.length,
-      }),
-      renderListCards(items, sources, handlers),
-    );
+    // ★ 0.0.20：按当前视图二选一渲染（不再靠 CSS 媒体查询按屏宽切换）。
+    //   「单词」视图 = 原来的表格；「卡片」视图 = 新建的卡片网格。
+    //   表格那一路第 6 个参数传「整个筛选结果」的全选态，让表头勾选框能显示部分选中（indeterminate）。
+    if (view === 'card') {
+      tableBox.replaceChildren(renderListCards({ items, sources, selected, handlers }));
+    } else {
+      tableBox.replaceChildren(
+        renderListTable(items, sources, selected, handlers, failCap, {
+          selectedCount: selected.size,
+          matchedCount: matchedIds.length,
+        }),
+      );
+    }
 
     pagerBox.replaceChildren(
       renderPagination({
@@ -236,27 +319,54 @@ export function renderListPage(): HTMLElement {
       }),
     );
 
+    renderBatch();
+  };
+
+  /**
+   * 只重画底部的批量操作条（0.0.20 从 renderAll 里抽出来的）。
+   *
+   * 为什么要抽：勾选一个词不该把整页（含所有卡片/表格行）重画——
+   *   实测（v020 验收）整页重画会让「连点两个勾选框」失效：第一次点击后 DOM 被换掉，
+   *   测试拿到的是已脱离文档的旧节点，第二次点击就丢了。对用户来说也是闪烁。
+   * 所以勾选走 {@link updateSelectionUi}：只改那一个节点的 class + 重画批量条。
+   */
+  const renderBatch = (): void => {
     batchBox.replaceChildren();
-    if (selected.size > 0) {
-      batchBox.appendChild(
-        renderBatchBar({
-          count: selected.size,
-          matchedCount: matchedIds.length,
-          onChop: () => void batchStatus('chopped'),
-          onRevive: () => void batchStatus(null),
-          onSpell: (value) => void batchAttrs({ needSpell: value }),
-          onUnlearned: () => void batchStatus('unlearned'),
-          onDelete: () => void batchDelete(),
-          // ★ R3：批量设优先级
-          onSetPriority: (priority) => void batchSetPriority(priority),
-          onSelectAllMatched: () => selectAllMatched(),
-          onClear: () => {
-            selected.clear();
-            renderAll();
-          },
-        }),
-      );
+    if (selected.size === 0) return;
+    batchBox.appendChild(
+      renderBatchBar({
+        count: selected.size,
+        matchedCount: matchedIds.length,
+        onChop: () => void batchStatus('chopped'),
+        onRevive: () => void batchStatus(null),
+        onSpell: (value) => void batchAttrs({ needSpell: value }),
+        onUnlearned: () => void batchStatus('unlearned'),
+        onDelete: () => void batchDelete(),
+        // ★ R3：批量设优先级
+        onSetPriority: (priority) => void batchSetPriority(priority),
+        // ★ 0.0.20：批量收藏 / 取消收藏
+        onFavorite: (value) => void batchFavorite(value),
+        onSelectAllMatched: () => selectAllMatched(),
+        onClear: () => {
+          selected.clear();
+          updateSelectionUi();
+        },
+      }),
+    );
+  };
+
+  /**
+   * 把「选中态」同步到现有 DOM（卡片 / 表格行），并重画批量条。
+   *
+   * 依赖两个视图都给节点打了 `data-word-id`（见 ListCards/ListTable）。
+   */
+  const updateSelectionUi = (): void => {
+    for (const el of Array.from(document.querySelectorAll<HTMLElement>('[data-word-id]'))) {
+      const on = selected.has(el.dataset.wordId ?? '');
+      el.classList.toggle('is-selected', on);
+      el.classList.toggle('row-selected', on);
     }
+    renderBatch();
   };
 
   /**
@@ -274,7 +384,8 @@ export function renderListPage(): HTMLElement {
     onToggleSelect: (id: string, checked: boolean): void => {
       if (checked) selected.add(id);
       else selected.delete(id);
-      renderAll();
+      // 只同步这一个节点的选中态 + 批量条（不整页重画，见 updateSelectionUi 的说明）
+      updateSelectionUi();
     },
     // 表头勾选框 = 全选/取消**整个筛选结果**（跨页），不再只是当前页
     onToggleSelectAll: (checked: boolean): void => {
@@ -283,32 +394,27 @@ export function renderListPage(): HTMLElement {
       renderAll();
     },
     onOpenDetail: (word: Word): void => {
-      let draft = word;
+      /**
+       * ★ 0.0.20：单词卡自带「编辑 ↔ 保存」两态，所以这里不再需要弹窗底部的「保存/取消」——
+       *   卡里的「保存」直接落库并重画列表（用户要求：点击编辑后卡改变形态，原「编辑」被「保存」取代）。
+       */
       openModal({
-        title: `单词详情 —— ${word.en}`,
+        title: `单词卡 —— ${word.en}`,
         width: '640px',
         body: renderWordCard(word, {
           editable: true,
           showAttrs: true,
           onChange: (next) => {
-            draft = next;
+            void (async () => {
+              await dao.words.put(next);
+              toastOk('已保存');
+              await load();
+            })();
           },
+          // 卡上的「斩」与表格行内「斩」同一套行为（无确认 + 8 秒撤销）
+          onChop: () => handlers.onChop(word),
         }),
-        actions: [
-          {
-            text: '保存',
-            variant: 'primary',
-            onClick: (close) => {
-              void (async () => {
-                await dao.words.put(draft);
-                toastOk('已保存');
-                close();
-                await load();
-              })();
-            },
-          },
-          { text: '取消', variant: 'ghost', onClick: (close) => close() },
-        ],
+        actions: [{ text: '关闭', variant: 'ghost', onClick: (close) => close() }],
       });
     },
     onEditNumber: (word: Word, field: 'failCount' | 'reviewCount'): void => {
@@ -384,6 +490,14 @@ export function renderListPage(): HTMLElement {
         await load();
       })();
     },
+    /** ★ 0.0.20：切换收藏（卡片上的星标 / 表格行首的星标） */
+    onFavorite: (word: Word, value: boolean): void => {
+      void (async () => {
+        await dao.words.setFavorite(word.id, value);
+        toastOk(value ? `已收藏「${word.en}」` : `已取消收藏「${word.en}」`);
+        await load();
+      })();
+    },
   };
 
   /** 批量改状态 */
@@ -445,6 +559,19 @@ export function renderListPage(): HTMLElement {
     if (!ok) return;
     await dao.words.removeMany(ids);
     toastOk(`已删除 ${ids.length} 个词`);
+    selected.clear();
+    await load();
+  };
+
+  /**
+   * ★ 0.0.20：批量收藏 / 取消收藏（卡片视图的批量编辑条用）。
+   * @param value 收藏还是取消
+   */
+  const batchFavorite = async (value: boolean): Promise<void> => {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+    await dao.words.setFavoriteMany(ids, value);
+    toastOk(`已${value ? '收藏' : '取消收藏'} ${ids.length} 个词`);
     selected.clear();
     await load();
   };

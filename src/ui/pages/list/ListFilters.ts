@@ -8,6 +8,8 @@ export interface ListFilterState {
   statuses: WordStatus[];
   sourceId: string;
   needSpellOnly: boolean;
+  /** ★ 0.0.20：只看收藏 */
+  favoriteOnly: boolean;
   /** 是否把「已斩」的词也算进来（默认不算：斩掉的词从默认视图消失） */
   includeChopped: boolean;
   minFailCount: number | null;
@@ -27,6 +29,7 @@ export function defaultFilterState(): ListFilterState {
     statuses: [],
     sourceId: '',
     needSpellOnly: false,
+    favoriteOnly: false,
     includeChopped: false,
     minFailCount: null,
     minPriority: null,
@@ -113,6 +116,15 @@ export function renderListFilters(opts: ListFiltersOptions): HTMLElement {
       'div',
       { class: 'filter-item' },
       checkbox(state.needSpellOnly, '只看需拼写', (v) => opts.onChange({ needSpellOnly: v })),
+    ),
+  );
+
+  // ★ 0.0.20：只看收藏（与卡片视图的星标联动）
+  wrap.appendChild(
+    h(
+      'div',
+      { class: 'filter-item' },
+      checkbox(state.favoriteOnly, '只看收藏', (v) => opts.onChange({ favoriteOnly: v })),
     ),
   );
 

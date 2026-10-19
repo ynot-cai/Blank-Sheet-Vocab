@@ -160,6 +160,37 @@ export async function applySenseRewriteMany(
 }
 
 /**
+ * ★ 版本 0.0.20：切换一个词的**收藏**（星标）。
+ * 收藏是纯展示/筛选用的标记，不影响背诵抽词与任何属性计算。
+ * @param id 单词 id
+ * @param value 是否收藏
+ */
+export async function setFavorite(id: string, value: boolean): Promise<void> {
+  const word = await getById(id);
+  if (!word) return;
+  await put({ ...word, favorite: value });
+}
+
+/**
+ * ★ 版本 0.0.20：批量收藏 / 取消收藏（卡片视图的批量编辑条用）。
+ * @param ids 单词 id 数组
+ * @param value 是否收藏
+ */
+export async function setFavoriteMany(ids: string[], value: boolean): Promise<void> {
+  if (ids.length === 0) return;
+  const all = await listAlive();
+  const target = new Set(ids);
+  const now = Date.now();
+  await txRun(STORE.words, 'readwrite', (s) => {
+    for (const w of all) {
+      if (!target.has(w.id)) continue;
+      s.put({ ...w, deleted: 0, favorite: value, updatedAt: now });
+    }
+  });
+  emitDataChanged();
+}
+
+/**
  * 斩掉某词（背诵/复习/记忆/推荐数字中均不再出现）。
  * @param id 单词 id
  */
@@ -290,6 +321,9 @@ export async function restoreStatuses(entries: { id: string; status: WordStatus 
 function matchesQuery(w: Word, q: WordQuery): boolean {
   if (q.status && q.status.length > 0 && !q.status.includes(w.status)) return false;
   if (q.sourceId && w.sourceId !== q.sourceId) return false;
+  // ★ 0.0.20：收藏筛选（老数据没有该字段 → 按「没收藏」处理）
+  if (q.favorite === true && w.favorite !== true) return false;
+  if (q.favorite === false && w.favorite === true) return false;
   if (q.needSpell === true && !w.attrs.needSpell) return false;
   if (q.needSpell === false && w.attrs.needSpell) return false;
   if (typeof q.minFailCount === 'number' && w.attrs.failCount < q.minFailCount) return false;
