@@ -547,3 +547,31 @@
 .paper-card .paper-btn {
   font-size: 13px;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   版本 0.0.17：单词卡外壳——**原样照抄**归档 已归档/02 AnswerCard 的 .answer-card。
+   正中弹窗：fixed + 50%/50% + translate(-50%,-50%)，不挂在页面底部、不撑长文档。
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.answer-card {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 60;
+  background: var(--paper-bg);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+  padding: 18px 22px;
+  cursor: pointer;
+  max-width: min(560px, 92vw);
+  max-height: 88vh;
+  overflow: auto;
+  text-align: left;
+}
+
+.answer-hint {
+  color: var(--fg-dim);
+  font-size: 12px;
+  margin-top: 8px;
+}

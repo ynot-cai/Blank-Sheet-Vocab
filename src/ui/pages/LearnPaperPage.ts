@@ -7,7 +7,7 @@
  *
  * 三个历史问题的落点仍是 `geometry.ts`（避让向外扩）、`PaperStage.refreshWord`（改中文即时刷新）。
  */
-import { getSettings, PAPER_UI } from '../../core/config';
+import { PAPER_UI } from '../../core/config';
 import { nextWord, orderByPriority, type PriorityTable } from '../../core/learnSelect';
 import type { PaperArchive, Word } from '../../core/types';
 import * as dao from '../../dao';
@@ -18,7 +18,7 @@ import { toastOk, toastWarn } from '../components/Toast';
 import { navigate, registerCleanup } from '../router';
 import { createPaperStage, type PaperStageHandle } from './paper/PaperStage';
 import { applyPaperButtonVars, paperButtonBox } from './paper/geometry';
-import { openWordCard } from './paper/WordCard';
+import { renderWordCard } from '../components/WordCard';
 
 /** 从 hash 里取 `?paper=<id>` */
 function readPaperId(): string {
@@ -45,13 +45,26 @@ export function renderLearnPaperPage(): HTMLElement {
 
   const stage: PaperStageHandle = createPaperStage({
     onWordClick: (word) => stage.toggleMeaning(word.id),
-    onMeaningClick: (word) => {
-      openWordCard({
-        word,
-        isPhone,
-        onClose: () => undefined,
-        onSpeak: () => speak(word.en),
-        onSave: (next) => {
+    onMeaningClick: (word) => showWordCard(word),
+  });
+  page.appendChild(stage.root);
+
+  /**
+   * ★ 版本 0.0.17（用户纠正）：单词卡 = **归档版的正中弹窗**。
+   * 外壳照抄归档 `showAnswerCard` 的 `.answer-card`（fixed + 50%/50% 居中 + 点外部关），
+   * 内容用仓库里还原的归档共享组件 `renderWordCard`（编辑 / SenseEditor / 拼 / 斩）。
+   */
+  function showWordCard(word: Word): void {
+    if (document.querySelector('.answer-card')) return; // 同一时间只开一张
+    const card = h('div', { class: 'answer-card' });
+    const x = h('button', { class: 'paper-card-close', type: 'button', text: '×', title: '关闭' });
+    x.addEventListener('click', () => card.remove());
+    card.appendChild(x);
+    card.appendChild(
+      renderWordCard(word, {
+        editable: true,
+        allowViewSenses: true,
+        onChange: (next) => {
           void (async () => {
             await dao.words.put(next);
             stage.refreshWord(next);
@@ -66,10 +79,20 @@ export function renderLearnPaperPage(): HTMLElement {
             toastTop(`已斩「${word.en}」`);
           })();
         },
-      });
-    },
-  });
-  page.appendChild(stage.root);
+      }),
+    );
+    card.appendChild(h('div', { class: 'answer-hint', text: '点击卡片外部关闭；卡内可以直接修改' }));
+    const onDocClick = (ev: MouseEvent): void => {
+      const t = ev.target;
+      if (t instanceof Element && t.closest('.answer-card') === null) {
+        document.removeEventListener('click', onDocClick, true);
+        card.remove();
+      }
+    };
+    // 打开卡的那一下 click 已经派发完毕，现在挂监听不会把自己关掉
+    document.addEventListener('click', onDocClick, true);
+    document.body.appendChild(card);
+  }
 
   /** 这张纸的存档 */
   let paper: PaperArchive | null = null;
@@ -234,19 +257,6 @@ export function renderLearnPaperPage(): HTMLElement {
   return page;
 }
 
-/** 用浏览器内置语音念一个词（完整 TTS 抽象层仍归档在 已归档/12） */
-function speak(text: string): void {
-  try {
-    const s = getSettings();
-    const u = new SpeechSynthesisUtterance(text);
-    u.rate = s.speech.rate;
-    u.lang = s.speech.accent;
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(u);
-  } catch {
-    /* 没有语音能力就静默 */
-  }
-}
 
 /** 右上角提示（用户要求把「斩」后的提示放右上角） */
 function toastTop(text: string): void {
