@@ -2819,6 +2819,89 @@ body {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   版本 0.0.22：卡片视图自己的工具栏（搜索 / 筛选 / 排序 / 批量编辑 / 只看收藏）
+   —— 收藏对象已从「单词」改为「卡片」，所以「只看收藏」只出现在这里，不出现单词视图。
+   配色沿用已有 token（--line / --paper-bg / --accent / --warn），不引入新配色。
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.card-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  margin: 10px 0 4px;
+  background: var(--paper-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.card-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ct-search {
+  flex: 1 1 260px;
+  min-width: 200px;
+}
+
+.ct-search .input {
+  width: 100%;
+}
+
+.ct-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ct-label {
+  font-size: 13px;
+  color: var(--fg-dim);
+}
+
+.ct-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ct-chip {
+  padding: 4px 12px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--fg);
+  background: var(--paper-bg);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.ct-chip:hover {
+  border-color: var(--accent);
+}
+
+.ct-chip.is-active {
+  font-weight: 600;
+  background: #eef1f6;
+  border-color: var(--accent);
+}
+
+.ct-chip-fav.is-active {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+.ct-count {
+  margin-right: auto;
+  font-size: 13px;
+  color: var(--fg-dim);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    版本 0.0.20（用户本轮要求）：单词列表「卡片 / 单词」双视图 + 收藏 + 单词卡新排版
    —— 全部沿用已有 token（--line / --paper-bg / --radius / --accent / --warn），不引入新配色。
    ═══════════════════════════════════════════════════════════════════════════ */

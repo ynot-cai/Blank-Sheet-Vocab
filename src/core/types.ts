@@ -160,14 +160,6 @@ export interface Word {
    */
   spellOnly?: boolean;
   /**
-   * ★ 版本 0.0.20（用户：卡片视图要能收藏）：是否收藏（星标）。
-   *
-   * 可选字段：0.0.20 之前的老数据没有它 → 读取时一律按 `=== true` 判，
-   * **不需要迁移**（`undefined` 与 `false` 同义）。它跟着整行一起走云同步与备份，
-   * 所以数据层不用加任何白名单字段。
-   */
-  favorite?: boolean;
-  /**
    * ★ 优先级（**唯一的那一个**）：1~5，5 为最高，默认 3。
    *
    * 决定背诵先抽谁（绝对优先），也是重复录入时确认框用来判断「要不要问」的字段。
@@ -513,10 +505,13 @@ export interface WordQuery {
   needSpell?: boolean;
   minPriority?: number;
   /**
-   * ★ 版本 0.0.20：只看收藏（`true` = 只要收藏的词；`false` = 只要没收藏的；不传 = 全部）。
-   * 老数据没有 `favorite` 字段，按「没收藏」处理（见 `Word.favorite` 的说明）。
+   * ★ 版本 0.0.22：只在给定的 id 集合里查。
+   *
+   * 用途：卡片视图的「只看收藏」——收藏对象是**卡片**（存在 `cardFavorites` 表里），
+   * 不是词的属性，所以不能在 `matchesQuery` 里读词字段。把收藏的卡片 id 传进来，
+   * 分页/全选仍然按「筛选之后」的口径算，不会出现「看到 3 张、全选却是 500 个」。
    */
-  favorite?: boolean;
+  ids?: string[];
   /** ★ 按**词级**优先级精确筛选（R1 加的，与上面的 minPriority/复习优先度无关） */
   priority?: number;
   sort?: 'learnOrder' | 'reviewPriority' | 'createdAt' | 'en' | 'priority';

@@ -160,37 +160,6 @@ export async function applySenseRewriteMany(
 }
 
 /**
- * ★ 版本 0.0.20：切换一个词的**收藏**（星标）。
- * 收藏是纯展示/筛选用的标记，不影响背诵抽词与任何属性计算。
- * @param id 单词 id
- * @param value 是否收藏
- */
-export async function setFavorite(id: string, value: boolean): Promise<void> {
-  const word = await getById(id);
-  if (!word) return;
-  await put({ ...word, favorite: value });
-}
-
-/**
- * ★ 版本 0.0.20：批量收藏 / 取消收藏（卡片视图的批量编辑条用）。
- * @param ids 单词 id 数组
- * @param value 是否收藏
- */
-export async function setFavoriteMany(ids: string[], value: boolean): Promise<void> {
-  if (ids.length === 0) return;
-  const all = await listAlive();
-  const target = new Set(ids);
-  const now = Date.now();
-  await txRun(STORE.words, 'readwrite', (s) => {
-    for (const w of all) {
-      if (!target.has(w.id)) continue;
-      s.put({ ...w, deleted: 0, favorite: value, updatedAt: now });
-    }
-  });
-  emitDataChanged();
-}
-
-/**
  * 斩掉某词（背诵/复习/记忆/推荐数字中均不再出现）。
  * @param id 单词 id
  */
@@ -321,9 +290,6 @@ export async function restoreStatuses(entries: { id: string; status: WordStatus 
 function matchesQuery(w: Word, q: WordQuery): boolean {
   if (q.status && q.status.length > 0 && !q.status.includes(w.status)) return false;
   if (q.sourceId && w.sourceId !== q.sourceId) return false;
-  // ★ 0.0.20：收藏筛选（老数据没有该字段 → 按「没收藏」处理）
-  if (q.favorite === true && w.favorite !== true) return false;
-  if (q.favorite === false && w.favorite === true) return false;
   if (q.needSpell === true && !w.attrs.needSpell) return false;
   if (q.needSpell === false && w.attrs.needSpell) return false;
   if (typeof q.minFailCount === 'number' && w.attrs.failCount < q.minFailCount) return false;
@@ -341,20 +307,33 @@ function matchesQuery(w: Word, q: WordQuery): boolean {
 }
 
 /**
+ * 按筛选条件过一遍词表（`query()` 与 `queryIds()` 共用，保证两处口径一致）。
+ *
+ * ★ 0.0.22：`q.ids` 是「只在这些 id 里查」的白名单（卡片视图「只看收藏」用）。
+ *   白名单在**这里**一次建成 Set，绝不能在 `matchesQuery` 里对每个词各建一次（那是 O(n²)）。
+ * @param all 全部活词
+ * @param q 查询条件
+ */
+function filterWords(all: Word[], q: WordQuery): Word[] {
+  const allow = Array.isArray(q.ids) ? new Set(q.ids) : null;
+  return all.filter((w) => (allow === null || allow.has(w.id)) && matchesQuery(w, q));
+}
+
+/**
  * 只查「符合条件的词 id」，不分页。
  *
  * ★ 为什么需要它：列表页的「全选」原来只选当前页（≤200 条），
  *   想做「把几千个词一次性批量改」根本做不到。
  *   这个函数让页面能拿到**整个筛选结果**的 id 集合，从而支持跨页全选。
  *
- * 与 `query()` 共用同一套筛选逻辑（下面抽成了 `matchesQuery`），
+ * 与 `query()` 共用同一套筛选逻辑（`filterWords`），
  * 避免两处判断不一致导致「看到的条数」和「选中的条数」对不上。
  *
  * @param q 查询条件（page / pageSize / sort / order 会被忽略）
  */
 export async function queryIds(q: WordQuery): Promise<{ total: number; ids: string[] }> {
   const all = await listAlive();
-  const ids = all.filter((w) => matchesQuery(w, q)).map((w) => w.id);
+  const ids = filterWords(all, q).map((w) => w.id);
   return { total: ids.length, ids };
 }
 
@@ -364,7 +343,7 @@ export async function queryIds(q: WordQuery): Promise<{ total: number; ids: stri
  */
 export async function query(q: WordQuery): Promise<{ total: number; items: Word[] }> {
   const all = await listAlive();
-  const list = all.filter((w) => matchesQuery(w, q));
+  const list = filterWords(all, q);
 
   const sort = q.sort ?? 'createdAt';
   const dir = q.order === 'asc' ? 1 : -1;

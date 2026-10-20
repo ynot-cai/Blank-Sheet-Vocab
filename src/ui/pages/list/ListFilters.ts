@@ -8,7 +8,13 @@ export interface ListFilterState {
   statuses: WordStatus[];
   sourceId: string;
   needSpellOnly: boolean;
-  /** ★ 0.0.20：只看收藏 */
+  /**
+   * ★ 0.0.22：只看收藏的**卡片**。
+   *
+   * 收藏对象已从「单词」改为「卡片」（存在 `cardFavorites` 表里），
+   * 所以这一项只在**卡片视图**里有控件（见 `list/CardToolbar.ts`）；
+   * 单词（表格）视图不显示它，也不按它过滤。
+   */
   favoriteOnly: boolean;
   /** 是否把「已斩」的词也算进来（默认不算：斩掉的词从默认视图消失） */
   includeChopped: boolean;
@@ -116,15 +122,6 @@ export function renderListFilters(opts: ListFiltersOptions): HTMLElement {
       'div',
       { class: 'filter-item' },
       checkbox(state.needSpellOnly, '只看需拼写', (v) => opts.onChange({ needSpellOnly: v })),
-    ),
-  );
-
-  // ★ 0.0.20：只看收藏（与卡片视图的星标联动）
-  wrap.appendChild(
-    h(
-      'div',
-      { class: 'filter-item' },
-      checkbox(state.favoriteOnly, '只看收藏', (v) => opts.onChange({ favoriteOnly: v })),
     ),
   );
 

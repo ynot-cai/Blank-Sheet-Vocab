@@ -11,6 +11,7 @@ import { showUndoToast, toastError, toastOk, toastWarn } from '../components/Toa
 import { renderWordCard } from '../components/WordCard';
 import { currentSettings } from './settings/ctx';
 import { renderBatchBar } from './list/BatchBar';
+import { renderCardToolbar } from './list/CardToolbar';
 import { renderListCards } from './list/ListCards';
 import type { ListFilterState } from './list/ListFilters';
 import { defaultFilterState, effectiveStatuses, renderListFilters } from './list/ListFilters';
@@ -85,6 +86,8 @@ export function renderListPage(): HTMLElement {
   let matchedIds: string[] = [];
   let stats: WordStats = { total: 0, unlearned: 0, learning: 0, learned: 0, chopped: 0 };
   let sources: Source[] = [];
+  /** ★ 0.0.22：被收藏的**卡片** id 集合（来自 cardFavorites 表） */
+  let cardFavoriteIds = new Set<string>();
   const selected = new Set<string>();
 
   const failCap = getSettings().failCountCap;
@@ -158,11 +161,18 @@ export function renderListPage(): HTMLElement {
 
   /**
    * 切视图：记住选择并重画内容区（筛选条件与选中集合都不动）。
+   *
+   * ★ 0.0.22：收藏是**卡片**的属性，单词视图里没有收藏概念，
+   * 所以切到单词视图时把「只看收藏」关掉（否则表格会莫名其妙只剩几张卡）。
    * @param next 目标视图
    */
   const setView = (next: ListView): void => {
     if (view === next) return;
     view = next;
+    if (next === 'word' && state.favoriteOnly) {
+      state = { ...state, favoriteOnly: false, page: 1 };
+      void load();
+    }
     writeView(next);
     paintViewSwitch();
     renderAll();
@@ -195,8 +205,12 @@ export function renderListPage(): HTMLElement {
     status: effectiveStatuses(state),
     sourceId: state.sourceId || undefined,
     needSpell: state.needSpellOnly ? true : undefined,
-    // ★ 0.0.20：只看收藏（两个视图共用）
-    favorite: state.favoriteOnly ? true : undefined,
+    /**
+     * ★ 0.0.22：只看收藏 —— 收藏对象是**卡片**（`cardFavorites` 表），不是词的字段，
+     * 所以这里传「被收藏的卡片 id 白名单」，分页/全选仍然按筛选后的口径算。
+     * 收藏筛选只属于卡片视图：单词视图里没有收藏概念（切过去时会把这一项清掉）。
+     */
+    ids: state.favoriteOnly && view === 'card' ? Array.from(cardFavoriteIds) : undefined,
     minFailCount: state.minFailCount ?? undefined,
     minPriority: state.minPriority ?? undefined,
     // ★ R3：词级优先级精确筛选
@@ -210,6 +224,8 @@ export function renderListPage(): HTMLElement {
   /** 加载数据并重画 */
   const load = async (): Promise<void> => {
     sources = await dao.sources.list();
+    // ★ 0.0.22：卡片收藏（读一次整表，收藏量很小）
+    cardFavoriteIds = await dao.cardFavorites.ids();
     const query = buildQuery();
     const [res, st, matched, alive] = await Promise.all([
       dao.words.query(query),
@@ -263,36 +279,74 @@ export function renderListPage(): HTMLElement {
     }
   };
 
-  /** 重画表格 / 分页 / 批量条 */
+  /** 重画筛选区 / 视图内容 / 分页 / 批量条 */
   const renderAll = (): void => {
     renderStats();
 
-    filtersBox.replaceChildren(
-      renderListFilters({
-        state,
-        sources,
-        onKeyword: debounce((v: string) => {
-          state.keyword = v.trim();
-          state.page = 1;
-          void load();
-        }, 300),
-        onChange: (patch) => {
-          state = { ...state, ...patch, page: 1 };
-          void load();
-        },
-        onReset: () => {
-          state = { ...defaultFilterState(), pageSize: state.pageSize };
-          selected.clear();
-          void load();
-        },
-      }),
-    );
+    /**
+     * ★ 0.0.22：两个视图各有**自己的**筛选区——
+     * 卡片视图用新工具栏（搜索 / 筛选 / 排序 / 批量编辑 / 只看收藏），
+     * 单词视图仍用原来那一排筛选项（没有收藏，因为收藏对象是卡片）。
+     */
+    if (view === 'card') {
+      filtersBox.replaceChildren(
+        renderCardToolbar({
+          state,
+          sources,
+          selectedCount: selected.size,
+          matchedCount: total,
+          onKeyword: debounce((v: string) => {
+            state.keyword = v.trim();
+            state.page = 1;
+            void load();
+          }, 300),
+          onChange: (patch) => {
+            state = { ...state, ...patch, page: 1 };
+            void load();
+          },
+          onReset: () => {
+            state = { ...defaultFilterState(), pageSize: state.pageSize };
+            selected.clear();
+            void load();
+          },
+          onSelectPage: () => {
+            for (const item of items) selected.add(item.id);
+            updateSelectionUi();
+          },
+          onClearSelect: () => {
+            selected.clear();
+            updateSelectionUi();
+          },
+        }),
+      );
+    } else {
+      filtersBox.replaceChildren(
+        renderListFilters({
+          state,
+          sources,
+          onKeyword: debounce((v: string) => {
+            state.keyword = v.trim();
+            state.page = 1;
+            void load();
+          }, 300),
+          onChange: (patch) => {
+            state = { ...state, ...patch, page: 1 };
+            void load();
+          },
+          onReset: () => {
+            state = { ...defaultFilterState(), pageSize: state.pageSize };
+            selected.clear();
+            void load();
+          },
+        }),
+      );
+    }
 
     // ★ 0.0.20：按当前视图二选一渲染（不再靠 CSS 媒体查询按屏宽切换）。
-    //   「单词」视图 = 原来的表格；「卡片」视图 = 新建的卡片网格。
+    //   「单词」视图 = 原来的表格；「卡片」视图 = 卡片网格。
     //   表格那一路第 6 个参数传「整个筛选结果」的全选态，让表头勾选框能显示部分选中（indeterminate）。
     if (view === 'card') {
-      tableBox.replaceChildren(renderListCards({ items, sources, selected, handlers }));
+      tableBox.replaceChildren(renderListCards({ items, sources, selected, favorites: cardFavoriteIds, handlers }));
     } else {
       tableBox.replaceChildren(
         renderListTable(items, sources, selected, handlers, failCap, {
@@ -344,8 +398,8 @@ export function renderListPage(): HTMLElement {
         onDelete: () => void batchDelete(),
         // ★ R3：批量设优先级
         onSetPriority: (priority) => void batchSetPriority(priority),
-        // ★ 0.0.20：批量收藏 / 取消收藏
-        onFavorite: (value) => void batchFavorite(value),
+        // ★ 0.0.22：批量收藏**卡片**（只有卡片视图给这条回调，单词视图不显示收藏按钮）
+        onFavorite: view === 'card' ? (value) => void batchCardFavorite(value) : undefined,
         onSelectAllMatched: () => selectAllMatched(),
         onClear: () => {
           selected.clear();
@@ -366,6 +420,9 @@ export function renderListPage(): HTMLElement {
       el.classList.toggle('is-selected', on);
       el.classList.toggle('row-selected', on);
     }
+    // ★ 0.0.22：卡片工具栏上的「已选 N 张」也要跟着变（否则勾了卡还是显示 0）
+    const countEl = filtersBox.querySelector('.ct-count');
+    if (countEl !== null) countEl.textContent = `共 ${total} 张卡片 · 已选 ${selected.size} 张`;
     renderBatch();
   };
 
@@ -505,12 +562,16 @@ export function renderListPage(): HTMLElement {
         await load();
       })();
     },
-    /** ★ 0.0.20：切换收藏（卡片上的星标 / 表格行首的星标） */
-    onFavorite: (word: Word, value: boolean): void => {
+    /**
+     * ★ 0.0.22：切换**卡片**收藏（收藏对象从「单词」改为「卡片」）。
+     * 数据写在 `cardFavorites` 表里，改完重读一遍再重画（星标状态立刻变）。
+     */
+    onCardFavorite: (word: Word, value: boolean): void => {
       void (async () => {
-        await dao.words.setFavorite(word.id, value);
-        toastOk(value ? `已收藏「${word.en}」` : `已取消收藏「${word.en}」`);
-        await load();
+        await dao.cardFavorites.set(word.id, value);
+        cardFavoriteIds = await dao.cardFavorites.ids();
+        toastOk(value ? `已收藏「${word.en}」这张卡片` : `已取消收藏「${word.en}」这张卡片`);
+        renderAll();
       })();
     },
   };
@@ -579,14 +640,14 @@ export function renderListPage(): HTMLElement {
   };
 
   /**
-   * ★ 0.0.20：批量收藏 / 取消收藏（卡片视图的批量编辑条用）。
+   * ★ 0.0.22：批量收藏 / 取消收藏**卡片**（卡片视图的批量编辑条用）。
    * @param value 收藏还是取消
    */
-  const batchFavorite = async (value: boolean): Promise<void> => {
+  const batchCardFavorite = async (value: boolean): Promise<void> => {
     const ids = Array.from(selected);
     if (ids.length === 0) return;
-    await dao.words.setFavoriteMany(ids, value);
-    toastOk(`已${value ? '收藏' : '取消收藏'} ${ids.length} 个词`);
+    await dao.cardFavorites.setMany(ids, value);
+    toastOk(`已${value ? '收藏' : '取消收藏'} ${ids.length} 张卡片`);
     selected.clear();
     await load();
   };

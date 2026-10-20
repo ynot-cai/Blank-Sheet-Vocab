@@ -7,3 +7,5 @@ export * as syncData from './syncData';
 export * as cloudSync from './cloudSync';
 export * as syncScheduler from './syncScheduler';
 export * as papers from './papers';
+/** ★ 0.0.22：卡片收藏（收藏对象从「单词」改为「卡片」） */
+export * as cardFavorites from './cardFavorites';

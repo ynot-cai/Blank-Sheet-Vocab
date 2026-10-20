@@ -1,17 +1,16 @@
 /**
- * 单词列表的**卡片视图**（版本 0.0.20 重写）。
+ * 单词列表的**卡片视图**（版本 0.0.22）。
  *
- * 用户要求（本轮）：页面上方可在「卡片」与「单词」两个视图间切换；
- * **卡片界面里要能筛选、搜索、排序、批量编辑、收藏**。
+ * 用户要求（对话 2026-10-20 / 2026-10-22）：
+ * - 页面上方可在「卡片」与「单词」两个视图间切换；
+ * - **卡片界面里要有筛选、搜索、排序、批量编辑、收藏**；
+ * - 「将收藏对象从『单词』改为『卡片』，并删除原有的单词收藏功能」。
  *
- * ── 与旧版（0.0.6 的手机卡片流）的差别 ──
- * 旧版是「手机上才出现」的只读卡片流（桌面隐藏、靠 CSS 媒体查询切换），
- * 而且每张卡只有一个「⋯」菜单。现在卡片是**与屏宽无关的正式视图**：
- * - 每张卡带勾选框（批量编辑）与星标（收藏）；
- * - 卡上直接显示义项、来源、②未通过、③复习次数、④距上次复习；
- * - 「⋯」里放不方便平铺的操作（拼写标记 / 改次数 / 优先级 / 斩或复活 / 删除 / 收藏）。
- *
- * 桌面是多列网格、手机是单列，用**同一份 DOM + CSS 网格**实现，不靠媒体查询切换显隐。
+ * ── 0.0.22 的改动 ──
+ * - 收藏的**对象是卡片**：数据存在 `cardFavorites` 表（`dao.cardFavorites`），
+ *   不再是 `Word.favorite`；星标只出现在卡片上，单词（表格）视图里没有。
+ * - 卡片视图自带一条工具栏（`list/CardToolbar.ts`）：
+ *   搜索 / 筛选 / 排序 / 批量编辑 / 只看收藏。
  */
 import { humanizeDays, wordPriorityOf } from '../../../core/model';
 import type { Source, Word } from '../../../core/types';
@@ -19,7 +18,7 @@ import { WORD_PRIORITY_OPTIONS } from '../../../core/types';
 import { button, h } from '../../dom';
 import { openModal } from '../../components/Modal';
 import type { ListTableHandlers } from './ListTable';
-import { renderFavoriteButton, renderPriorityBadge } from './ListTable';
+import { renderPriorityBadge } from './ListTable';
 
 /** 状态中文名 */
 const STATUS_LABEL: Record<Word['status'], string> = {
@@ -37,20 +36,22 @@ export interface ListCardsOptions {
   sources: Source[];
   /** 已选中的 id（支持跨页全选，所以可能包含不在当前页的） */
   selected: Set<string>;
+  /** 已被收藏的**卡片** id 集合（= 词 id；来自 cardFavorites 表） */
+  favorites: Set<string>;
   /** 操作回调（与表格共用同一套，保证两个视图的行为一致） */
   handlers: ListTableHandlers;
 }
 
 /**
  * 渲染卡片视图。
- * @param opts 词条、来源、选中状态与回调
+ * @param opts 词条、来源、选中/收藏状态与回调
  */
 export function renderListCards(opts: ListCardsOptions): HTMLElement {
-  const { items, sources, selected, handlers } = opts;
+  const { items, sources, selected, favorites, handlers } = opts;
   const box = h('div', { class: 'list-cards' });
 
   if (items.length === 0) {
-    box.appendChild(h('p', { class: 'note', text: '没有符合条件的词。' }));
+    box.appendChild(h('p', { class: 'note', text: '没有符合条件的卡片。' }));
     return box;
   }
 
@@ -63,19 +64,25 @@ export function renderListCards(opts: ListCardsOptions): HTMLElement {
 
   /** 一张卡 */
   function renderCard(word: Word): HTMLElement {
+    const favorited = favorites.has(word.id);
     const card = h('div', {
-      class: `list-card status-${word.status}${selected.has(word.id) ? ' is-selected' : ''}${word.favorite === true ? ' is-favorite' : ''}`,
+      class: `list-card status-${word.status}${selected.has(word.id) ? ' is-selected' : ''}${favorited ? ' is-favorite' : ''}`,
       // ★ 勾选时页面只改这一个节点的 class（见 ListPage 的 updateSelectionUi），所以要能按 id 找到它
       dataset: { wordId: word.id },
     });
 
-    // —— 第一行：勾选 + 星标 + 单词/音标/优先级 + 状态 ——
+    // —— 第一行：勾选 + 星标（收藏这张卡片）+ 单词 + 状态 ——
     const top = h('div', { class: 'list-card-top' });
-    const check = h('input', { type: 'checkbox', checked: selected.has(word.id), class: 'list-card-check', title: '选中这个词（用于批量编辑）' });
+    const check = h('input', {
+      type: 'checkbox',
+      checked: selected.has(word.id),
+      class: 'list-card-check',
+      title: '选中这张卡片（用于批量编辑）',
+    });
     check.addEventListener('change', () => handlers.onToggleSelect(word.id, check.checked));
     top.appendChild(check);
 
-    top.appendChild(renderFavoriteButton(word, handlers));
+    top.appendChild(renderCardFavoriteButton(word, favorited, handlers));
 
     const titleBox = h('div', { class: 'list-card-title' });
     const en = h('button', { class: 'link-btn list-card-en', type: 'button', text: word.en, title: '点击打开单词卡' });
@@ -86,7 +93,7 @@ export function renderListCards(opts: ListCardsOptions): HTMLElement {
     top.appendChild(h('span', { class: `tag st-${word.status}`, text: STATUS_LABEL[word.status] }));
     card.appendChild(top);
 
-    // —— 第二行：音标 + 词级优先级徽章（放主标题行会被挤到第二行，干脆单独一行） ——
+    // —— 第二行：音标 + 词级优先级徽章 ——
     const sub = h('div', { class: 'list-card-sub' });
     if (word.phonetic.trim() !== '') sub.appendChild(h('span', { class: 'list-card-phonetic', text: word.phonetic }));
     sub.appendChild(renderPriorityBadge(wordPriorityOf(word)));
@@ -110,7 +117,7 @@ export function renderListCards(opts: ListCardsOptions): HTMLElement {
       }),
     );
 
-    // —— 卡底操作：详情 + ⋯ ——
+    // —— 卡底操作：单词卡 + ⋯ ——
     const foot = h('div', { class: 'list-card-foot' });
     foot.appendChild(button('单词卡', () => handlers.onOpenDetail(word), { variant: 'ghost', class: 'mini' }));
     foot.appendChild(button('⋯', () => openMenu(word), { variant: 'ghost', class: 'mini list-card-more', title: '更多操作' }));
@@ -130,9 +137,8 @@ export function renderListCards(opts: ListCardsOptions): HTMLElement {
     const actions = h('div', { class: 'row-actions' });
     actions.appendChild(button('打开单词卡', () => handlers.onOpenDetail(word)));
     actions.appendChild(
-      button(
-        word.favorite === true ? '取消收藏' : '收藏',
-        () => handlers.onFavorite(word, word.favorite !== true),
+      button(favorites.has(word.id) ? '取消收藏这张卡片' : '收藏这张卡片', () =>
+        handlers.onCardFavorite(word, !favorites.has(word.id)),
       ),
     );
     actions.appendChild(
@@ -140,7 +146,7 @@ export function renderListCards(opts: ListCardsOptions): HTMLElement {
     );
     actions.appendChild(button('改未通过次数', () => handlers.onEditNumber(word, 'failCount')));
     actions.appendChild(button('改复习次数', () => handlers.onEditNumber(word, 'reviewCount')));
-    // R3：手机上改优先级（下拉在卡片里太挤，放菜单里）
+    // R3：改优先级（下拉在卡片里太挤，放菜单里）
     const prioRow = h('div', { class: 'row' }, h('span', { class: 'field-label', text: '词优先级' }));
     const prioSel = h('select', { class: 'input mini-select' });
     for (const opt of WORD_PRIORITY_OPTIONS) {
@@ -159,4 +165,26 @@ export function renderListCards(opts: ListCardsOptions): HTMLElement {
     body.appendChild(actions);
     openModal({ title: '操作', width: '460px', body });
   }
+}
+
+/**
+ * 卡片上的星标按钮（收藏**这张卡片**）。
+ *
+ * 颜色不引入新色：已收藏用 `--warn`（已有），未收藏用 `--fg-dim`。
+ * @param word 卡片对应的词
+ * @param favorited 这张卡片是否已收藏
+ * @param handlers 回调（用其中的 onCardFavorite）
+ */
+export function renderCardFavoriteButton(
+  word: Word,
+  favorited: boolean,
+  handlers: ListTableHandlers,
+): HTMLButtonElement {
+  const btn = button(favorited ? '★' : '☆', () => handlers.onCardFavorite(word, !favorited), {
+    variant: 'ghost',
+    class: `fav-btn${favorited ? ' is-on' : ''}`,
+    title: favorited ? '取消收藏这张卡片' : '收藏这张卡片',
+  });
+  btn.setAttribute('aria-pressed', favorited ? 'true' : 'false');
+  return btn;
 }

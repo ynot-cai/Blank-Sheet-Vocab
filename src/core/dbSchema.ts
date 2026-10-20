@@ -39,8 +39,11 @@ export const DB_NAME = 'blank-sheet-vocab';
  *   和 v5/v6 同一套思路 —— 抬版本号逼一次升级，对已经是 v7 的库是空操作。
  * - v8 T4：新增 `ttsCache` 表（第三方 TTS 的音频缓存）。**纯加法**：
  *   只建一张新表，不动任何已有数据；对用户不可见（缓存丢了只是重新合成一次）。
+ * - v10（0.0.22）：新增 `cardFavorites` 表 —— 单词列表「卡片视图」里**收藏的卡片**。
+ *   纯加法：只建表、不动老数据。为什么不在 `words` 上加字段：用户明确要求
+ *   「收藏对象从单词改为卡片，并删除原有的单词收藏功能」，所以收藏不再是词的一个属性。
  */
-export const DB_VERSION = 9;
+export const DB_VERSION = 10;
 
 /** 表名常量，避免各处写错字符串 */
 export const STORE = {
@@ -60,6 +63,15 @@ export const STORE = {
   ttsCache: 'ttsCache',
   /** ★ v9：白纸存档（临时优先级表 + 种子 + 已出现名单 + 落点） */
   papers: 'papers',
+  /**
+   * ★ v10（0.0.22）：单词列表卡片视图里**收藏的卡片**。
+   *
+   * 主键是 `id`（= 该卡片对应的词 id，因为一张卡片就是某个词的一张卡）。
+   * 单独一张表，**不是** `words` 上的字段：用户要求「收藏对象从单词改为卡片、
+   * 删除原有的单词收藏功能」，所以收藏不再是词的属性，词删除后这里的残留记录
+   * 由列表页按「词还在不在」过滤掉即可（不需要外键与级联）。
+   */
+  cardFavorites: 'cardFavorites',
 } as const;
 
 /**
@@ -278,6 +290,13 @@ export function createSchema(db: IDBDatabase, oldVersion: number, transaction: I
     const papers = db.createObjectStore(STORE.papers, { keyPath: 'id' });
     papers.createIndex('status', 'status', { unique: false });
     papers.createIndex('updatedAt', 'updatedAt', { unique: false });
+  }
+  /**
+   * ★ v10（0.0.22）：卡片收藏。纯加法，只建表：
+   * 记录形如 `{ id: 词id, at: 收藏时间 }`，没有索引需求（收藏数量很小，一次全读）。
+   */
+  if (!db.objectStoreNames.contains(STORE.cardFavorites)) {
+    db.createObjectStore(STORE.cardFavorites, { keyPath: 'id' });
   }
   // v1 → v2：给来源补 updatedAt（只动 sources，与词表迁移互不干扰）
   if (oldVersion > 0 && oldVersion < 2) migrateToV2(transaction);

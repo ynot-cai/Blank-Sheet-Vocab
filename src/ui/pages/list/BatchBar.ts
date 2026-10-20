@@ -13,8 +13,13 @@ export interface BatchBarOptions {
   onDelete: () => void;
   /** ★ R3：批量设为某个词级优先级 */
   onSetPriority: (priority: number) => void;
-  /** ★ 0.0.20：批量收藏 / 取消收藏 */
-  onFavorite: (value: boolean) => void;
+  /**
+   * ★ 0.0.22：批量收藏 / 取消收藏**卡片**。
+   *
+   * 收藏对象从「单词」改成「卡片」后，只有**卡片视图**才传这个回调
+   * （单词视图不显示这两个按钮，也不存在单词级收藏）。
+   */
+  onFavorite?: (value: boolean) => void;
   /** 把当前筛选结果的**全部**词都选上（跨页，不设数量上限） */
   onSelectAllMatched: () => void;
   onClear: () => void;
@@ -63,9 +68,12 @@ export function renderBatchBar(opts: BatchBarOptions): HTMLElement {
   wrap.appendChild(prioSel);
   wrap.appendChild(button('批量标记需拼写', () => opts.onSpell(true)));
   wrap.appendChild(button('批量取消需拼写', () => opts.onSpell(false)));
-  // ★ 0.0.20：批量收藏（卡片视图与表格共用这一条）
-  wrap.appendChild(button('批量收藏', () => opts.onFavorite(true)));
-  wrap.appendChild(button('批量取消收藏', () => opts.onFavorite(false)));
+  // ★ 0.0.22：批量收藏**卡片**（只有卡片视图传了回调才显示）
+  if (opts.onFavorite) {
+    const onFavorite = opts.onFavorite;
+    wrap.appendChild(button('批量收藏卡片', () => onFavorite(true)));
+    wrap.appendChild(button('批量取消收藏', () => onFavorite(false)));
+  }
   wrap.appendChild(button('批量设为未背', () => opts.onUnlearned()));
   wrap.appendChild(button('批量删除', () => opts.onDelete(), { variant: 'danger' }));
   wrap.appendChild(button('取消选择', () => opts.onClear(), { variant: 'ghost' }));

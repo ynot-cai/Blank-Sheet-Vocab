@@ -19,8 +19,11 @@ export interface ListTableHandlers {
   onAdoptRaw: (word: Word) => void;
   /** ★ R3：行内直接改词级优先级 */
   onPriority: (word: Word, priority: number) => void;
-  /** ★ 0.0.20：切换收藏（星标） */
-  onFavorite: (word: Word, value: boolean) => void;
+  /**
+   * ★ 0.0.22：切换**卡片**收藏（收藏对象已从「单词」改为「卡片」）。
+   * 表格（单词视图）**不再有**收藏入口；这个回调只被卡片视图使用。
+   */
+  onCardFavorite: (word: Word, value: boolean) => void;
 }
 
 /**
@@ -54,26 +57,6 @@ function renderPrioritySelect(word: Word, onPriority: (w: Word, p: number) => vo
   }
   sel.addEventListener('change', () => onPriority(word, Number(sel.value)));
   return sel;
-}
-
-/**
- * 星标按钮（收藏）。
- *
- * ★ 放在本文件（表格）而不是卡片文件里：卡片视图要 import 表格的 handlers 类型与优先级徽章，
- *   若星标再定义在卡片文件里就会形成**双向循环依赖**。这里导出后两边都用同一颗星。
- * 颜色不引入新色：已收藏用 `--warn`（已有），未收藏用 `--fg-dim`。
- * @param word 词
- * @param handlers 回调（用其中的 onFavorite）
- */
-export function renderFavoriteButton(word: Word, handlers: ListTableHandlers): HTMLButtonElement {
-  const on = word.favorite === true;
-  const btn = button(on ? '★' : '☆', () => handlers.onFavorite(word, !on), {
-    variant: 'ghost',
-    class: `fav-btn${on ? ' is-on' : ''}`,
-    title: on ? '取消收藏' : '收藏这个词',
-  });
-  btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-  return btn;
 }
 
 /** 状态标签颜色 */
@@ -158,9 +141,8 @@ export function renderListTable(
     check.addEventListener('change', () => handlers.onToggleSelect(word.id, check.checked));
     tr.appendChild(h('td', {}, check));
 
-    // 单词（★ 收藏 + 点击 → 单词卡）
+    // 单词（点击 → 单词卡）。★ 0.0.22：单词视图不再有收藏星标（收藏的对象改为「卡片」）
     const enCell = h('td', {});
-    enCell.appendChild(renderFavoriteButton(word, handlers));
     const enBtn = h('button', { class: 'link-btn', type: 'button', text: word.en, title: '点击查看/编辑详情' });
     enBtn.addEventListener('click', () => handlers.onOpenDetail(word));
     enCell.appendChild(enBtn);
