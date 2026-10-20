@@ -1,25 +1,36 @@
 /**
- * 白纸界面（`#/learn/paper?paper=<id>`）—— 版本 0.0.14。
+ * 白纸界面（`#/learn/paper?paper=<id>`）—— 版本 0.0.21。
  *
- * 这一版把白纸接到**存档**上（用户「二、白纸存档机制」）：
- *   进入时按 `?paper=` 读回那张 `PaperArchive`（临时优先级表 + 种子 + 已出现名单 + 落点），
- *   「下一个」按临时优先级取词（同优先级首字母升序），「背完了」命名并永久存档。
+ * 进入时按 `?paper=` 读回那张 `PaperArchive`（临时优先级表 + 种子 + 已出现名单 + 落点），
+ * 「下一个」按临时优先级取词（同优先级首字母升序），「背完了」命名并永久存档。
  *
- * 三个历史问题的落点仍是 `geometry.ts`（避让向外扩）、`PaperStage.refreshWord`（改中文即时刷新）。
+ * ★ 0.0.21：接上**考核（记忆过程）**——点 N 次「下一个」自动开始、或点「再次记忆」主动开始；
+ *   一轮 = 英译中（AI 评分，0~5 分）+ 拼写（与旧版相同），结束后分数与次数直接写库。
  */
 import { PAPER_UI } from '../../core/config';
+import { selectExamWords } from '../../core/examSelect';
 import { nextWord, orderByPriority, type PriorityTable } from '../../core/learnSelect';
 import type { PaperArchive, Word } from '../../core/types';
 import * as dao from '../../dao';
+import { aiConfigFromSettings } from '../../services/ai';
+import { speak } from '../../services/tts';
 import { deviceKind } from '../device';
 import { h } from '../dom';
 import { confirmModal, promptModal } from '../components/Modal';
 import { toastOk, toastWarn } from '../components/Toast';
 import { navigate, registerCleanup } from '../router';
+import { currentSettings } from './settings/ctx';
 import { createPaperStage, type PaperStageHandle } from './paper/PaperStage';
 import { applyPaperButtonVars, paperButtonBox } from './paper/geometry';
+import { startExam, type ExamHandle, type ExamWordOutcome } from './paper/exam';
 import { renderWordCard } from '../components/WordCard';
 import { mountSpeechGate } from '../components/SpeechGate';
+
+/** 朗读一个词（考核里的小喇叭；读设置页「音频设置」的语速/口音） */
+function speakWord(word: Word): void {
+  const speech = currentSettings().speech;
+  speak(word.en, { rate: speech.rate, lang: speech.accent });
+}
 
 /** 从 hash 里取 `?paper=<id>` */
 function readPaperId(): string {
@@ -85,10 +96,24 @@ export function renderLearnPaperPage(): HTMLElement {
             toastOk('已保存');
           })();
         },
-        onChop: () => {
+        // ★ 0.0.21：斩 / 拼写 / 仅拼写 都变成真的标记（用户「三、选取逻辑」第 3 条）
+        onChop: () => chopWord(word),
+        onSpell: (value) => {
           void (async () => {
-            await dao.words.chop(word.id);
-            toastTop(`已斩「${word.en}」`);
+            const next: Word = { ...word, attrs: { ...word.attrs, needSpell: value } };
+            await dao.words.put(next);
+            const i = queue.findIndex((w) => w.id === next.id);
+            if (i >= 0) queue[i] = next;
+          })();
+        },
+        onSpellOnly: (value) => {
+          void (async () => {
+            const next: Word = { ...word, spellOnly: value };
+            await dao.words.put(next);
+            const i = queue.findIndex((w) => w.id === next.id);
+            if (i >= 0) queue[i] = next;
+            // 用户：标记「仅拼写」的单词立即从纸上消失
+            if (value) await removeFromPaper(next.id);
           })();
         },
       }),
@@ -143,7 +168,7 @@ export function renderLearnPaperPage(): HTMLElement {
   // ── 五个按钮 ──
   const controls = h('div', { class: `paper-controls ${isPhone ? 'phone' : 'wide'}` });
   const btnNext = h('button', { class: 'paper-btn paper-btn-primary', type: 'button', text: '下一个' });
-  const btnAgain = h('button', { class: 'paper-btn', type: 'button', text: '再次记忆', title: '本轮为空壳' });
+  const btnAgain = h('button', { class: 'paper-btn', type: 'button', text: '再次记忆', title: '点它开始一轮考核' });
   const btnDone = h('button', { class: 'paper-btn', type: 'button', text: '背完了' });
   const btnSave = h('button', { class: 'paper-btn', type: 'button', text: '保存并退出' });
   const btnClear = h('button', { class: 'paper-btn paper-btn-danger', type: 'button', text: '删除这张纸' });
@@ -170,8 +195,158 @@ export function renderLearnPaperPage(): HTMLElement {
     await persist();
   };
 
-  btnNext.addEventListener('click', () => void revealNext());
-  btnAgain.addEventListener('click', () => toastOk('「再次记忆」本轮是空壳，尚未实现'));
+  // ══════════════════ 考核（记忆过程）—— 版本 0.0.21 ══════════════════
+  /** 距离上一轮考核已经点了几次「下一个」 */
+  let sinceExam = 0;
+  /** 正在考核（防止重复进入） */
+  let examRunning = false;
+  /** 当前考核句柄（页面销毁时要中断） */
+  let examHandle: ExamHandle | null = null;
+
+  /**
+   * 开始一轮考核（用户「二、触发机制」的两种入口都走这里）：
+   * 1. 点 `exam.everyWords` 次「下一个」后自动开始；
+   * 2. 点「再次记忆」主动开始。
+   */
+  const startExamRound = async (): Promise<void> => {
+    if (!paper || examRunning) return;
+    const settings = currentSettings();
+    const onPaper = queue.filter((w) => shown.has(w.id) && w.status !== 'chopped' && w.spellOnly !== true);
+    if (onPaper.length === 0) {
+      toastWarn('纸上还没有可以考核的单词');
+      return;
+    }
+    const selection = selectExamWords({
+      pool: onPaper,
+      memorizeCount: paper.memorizeCount ?? {},
+      count: settings.exam.countPerExam,
+      scoreThreshold: settings.exam.scoreThreshold,
+      spellOnlyWords: queue.filter((w) => w.spellOnly === true && w.status !== 'chopped'),
+    });
+    if (selection.picked.length === 0 && selection.spellOnly.length === 0) {
+      toastWarn('这一轮没有抽到要考核的单词');
+      return;
+    }
+
+    examRunning = true;
+    sinceExam = 0;
+    const handle = startExam({
+      words: selection.picked,
+      spellIds: new Set(selection.spellIds),
+      spellOnlyWords: selection.spellOnly,
+      scoreThreshold: settings.exam.scoreThreshold,
+      aiCfg: aiConfigFromSettings(settings),
+      hintFails: settings.practice.hintFails,
+      speak: (word) => speakWord(word),
+      isAborted: () => destroyed,
+      onChangeWord: (next) => {
+        void (async () => {
+          await dao.words.put(next);
+          const i = queue.findIndex((w) => w.id === next.id);
+          if (i >= 0) queue[i] = next;
+          stage.refreshWord(next);
+        })();
+      },
+      onChop: (word) => chopWord(word),
+      onSpell: (word, value) => {
+        void (async () => {
+          const next: Word = { ...word, attrs: { ...word.attrs, needSpell: value } };
+          await dao.words.put(next);
+          const i = queue.findIndex((w) => w.id === next.id);
+          if (i >= 0) queue[i] = next;
+        })();
+      },
+      onSpellOnly: (word, value) => {
+        void (async () => {
+          const next: Word = { ...word, spellOnly: value };
+          await dao.words.put(next);
+          const i = queue.findIndex((w) => w.id === next.id);
+          if (i >= 0) queue[i] = next;
+          if (value) await removeFromPaper(next.id);
+        })();
+      },
+    });
+    examHandle = handle;
+    try {
+      const outcomes = await handle.done;
+      await recordRound(outcomes);
+    } finally {
+      examRunning = false;
+      examHandle = null;
+    }
+  };
+
+  /**
+   * 一轮考核结束：**直接写库**（用户「五、数据记录」）。
+   * - 每个考到的词：考核次数 +1；有英译中分数的写 `examScore`；
+   *   低于阈值或拼写错的记一次未通过（failCount / failCountTotal 各 +1，保持原有的失败率口径）；
+   * - 这张纸的记忆次数：参与英译中的词各 +1（用户要求「记忆次数存入白纸存档」）。
+   * @param outcomes 本轮每个词的结果
+   */
+  const recordRound = async (outcomes: ExamWordOutcome[]): Promise<void> => {
+    if (!paper) return;
+    const now = Date.now();
+    for (const outcome of outcomes) {
+      const word = queue.find((w) => w.id === outcome.id);
+      if (!word) continue;
+      const attrs = { ...word.attrs };
+      attrs.examCount = (typeof attrs.examCount === 'number' ? attrs.examCount : 0) + 1;
+      if (outcome.score !== null) attrs.examScore = outcome.score;
+      if (outcome.failed) {
+        attrs.failCount += 1;
+        attrs.failCountTotal += 1;
+      }
+      const next: Word = { ...word, attrs, updatedAt: now };
+      await dao.words.put(next);
+      const i = queue.findIndex((w) => w.id === next.id);
+      if (i >= 0) queue[i] = next;
+    }
+    const memorizeCount = { ...(paper.memorizeCount ?? {}) };
+    for (const outcome of outcomes) {
+      if (outcome.score === null) continue;
+      memorizeCount[outcome.id] = (memorizeCount[outcome.id] ?? 0) + 1;
+    }
+    paper.memorizeCount = memorizeCount;
+    await dao.papers.put(paper);
+    toastOk(`本轮考核完成：${outcomes.length} 个词，分数与次数已记录`);
+  };
+
+  /**
+   * 把一个词从这张纸上移除（用户：标记「仅拼写」或「斩」的单词**立即从纸上消失**）。
+   * @param id 词 id
+   */
+  const removeFromPaper = async (id: string): Promise<void> => {
+    stage.removeWord(id);
+    shown.delete(id);
+    const idx = shownOrder.indexOf(id);
+    if (idx >= 0) shownOrder.splice(idx, 1);
+    if (paper) {
+      delete paper.placements[id];
+      paper.shownIds = [...shownOrder];
+      await dao.papers.put(paper);
+    }
+    refreshStats();
+  };
+
+  /** 斩：写库 + 右上角提示 + 立即从纸上消失 */
+  const chopWord = (word: Word): void => {
+    void (async () => {
+      await dao.words.chop(word.id);
+      toastTop(`已斩「${word.en}」`);
+      await removeFromPaper(word.id);
+    })();
+  };
+
+  btnNext.addEventListener('click', () => {
+    void (async () => {
+      await revealNext();
+      sinceExam += 1;
+      const every = currentSettings().exam.everyWords;
+      if (sinceExam >= Math.max(1, every)) await startExamRound();
+    })();
+  });
+  // 用户「二、触发机制」第 2 条：点「再次记忆」主动触发一轮考核
+  btnAgain.addEventListener('click', () => void startExamRound());
 
   // ── 背完了：命名 → 清空临时优先级表 → 永久存档 ──
   btnDone.addEventListener('click', () => {
@@ -269,6 +444,8 @@ export function renderLearnPaperPage(): HTMLElement {
 
   registerCleanup(page, () => {
     destroyed = true;
+    // ★ 0.0.21：页面被换掉时，如果正卡在考核里，先把考核界面拆掉（否则它会一直盖在屏幕上）
+    examHandle?.abort();
     stage.destroy();
   });
   void destroyed;

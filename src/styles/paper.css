@@ -578,3 +578,140 @@
   font-size: 12px;
   margin-top: 8px;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   版本 0.0.21：考核（记忆过程）
+   用户要求：「进入考核后，页面变为纯白，中央显示英文单词，下方有输入框」。
+   题干与拼写环节的类名/尺寸**照旧版页面**（已归档/02 的 paper.css 里
+   `.memorize-box` / `.memorize-word` / `.mem-inputs` / `.mem-input` / `.spell-meanings`），
+   所以字号、间距、输入框宽度与旧版一致；新增的只有外面这层纯白整页。
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* 纯白整页：盖住白纸（白纸按钮组 z-index 30 / 统计 29），但要低于答案卡（60） */
+.exam-page {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  background: #fff;
+  overflow: auto;
+}
+
+.exam-inner {
+  width: 100%;
+  max-width: 640px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* 进度（第几个 / 共几个）：沿用旧版灰色小字，钉在整页左上角 */
+.exam-progress {
+  position: absolute;
+  top: 18px;
+  left: 20px;
+  font-size: 12px;
+  color: var(--fg-dim);
+  user-select: none;
+}
+
+.exam-stage-box {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+/* —— 以下是旧版题干样式（原样照搬，尺寸不改） —— */
+.memorize-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 100%;
+}
+
+.memorize-word {
+  font-size: 36px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  max-width: 92vw;
+  overflow-wrap: anywhere;
+}
+
+.mem-inputs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin: 10px 0;
+}
+
+.mem-input {
+  width: 170px;
+}
+
+.mem-submit {
+  min-width: 110px;
+}
+
+.spell-meanings {
+  font-size: 20px;
+  max-width: 560px;
+  margin-bottom: 10px;
+  text-align: center;
+  line-height: 1.6;
+}
+
+.spell-input {
+  width: 220px;
+}
+
+.row.center {
+  justify-content: center;
+}
+
+/* 小喇叭（单词下方 / 拼写题下方）：按钮要够小，别抢题干的视觉 */
+.exam-speak-row {
+  margin: 6px 0 2px;
+}
+
+.exam-speak {
+  min-width: 44px;
+  height: 34px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+/* 评判中… */
+.exam-status {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--fg-dim);
+}
+
+/* 答案卡里的得分与点评 */
+.exam-score-line {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--fg-dim);
+}
+
+@media (max-width: 767px) {
+  .memorize-word {
+    font-size: 28px;
+  }
+
+  .mem-input {
+    width: 140px;
+  }
+
+  .spell-input {
+    width: 160px;
+  }
+
+  .exam-progress {
+    margin-bottom: 10px;
+  }
+}

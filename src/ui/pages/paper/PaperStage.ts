@@ -44,6 +44,11 @@ export interface PaperStageHandle {
    * 现在卡片保存后调这里，按当前 `word.senses` 重新算文本。
    */
   refreshWord(word: Word): void;
+  /**
+   * ★ 0.0.21：把一个词从纸上**移除**（用户：标记「仅拼写」或「斩」的单词立即从纸上消失）。
+   * 与 `refreshWord` 不同，这里连落点容器一起删掉。
+   */
+  removeWord(wordId: string): void;
   /** 纸面上已放几个词 */
   count(): number;
   destroy(): void;
@@ -346,6 +351,20 @@ export function createPaperStage(opts: PaperStageOptions): PaperStageHandle {
 
     count() {
       return zones.size;
+    },
+
+    /**
+     * ★ 0.0.21：把一个词从纸上移除（标记「仅拼写」或「斩」时立即消失）。
+     * @param wordId 词 id
+     */
+    removeWord(wordId) {
+      const zone = zones.get(wordId);
+      if (zone) zone.remove();
+      zones.delete(wordId);
+      const meaning = meaningEls.get(wordId);
+      if (lastAutoMeaning !== null && meaning !== undefined && lastAutoMeaning === meaning) lastAutoMeaning = null;
+      meaningEls.delete(wordId);
+      wordMap.delete(wordId);
     },
 
     destroy() {

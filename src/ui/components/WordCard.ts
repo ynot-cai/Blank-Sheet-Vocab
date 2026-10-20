@@ -51,10 +51,14 @@ export interface WordCardOptions {
    */
   allowViewSenses?: boolean;
   /**
-   * @deprecated 0.0.20 起「拼写」按用户要求只做空壳，这个回调不再被调用。
-   * 保留字段只为不破坏老调用方。
+   * @deprecated 0.0.21 起「拼写」改成**真的标记**（见 onSpell）。这里保留字段只为兼容老调用方。
    */
   onSpell?: (needSpell: boolean) => void;
+  /**
+   * ★ 版本 0.0.21（用户「三、选取逻辑」第 3 条）：「仅拼写」按钮 = 把词标记成**只做拼写考察**，
+   * 标记后它立即从白纸上消失（消失动作由调用方做）。
+   */
+  onSpellOnly?: (spellOnly: boolean) => void;
 }
 
 /**
@@ -463,8 +467,50 @@ export function renderWordCard(word: Word, opts: WordCardOptions = {}): HTMLElem
         ),
       );
     }
-    foot.appendChild(button('拼写', () => toastWarn('「拼写」本轮是空壳，尚未实现'), { variant: 'ghost', class: 'word-btn-spell' }));
-    foot.appendChild(button('仅拼写', () => toastWarn('「仅拼写」本轮是空壳，尚未实现'), { variant: 'ghost', class: 'word-btn-spellonly' }));
+    /**
+     * 拼写 / 仅拼写（0.0.21：用户「三、选取逻辑」第 3 条把它们当成**标记**用）。
+     * - 「拼写」：标记后，这个词若被选中考核会**额外加一次拼写考察**；
+     * - 「仅拼写」：标记后这个词只做拼写考察，并**立即从白纸上消失**（消失由调用方做）。
+     * 调用方没接回调时保持原来的空壳行为（点一下只给提示）。
+     */
+    const spelled = current.attrs.needSpell === true;
+    foot.appendChild(
+      button(
+        spelled ? '拼写 ✓' : '拼写',
+        () => {
+          if (!opts.onSpell) {
+            toastWarn('「拼写」需要从白纸/单词列表打开才可用');
+            return;
+          }
+          const next = { ...current, attrs: { ...current.attrs, needSpell: !spelled } };
+          current = next;
+          draw();
+          opts.onSpell(next.attrs.needSpell);
+        },
+        { variant: spelled ? 'primary' : 'ghost', class: 'word-btn-spell', title: '标记后：这个词若被抽到考核，会额外考一次拼写' },
+      ),
+    );
+    const spellOnly = current.spellOnly === true;
+    foot.appendChild(
+      button(
+        spellOnly ? '仅拼写 ✓' : '仅拼写',
+        () => {
+          if (!opts.onSpellOnly) {
+            toastWarn('「仅拼写」需要从白纸/单词列表打开才可用');
+            return;
+          }
+          const next = { ...current, spellOnly: !spellOnly };
+          current = next;
+          draw();
+          opts.onSpellOnly(next.spellOnly === true);
+        },
+        {
+          variant: spellOnly ? 'primary' : 'ghost',
+          class: 'word-btn-spellonly',
+          title: '标记后：这个词只拼写、不考中文，并立即从纸上消失',
+        },
+      ),
+    );
     if (opts.onChop) foot.appendChild(button('斩', () => opts.onChop?.(), { variant: 'danger', class: 'word-btn-chop' }));
     return foot;
   }

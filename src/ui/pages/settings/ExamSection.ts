@@ -1,27 +1,26 @@
 /**
- * 设置页「背诵设置」分组（版本 0.0.19）。
+ * 设置页「背诵设置」分组（版本 0.0.21）。
  *
- * RULES-R1: 本文件**只存设置值**，不参与任何答题判定，更没有时间限制 / 倒计时
- *   （考核功能本身尚未实现，见下面三项的说明）。
+ * RULES-R1: 本文件**只存设置值**，不参与任何答题判定，更没有时间限制 / 倒计时。
  *
- * ★ 用户提示词 10 第 2 条，原文要求的三项：
- *   - **每出现几个单词进行一次考核**：当前考核功能尚未实现，
- *     暂时定义一个占位变量（不产生实际作用）；
- *   - **每次考核数**：设置每次考核涉及的单词数量；
- *   - **考核严格程度**：提供「低、中、高」三档选项；当前仅需设置选项，具体含义后续再定义。
- *
- * ⚠️ 这三项目前**只存值**：任何地方都不许读它们来做判断或影响背诵流程
- *    （用户明确说考核功能尚未实现）。将来实现考核时才来接这一组设置。
+ * ★ 0.0.19（用户提示词 10）要求的三项，0.0.21 起**真的生效了**（考核已实现）：
+ *   - **每出现几个单词进行一次考核**：点几次「下一个」后自动开始一轮考核；
+ *   - **每次考核数**：每轮考核固定选取的单词数量（总数不足则全选）；
+ *   - **考核严格程度**：仍是「低 / 中 / 高」三档选项，具体含义后续再定义（代码不读它）。
+ * ★ 0.0.21 新增第四项 **分数阈值**：用户「三、选取逻辑」第 4 条
+ *   「若某单词考核分数低于固定值（可调）且未被抽到，则无视设定的记忆次数，额外加入考核」。
  */
 import { clampNum } from '../../../core/config';
 import type { ExamSettings, ExamStrictness } from '../../../core/types';
 import { h, numberInput, select } from '../../dom';
 import { currentSettings, patchSettings } from './ctx';
 
-/** 「每出现几个单词进行一次考核」的可调区间（占位变量的合法范围） */
+/** 「每出现几个单词进行一次考核」的可调区间 */
 const EVERY_RANGE = { min: 1, max: 999 };
 /** 「每次考核数」的可调区间 */
 const COUNT_RANGE = { min: 1, max: 999 };
+/** 「分数阈值」的可调区间（考核满分 5 分） */
+const THRESHOLD_RANGE = { min: 0, max: 5 };
 
 /** 「考核严格程度」的三档（用户原话：低、中、高） */
 const STRICTNESS_OPTIONS: { value: ExamStrictness; label: string }[] = [
@@ -56,7 +55,7 @@ export function renderExamSection(): HTMLElement {
         max: EVERY_RANGE.max,
         step: 1,
       }),
-      h('span', { class: 'field-hint', text: '考核功能尚未实现，这一项目前只存值、不产生实际作用。' }),
+      h('span', { class: 'field-hint', text: '点几次「下一个」之后自动开始一轮考核。' }),
     ),
   );
 
@@ -70,7 +69,7 @@ export function renderExamSection(): HTMLElement {
         max: COUNT_RANGE.max,
         step: 1,
       }),
-      h('span', { class: 'field-hint', text: '每次考核涉及的单词数量。' }),
+      h('span', { class: 'field-hint', text: '每轮考核固定选取的单词数量；纸上单词不足时全部选中。' }),
     ),
   );
 
@@ -81,6 +80,21 @@ export function renderExamSection(): HTMLElement {
       h('span', { class: 'field-label', text: '考核严格程度' }),
       select(STRICTNESS_OPTIONS, exam.strictness, (v) => void patchExam({ strictness: v })),
       h('span', { class: 'field-hint', text: '当前只设置选项，具体含义后续再定义。' }),
+    ),
+  );
+
+  // ★ 0.0.21：分数阈值（用户「三、选取逻辑」第 4 条要求「可调」）
+  wrap.appendChild(
+    h(
+      'label',
+      { class: 'field' },
+      h('span', { class: 'field-label', text: '分数阈值' }),
+      numberInput(
+        exam.scoreThreshold,
+        (v) => void patchExam({ scoreThreshold: Math.round(clampNum(v, THRESHOLD_RANGE, exam.scoreThreshold)) }),
+        { min: THRESHOLD_RANGE.min, max: THRESHOLD_RANGE.max, step: 1 },
+      ),
+      h('span', { class: 'field-hint', text: '考核分数（满分 5）低于它的单词，即使没被抽到也会额外加入下一轮考核。' }),
     ),
   );
 

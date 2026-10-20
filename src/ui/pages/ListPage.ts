@@ -411,6 +411,21 @@ export function renderListPage(): HTMLElement {
               await load();
             })();
           },
+          // ★ 0.0.21：拼写 / 仅拼写 在这里也能标记（与白纸页同一套数据）
+          onSpell: (value) => {
+            void (async () => {
+              await dao.words.put({ ...word, attrs: { ...word.attrs, needSpell: value } });
+              toastOk(value ? `已标记「${word.en}」要拼写` : `已取消「${word.en}」的拼写标记`);
+              await load();
+            })();
+          },
+          onSpellOnly: (value) => {
+            void (async () => {
+              await dao.words.put({ ...word, spellOnly: value });
+              toastOk(value ? `已把「${word.en}」标记为仅拼写` : `已取消「${word.en}」的仅拼写标记`);
+              await load();
+            })();
+          },
           // 卡上的「斩」与表格行内「斩」同一套行为（无确认 + 8 秒撤销）
           onChop: () => handlers.onChop(word),
         }),
