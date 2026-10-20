@@ -67,12 +67,15 @@ export function renderLearnPaperPage(): HTMLElement {
   function showWordCard(word: Word): void {
     if (document.querySelector('.answer-card')) return; // 同一时间只开一张
     const card = h('div', { class: 'answer-card' });
-    const x = h('button', { class: 'paper-card-close', type: 'button', text: '×', title: '关闭' });
-    x.addEventListener('click', () => card.remove());
-    card.appendChild(x);
+    /**
+     * ★ 0.0.21（用户要求）：卡片上的 X 不再是「浮在卡角上」的独立按钮，
+     *   而是由单词卡自己画在**与单词同一行**的最右端（见 WordCard 的 buildView）。
+     *   所以这里把关闭动作交给卡片的 onClose，不再额外塞一颗 `paper-card-close`。
+     */
     card.appendChild(
       renderWordCard(word, {
         editable: true,
+        onClose: () => card.remove(),
         onChange: (next) => {
           void (async () => {
             await dao.words.put(next);

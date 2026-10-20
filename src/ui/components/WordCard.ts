@@ -70,6 +70,19 @@ function speakWord(word: Word): void {
 }
 
 /**
+ * 生成一个新义项的 id（新增中文意思用）。
+ * 优先用 `crypto.randomUUID()`；旧环境退回时间戳 + 随机串。
+ */
+function newSenseId(): string {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return `sense-${crypto.randomUUID()}`;
+  } catch {
+    /* 继续走兜底 */
+  }
+  return `sense-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
  * 渲染单词卡。
  * @param word 单词
  * @param opts 编辑开关与回调
@@ -140,11 +153,14 @@ export function renderWordCard(word: Word, opts: WordCardOptions = {}): HTMLElem
   function buildView(): HTMLElement {
     const frag = h('div', { class: 'word-card-body' });
 
-    // —— 第 1 行：英文（大黑粗）＋中文（仅义项代表） ——
+    // —— 第 1 行：英文（大黑粗，最左端）＋中文（仅义项代表）＋（右上角）X ——
     const head = h('div', { class: 'word-head' });
-    head.appendChild(h('span', { class: 'word-en', text: current.en }));
-    head.appendChild(h('span', { class: 'word-brief', text: formatSensesBrief(current.senses) }));
-    if (opts.showAttrs) head.appendChild(buildAttrs());
+    const headMain = h('div', { class: 'word-head-main' });
+    headMain.appendChild(h('span', { class: 'word-en', text: current.en }));
+    headMain.appendChild(h('span', { class: 'word-brief', text: formatSensesBrief(current.senses) }));
+    if (opts.showAttrs) headMain.appendChild(buildAttrs());
+    head.appendChild(headMain);
+    // ★ 0.0.21：X 与单词**同一行**、贴卡片右上角（用户在 0.0.20 反馈：原来那颗 X 浮在单词上面一行）
     if (opts.onClose) head.appendChild(buildClose());
     frag.appendChild(head);
 
@@ -183,13 +199,15 @@ export function renderWordCard(word: Word, opts: WordCardOptions = {}): HTMLElem
   function buildEdit(): HTMLElement {
     const frag = h('div', { class: 'word-card-body editing' });
 
-    // —— 第 1 行：英文变文本框 + 中文部分变成「义项代表，近义词（更灰）…」——
+    // —— 第 1 行：英文变文本框（最左端）＋（右上角）X ——
     const head = h('div', { class: 'word-head word-head-edit' });
+    const headMain = h('div', { class: 'word-head-main' });
     const enInput = textInput(draft.en, (v) => {
       draft = { ...draft, en: v };
     }, { class: 'word-en-input', placeholder: '英文' });
-    head.appendChild(enInput);
-    if (opts.showAttrs) head.appendChild(buildAttrs());
+    headMain.appendChild(enInput);
+    if (opts.showAttrs) headMain.appendChild(buildAttrs());
+    head.appendChild(headMain);
     if (opts.onClose) head.appendChild(buildClose());
     frag.appendChild(head);
 
@@ -251,24 +269,33 @@ export function renderWordCard(word: Word, opts: WordCardOptions = {}): HTMLElem
 
   /**
    * 编辑态的「中文部分」：每个义项一行，行内是
-   * `词性，义项代表，近义词1，近义词2`（近义词更灰）。
+   * `⠿ 词性，义项代表，近义词1，近义词2`（近义词更灰）。
    *
    * 交互（用户口径）：左键改文字；**右键只有「删除」**；**左键拖拽调整位置**（拖到哪就插到哪，
-   * 原位置被挤开）。
+   * 原位置被挤开）；**支持新增中文意思**。
+   *
+   * ★ 版本 0.0.21 的修正：0.0.20 用的是 HTML5 `draggable` + dragstart/dragover/drop，
+   *   实测（用户反馈「拖动未生效 / 触发条件过于苛刻」）原因有两条：
+   *   1. 义项文字是 `contenteditable`，浏览器优先把它当**选文字**，`dragstart` 常常不派发；
+   *   2. 我在文字的 dragstart 上加了 `stopPropagation()`，等于把唯一的触发路径也堵了。
+   *   现在改成**指针拖动**（pointerdown/move/up）：行的左侧有一个明确的拖动手柄 ⠿，
+   *   按住手柄（或行的空白处）就能拖；按在文字上仍然是选字/编辑，两者互不打架。
    */
   function buildSenseEditor(): HTMLElement {
     const box = h('div', { class: 'word-senses-edit' });
     if (draft.senses.length === 0) {
       box.appendChild(h('div', { class: 'field-hint', text: '（没有义项）' }));
-      return box;
     }
 
     draft.senses.forEach((sense, index) => {
       const row = h('div', {
         class: 'sense-edit-row',
-        draggable: 'true',
-        title: '左键拖动可调整顺序；右键删除这个义项',
+        title: '按住左侧 ⠿ 可拖动排序；在文字上右键删除这个义项',
       });
+
+      // ★ 拖动手柄：让「拖动」有一个不用猜的触发点（用户反馈原来的触发条件太苛刻）
+      const handle = h('span', { class: 'sense-drag-handle', text: '⠿', title: '按住拖动，调整义项顺序' });
+      row.appendChild(handle);
 
       row.appendChild(buildEditableSenseText(sense));
       sense.aliases.forEach((alias, aliasIndex) => {
@@ -278,32 +305,88 @@ export function renderWordCard(word: Word, opts: WordCardOptions = {}): HTMLElem
 
       row.addEventListener('contextmenu', (ev) => openSenseMenu(ev, index));
 
-      // —— 拖拽调序 ——
-      row.addEventListener('dragstart', (ev) => {
-        row.classList.add('dragging');
-        ev.dataTransfer?.setData('text/plain', String(index));
-        if (ev.dataTransfer) ev.dataTransfer.effectAllowed = 'move';
-      });
-      row.addEventListener('dragend', () => row.classList.remove('dragging'));
-      row.addEventListener('dragover', (ev) => {
-        ev.preventDefault();
-        row.classList.add('drop-target');
-        if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'move';
-      });
-      row.addEventListener('dragleave', () => row.classList.remove('drop-target'));
-      row.addEventListener('drop', (ev) => {
-        ev.preventDefault();
-        row.classList.remove('drop-target');
-        const raw = ev.dataTransfer?.getData('text/plain') ?? '';
-        const from = Number(raw);
-        if (!Number.isInteger(from) || from === index) return;
-        moveSense(from, index);
-        draw();
+      /**
+       * 指针拖动：按在手柄或行的空白处开始；按在可编辑文字上不接管（那是编辑/选字）。
+       */
+      row.addEventListener('pointerdown', (ev) => {
+        if (ev.button !== 0) return;
+        const target = ev.target;
+        if (target instanceof Element && target.closest('[contenteditable]') !== null) return;
+        beginPointerDrag(ev, index);
       });
 
       box.appendChild(row);
     });
+
+    // ★ 新增中文意思（用户 0.0.21 要求）
+    const addBtn = button(
+      '＋ 新增中文意思',
+      () => {
+        draft = {
+          ...draft,
+          senses: [...draft.senses, { id: newSenseId(), text: '', aliases: [], example: '暂无', enabled: true }],
+        };
+        draw();
+        // 直接聚焦到新加那一行的文字上，省得再点一下
+        window.requestAnimationFrame(() => {
+          const rows = inner.querySelectorAll('.sense-edit-row');
+          const last = rows[rows.length - 1]?.querySelector<HTMLElement>('.sense-edit-text');
+          last?.focus();
+        });
+      },
+      { variant: 'ghost', class: 'sense-add-btn' },
+    );
+    box.appendChild(addBtn);
     return box;
+  }
+
+  /**
+   * 指针拖动调序（0.0.21）。
+   *
+   * 为什么不用 HTML5 DnD：见 {@link buildSenseEditor} 的说明——`contenteditable` 会让
+   * `dragstart` 基本不派发，用户体感就是「拖不动」。指针事件没有这个问题，
+   * 而且「按住手柄 → 拖到目标行 → 松手」的路径在任何鼠标/触屏上一致。
+   *
+   * @param ev 触发拖动的 pointerdown
+   * @param from 被拖的是第几个义项
+   */
+  function beginPointerDrag(ev: PointerEvent, from: number): void {
+    ev.preventDefault();
+    const rowsOf = (): HTMLElement[] => Array.from(inner.querySelectorAll<HTMLElement>('.sense-edit-row'));
+    const source = rowsOf()[from];
+    source?.classList.add('dragging');
+    let target = from;
+
+    const paintTarget = (): void => {
+      for (const r of rowsOf()) r.classList.remove('drop-target');
+      const el = rowsOf()[target];
+      if (el && target !== from) el.classList.add('drop-target');
+    };
+
+    const onMove = (e: PointerEvent): void => {
+      const hit = document.elementFromPoint(e.clientX, e.clientY);
+      const rowEl = hit instanceof Element ? hit.closest<HTMLElement>('.sense-edit-row') : null;
+      if (rowEl === null) return;
+      const idx = rowsOf().indexOf(rowEl);
+      if (idx < 0 || idx === target) return;
+      target = idx;
+      paintTarget();
+    };
+
+    const onUp = (): void => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      for (const r of rowsOf()) r.classList.remove('dragging', 'drop-target');
+      if (target === from) return;
+      moveSense(from, target);
+      draw();
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    paintTarget();
   }
 
   /** 一个「义项文本」的可编辑片段 */
@@ -312,8 +395,6 @@ export function renderWordCard(word: Word, opts: WordCardOptions = {}): HTMLElem
     el.addEventListener('input', () => {
       sense.text = el.textContent ?? '';
     });
-    // 拖拽与文字选择不冲突：在文本上按下时不启动拖动由浏览器自己决定，这里只挡「点一下就拖」
-    el.addEventListener('dragstart', (ev) => ev.stopPropagation());
     return el;
   }
 
@@ -324,7 +405,6 @@ export function renderWordCard(word: Word, opts: WordCardOptions = {}): HTMLElem
       // 就地改别名（空串在保存时统一丢掉）
       sense.aliases[aliasIndex] = el.textContent ?? '';
     });
-    el.addEventListener('dragstart', (ev) => ev.stopPropagation());
     return el;
   }
 
@@ -402,11 +482,14 @@ export function renderWordCard(word: Word, opts: WordCardOptions = {}): HTMLElem
 
   /** 保存：把草稿提交给调用方并回到视图态 */
   function saveEdit(): void {
-    // 清掉空别名，避免保存出「一个空近义词」这种没法判分的数据
-    const senses = draft.senses.map((s) => ({
-      ...s,
-      aliases: s.aliases.map((a) => a.trim()).filter((a) => a !== ''),
-    }));
+    const senses = draft.senses
+      .map((s) => ({
+        ...s,
+        // 清掉空别名，避免保存出「一个空近义词」这种没法判分的数据
+        aliases: s.aliases.map((a) => a.trim()).filter((a) => a !== ''),
+      }))
+      // 新增了但一个字都没填的义项不落库（否则纸上会出现空中文）
+      .filter((s) => s.text.trim() !== '');
     current = { ...draft, senses };
     draft = current;
     editing = false;

@@ -731,9 +731,21 @@ body {
 
 .word-head {
   display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  /* ★ 0.0.21：这一行现在是「英文/中文（可换行）+ 右上角 X」，
+     X 必须始终留在第一行最右端，所以换行交给里面的 .word-head-main */
+  flex-wrap: nowrap;
+}
+
+/* 单词与中文意思（可换行）+ 属性小结 */
+.word-head-main {
+  display: flex;
   align-items: baseline;
   gap: 8px;
   flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
 }
 
 .word-en {
@@ -2971,6 +2983,14 @@ body {
   border: 1px dashed transparent;
   border-radius: 8px;
   cursor: grab;
+  /* ⠿ 手柄在行首，与文字拉开一点距离 */
+  column-gap: 2px;
+}
+
+/* 文字区域仍然是「选字 / 编辑」的光标，不会让人误以为要拖动 */
+.sense-edit-row .sense-edit-text,
+.sense-edit-row .sense-edit-alias {
+  cursor: text;
 }
 
 .sense-edit-row:hover {
@@ -3061,9 +3081,36 @@ body {
   min-width: 180px;
 }
 
-/* 卡片自带的右上角 X（调用方传 onClose 时才有；弹窗与白纸页用的是外部的 X） */
+/* 卡片自带的右上角 X（0.0.21：与单词同一行、贴最右端；调用方传 onClose 才渲染） */
 .word-card-close {
   position: static;
+  flex: none;
   margin-left: auto;
   align-self: flex-start;
+  line-height: 1;
+}
+
+/* 义项的拖动手柄（0.0.21：拖动不再靠猜——按住这个 ⠿ 就能拖） */
+.sense-drag-handle {
+  flex: none;
+  width: 16px;
+  color: var(--fg-dim);
+  font-size: 14px;
+  line-height: 1.4;
+  text-align: center;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sense-drag-handle:active {
+  cursor: grabbing;
+}
+
+/* 新增中文意思 */
+.sense-add-btn {
+  align-self: flex-start;
+  margin-top: 4px;
+  font-size: 13px;
 }
