@@ -11,7 +11,8 @@
  * 用法：node --import ./api/_dev/loader-register.mjs api/_dev/test-exam.mjs
  */
 import { selectExamWords, examScoreOf, memorizeCountOf } from '../../src/core/examSelect.ts';
-import { buildScorePrompt, localScore, parseScoreResponse, EXAM_MAX_SCORE } from '../../src/services/aiScore.ts';
+import { buildScorePrompt, buildScoreSystemPrompt, localScore, parseScoreResponse, EXAM_MAX_SCORE } from '../../src/services/aiScore.ts';
+import { DEFAULT_SCORE_RUBRIC } from '../../src/core/config.ts';
 
 let passed = 0;
 let failed = 0;
@@ -154,6 +155,14 @@ console.log('\n[4] 评分：解析 AI 返回（不可信输入的边界）');
   const prompt = buildScorePrompt(word('a', 'abandon'), ['放弃', '']);
   check('评分提示里带上了单词与义项', prompt.includes('abandon') && prompt.includes('义项代表'), prompt.slice(0, 60));
   check('评分提示里带上用户答案（空格标成「空着没填」）', prompt.includes('放弃') && prompt.includes('空着没填'), prompt.slice(-80));
+
+  // ★ 0.0.23：评分标准改成设置项，可编辑并原样进提示词
+  const custom = buildScoreSystemPrompt('【我的标准】\n只答对一个义项也给 5 分。');
+  check('★ 自定义「考核评分标准」被原样拼进 system prompt', custom.includes('【我的标准】') && custom.includes('只答对一个义项也给 5 分。'), custom.slice(-80));
+  check('system prompt 仍带有 JSON 输出骨架（用户标准不能覆盖格式）', custom.includes('"score"') && custom.includes('"inputs"'), custom.slice(0, 60));
+  const fallback = buildScoreSystemPrompt('   ');
+  check('★ 评分标准留空时回落到内置默认标准', fallback.includes(DEFAULT_SCORE_RUBRIC.slice(0, 12)), fallback.slice(-80));
+  check('默认标准是一份完整的 5 分制标准（含分档）', DEFAULT_SCORE_RUBRIC.includes('5 分') && DEFAULT_SCORE_RUBRIC.includes('0 分'), DEFAULT_SCORE_RUBRIC.slice(0, 40));
 }
 
 // ─────────────────────────── [5] 本地兜底判分

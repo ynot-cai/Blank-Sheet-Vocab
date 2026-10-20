@@ -238,6 +238,7 @@ export function renderLearnPaperPage(): HTMLElement {
       aiCfg: aiConfigFromSettings(settings),
       hintFails: settings.practice.hintFails,
       autoSpeak: settings.practice.autoSpeak,
+      scoreRubric: settings.exam.scoreRubric,
       speak: (word) => speakWord(word),
       isAborted: () => destroyed,
       onChangeWord: (next) => {

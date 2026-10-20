@@ -50,6 +50,11 @@ export interface ExamOptions {
   /** 「提示后算不算未通过」（旧版 practice.hintFails 口径，拼写环节用） */
   hintFails: boolean;
   /**
+   * ★ 0.0.23（用户要求）：设置页「背诵设置 → 考核评分标准」的文本，
+   * 原样作为提示词交给 AI（见 `services/aiScore.ts` 的 `buildScoreSystemPrompt`）。
+   */
+  scoreRubric: string;
+  /**
    * 旧版行为：进入记忆（英译中）环节时，如果 `practice.autoSpeak` 为真就**自动朗读一遍**这个词
    * （已归档/02 的 rounds.ts：`if (host.settings.practice.autoSpeak) host.stage.speakWord(word)`）。
    * 用户本轮没说这件事，按「未提到的细节与旧版一致」保留。
@@ -117,6 +122,24 @@ export function startExam(opts: ExamOptions): ExamHandle {
   root.appendChild(inner);
   document.body.appendChild(root);
 
+  /**
+   * ★ 0.0.23：把背景锁住。
+   *
+   * 用户明确反馈过「考核界面被做成拼接在下方、可以滚轮翻到的额外页面」这类问题——
+   * 本版是 `position: fixed` 的独立层，但白纸页 + 底部白条仍然可能让**文档**可滚动，
+   * 用户滚一下就会觉得「下面还有一页」。所以考核期间把 html/body 的纵向滚动关掉，
+   * 结束后原样恢复（只恢复本次改过的属性，不碰别的内联样式）。
+   */
+  const prevHtmlOverflowY = document.documentElement.style.overflowY;
+  const prevBodyOverflowY = document.body.style.overflowY;
+  document.documentElement.style.overflowY = 'hidden';
+  document.body.style.overflowY = 'hidden';
+  /** 还原背景滚动（考核结束/中断时各调一次，重复调用无害） */
+  const restoreScroll = (): void => {
+    document.documentElement.style.overflowY = prevHtmlOverflowY;
+    document.body.style.overflowY = prevBodyOverflowY;
+  };
+
   /** 等一次用户提交（无任何时间限制 —— RULES-R1） */
   const waitSubmit = (bind: (done: () => void) => void): Promise<void> =>
     new Promise<void>((resolve) => {
@@ -145,6 +168,7 @@ export function startExam(opts: ExamOptions): ExamHandle {
     aborted = true;
     release?.();
     releaseCard?.();
+    restoreScroll();
     root.remove();
   };
   exitBtn.addEventListener('click', abortSelf);
@@ -270,7 +294,7 @@ export function startExam(opts: ExamOptions): ExamHandle {
     const answers = inputs.map((input) => input.value.trim());
     status.classList.remove('hidden');
     status.textContent = '评判中…';
-    const scored = await scoreChineseAnswers(opts.aiCfg, word, answers);
+    const scored = await scoreChineseAnswers(opts.aiCfg, word, answers, opts.scoreRubric);
     status.classList.add('hidden');
 
     const feedback: AnswerComparison[] = answers.map((value, i) => ({ input: value, ok: scored.inputs[i] === true }));
@@ -372,6 +396,7 @@ export function startExam(opts: ExamOptions): ExamHandle {
       return [] as ExamWordOutcome[];
     })
     .finally(() => {
+      restoreScroll();
       root.remove();
     });
 

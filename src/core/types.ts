@@ -358,34 +358,35 @@ export interface SpeechSettings {
 }
 
 /**
- * ★ 版本 0.0.19（提示词 10）：考核严格程度的三档。
- *
- * 用户原话：「考核严格程度：提供『低、中、高』三档选项；当前仅需设置选项，
- * 具体含义后续再定义。」——所以这里只有取值，**不许**在代码里给它编任何行为。
- */
-export type ExamStrictness = 'low' | 'medium' | 'high';
-
-/**
  * ★ 版本 0.0.19（提示词 10）：设置页主分类「背诵设置」的字段。
  *
  * ★ 版本 0.0.21：考核（记忆过程）已经实现，所以前两项**真的生效了**：
  *   - `everyWords`：点几次「下一个」后自动开始一轮考核；
  *   - `countPerExam`：每次考核固定选取几个词；
  *   - 新增 `scoreThreshold`：分数低于它的词，即使没被抽到也要强制加考（用户「三、选取逻辑」第 4 条）。
- *   - `strictness` 仍然只是选项（用户：具体含义后续再定义）。
+ *
+ * ★ 版本 0.0.23（用户要求）：**移除「考核难易程度（低/中/高）」**（原来的 `strictness`），
+ *   改成「考核评分标准」`scoreRubric` —— 一段可直接编辑的文本，原样作为提示词交给 AI 评分。
  */
 export interface ExamSettings {
   /** 每出现几个单词（= 点几次「下一个」）进行一次考核 */
   everyWords: number;
   /** 每次考核固定选取的单词数量（总数不足时全选） */
   countPerExam: number;
-  /** 考核严格程度：低 / 中 / 高（当前仅设置选项，含义后续再定义） */
-  strictness: ExamStrictness;
   /**
    * ★ 0.0.21：分数阈值（0~5，可调）。
    * 某词最近一次考核分数**低于**它、又没被抽到时，无视记忆次数强制加进本轮考核。
    */
   scoreThreshold: number;
+  /**
+   * ★ 0.0.23（用户：「改为『考核评分标准』设置项，该设置项应支持直接编辑并作为提示词提供给 AI，
+   *   初始内容由你生成一份」）。
+   *
+   * 这段文字会**原样拼进**英译中评分的 system prompt（见 `services/aiScore.ts` 的
+   * `buildScoreSystemPrompt`），所以用户改写它就能改变 AI 的打分口径。
+   * 空串时回落到 `core/config.ts` 的 `DEFAULT_SCORE_RUBRIC`（否则 AI 收不到评分标准）。
+   */
+  scoreRubric: string;
 }
 
 /** 备份设置 */

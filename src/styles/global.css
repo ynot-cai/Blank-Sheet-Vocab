@@ -2901,6 +2901,34 @@ body {
   color: var(--fg-dim);
 }
 
+/* ── 0.0.23：设置页「背诵设置 → 考核评分标准」的多行编辑框 ── */
+.exam-rubric-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.exam-rubric {
+  width: 100%;
+  min-height: 180px;
+  padding: 8px 10px;
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--fg);
+  background: var(--paper-bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  resize: vertical;
+}
+
+.exam-rubric:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    版本 0.0.20（用户本轮要求）：单词列表「卡片 / 单词」双视图 + 收藏 + 单词卡新排版
    —— 全部沿用已有 token（--line / --paper-bg / --radius / --accent / --warn），不引入新配色。

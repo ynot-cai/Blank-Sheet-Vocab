@@ -15,6 +15,7 @@
  *   这条兜底会写进点评（`comment` 以「本地判分」开头），用户在答案卡上看得见。
  */
 import { activeSenses, senseMatch } from '../core/model';
+import { DEFAULT_SCORE_RUBRIC } from '../core/config';
 import type { Word } from '../core/types';
 import { chatComplete, type AiConfig } from './ai';
 
@@ -34,26 +35,43 @@ export interface ChineseScore {
 export const EXAM_MAX_SCORE = 5;
 
 /**
- * 评分用的 system prompt。
+ * 评分 prompt 的**固定骨架**（输出格式等，不许被用户的标准覆盖）。
  *
- * 把「怎么算对」写死：意思相近即对（近义词、同义表述、带不带词性前缀都算），
- * 但**漏答、答错、答成别的义项**要扣分；不许因错别字/标点/大小写扣分。
+ * ★ 版本 0.0.23（用户要求）：评分标准改成设置项「考核评分标准」，可编辑、原样交给 AI。
+ *   所以这里只保留「必须遵守」的骨架（角色、输出 JSON 格式、逐格判定的个数要求），
+ *   具体怎么给分/怎么扣分全部来自用户的 `scoreRubric`（见 `buildScoreSystemPrompt`）。
  */
-export const SCORE_SYSTEM_PROMPT = `你是「白纸单词」的英译中阅卷助手。用户在看英文单词、按义项顺序填写中文意思，你要按准确与全面程度打分。
+const SCORE_PROMPT_HEAD = `你是「白纸单词」的英译中阅卷助手。用户在看英文单词、按义项顺序填写中文意思，你要按下面的评分标准打分。
 
-输出严格 JSON：
+输出严格 JSON（只输出 JSON，不要 markdown 代码块、不要解释）：
 {"score":4,"inputs":[true,false],"comment":"一句话点评"}
 
-评分规则：
-1. score 是 0~5 的整数（共 5 分）：
-   - 全部义项意思都对且完整 → 5 分；
-   - 每漏一个义项或答错一个义项都要扣分，按义项个数平均扣；
-   - 同一个义项里答出的近义词、同义说法都算对（不要求和给出的代表义项字面完全一致）。
-2. inputs 与用户提交的答案**一一对应**（个数必须相同），每一项 true/false 表示该格是否算对。
-   一格答案命中该词记录的任意一个义项（含近义词）就算 true。
-3. 不因错别字、标点、多余空格、是否带词性前缀（n./v./adj.）扣分。
-4. comment 用中文一句话，指出漏了或错了哪些义项；全对时写「全部义项都答对了」。
-5. 只输出 JSON，不要 markdown 代码块，不要解释。`;
+硬性要求（优先于评分标准）：
+1. score 必须是 0~5 的整数。
+2. inputs 与用户提交的答案**一一对应**（个数必须相同），每一项 true / false 表示该格是否算对。
+3. comment 用中文一句话，指出漏了或错了哪些义项。`;
+
+/**
+ * 拼出评分用的 system prompt。
+ *
+ * 用户的「考核评分标准」会被原样放进来（`scoreRubric`）；空串时回落到默认标准，
+ * 免得 AI 收到一份没有评分依据的提示词。
+ * @param rubric 用户在设置页里写的评分标准（可空）
+ */
+export function buildScoreSystemPrompt(rubric: string): string {
+  const text = rubric.trim() === '' ? DEFAULT_SCORE_RUBRIC : rubric.trim();
+  return `${SCORE_PROMPT_HEAD}
+
+──────── 用户设置的评分标准（以此为准）────────
+${text}`;
+}
+
+/**
+ * 默认评分标准下拼出的 system prompt（兼容旧调用点与测试）。
+ *
+ * @deprecated 0.0.23 起评分标准是可编辑的设置项，请用 `buildScoreSystemPrompt(settings.exam.scoreRubric)`。
+ */
+export const SCORE_SYSTEM_PROMPT = buildScoreSystemPrompt('');
 
 /**
  * 把一次提交拼成给模型的用户消息。
@@ -152,14 +170,20 @@ export function localScore(word: Word, answers: string[]): ChineseScore {
  * @param cfg AI 接口配置
  * @param word 词
  * @param answers 用户按义项顺序填的答案
+ * @param rubric 用户在设置页写的「考核评分标准」（空串用默认标准）
  */
-export async function scoreChineseAnswers(cfg: AiConfig, word: Word, answers: string[]): Promise<ChineseScore> {
+export async function scoreChineseAnswers(
+  cfg: AiConfig,
+  word: Word,
+  answers: string[],
+  rubric: string,
+): Promise<ChineseScore> {
   const total = activeSenses(word).length;
   try {
     const content = await chatComplete(
       cfg,
       [
-        { role: 'system', content: SCORE_SYSTEM_PROMPT },
+        { role: 'system', content: buildScoreSystemPrompt(rubric) },
         { role: 'user', content: buildScorePrompt(word, answers) },
       ],
       { jsonMode: true },
