@@ -237,6 +237,7 @@ export function renderLearnPaperPage(): HTMLElement {
       scoreThreshold: settings.exam.scoreThreshold,
       aiCfg: aiConfigFromSettings(settings),
       hintFails: settings.practice.hintFails,
+      autoSpeak: settings.practice.autoSpeak,
       speak: (word) => speakWord(word),
       isAborted: () => destroyed,
       onChangeWord: (next) => {
@@ -269,7 +270,7 @@ export function renderLearnPaperPage(): HTMLElement {
     examHandle = handle;
     try {
       const outcomes = await handle.done;
-      await recordRound(outcomes);
+      await recordRound(outcomes, handle.isAborted());
     } finally {
       examRunning = false;
       examHandle = null;
@@ -282,8 +283,9 @@ export function renderLearnPaperPage(): HTMLElement {
    *   低于阈值或拼写错的记一次未通过（failCount / failCountTotal 各 +1，保持原有的失败率口径）；
    * - 这张纸的记忆次数：参与英译中的词各 +1（用户要求「记忆次数存入白纸存档」）。
    * @param outcomes 本轮每个词的结果
+   * @param interrupted 这一轮是否被「返回白纸」中断
    */
-  const recordRound = async (outcomes: ExamWordOutcome[]): Promise<void> => {
+  const recordRound = async (outcomes: ExamWordOutcome[], interrupted = false): Promise<void> => {
     if (!paper) return;
     const now = Date.now();
     for (const outcome of outcomes) {
@@ -308,7 +310,15 @@ export function renderLearnPaperPage(): HTMLElement {
     }
     paper.memorizeCount = memorizeCount;
     await dao.papers.put(paper);
-    toastOk(`本轮考核完成：${outcomes.length} 个词，分数与次数已记录`);
+    if (outcomes.length === 0) {
+      if (interrupted) toastWarn('已中断本轮考核（还没有考完的词）');
+      return;
+    }
+    toastOk(
+      interrupted
+        ? `已中断本轮考核：已考完的 ${outcomes.length} 个词已记录`
+        : `本轮考核完成：${outcomes.length} 个词，分数与次数已记录`,
+    );
   };
 
   /**

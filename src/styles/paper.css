@@ -684,6 +684,26 @@
   line-height: 1;
 }
 
+/* 退出考核：纯白整页没有别的出口，必须给一个显式的中断入口 */
+.exam-exit {
+  position: absolute;
+  top: 14px;
+  right: 18px;
+  padding: 4px 12px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--fg-dim);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.exam-exit:hover {
+  color: var(--fg);
+  background: #f2f4f8;
+}
+
 /* 评判中… */
 .exam-status {
   margin-top: 10px;

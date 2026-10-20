@@ -49,6 +49,12 @@ export interface ExamOptions {
   aiCfg: AiConfig;
   /** 「提示后算不算未通过」（旧版 practice.hintFails 口径，拼写环节用） */
   hintFails: boolean;
+  /**
+   * 旧版行为：进入记忆（英译中）环节时，如果 `practice.autoSpeak` 为真就**自动朗读一遍**这个词
+   * （已归档/02 的 rounds.ts：`if (host.settings.practice.autoSpeak) host.stage.speakWord(word)`）。
+   * 用户本轮没说这件事，按「未提到的细节与旧版一致」保留。
+   */
+  autoSpeak: boolean;
   /** 朗读一遍（小喇叭提示） */
   speak: (word: Word) => void;
   /** 答案卡里改了义项/音标/例句等 */
@@ -69,6 +75,8 @@ export interface ExamHandle {
   done: Promise<ExamWordOutcome[]>;
   /** 中断考核并拆掉界面 */
   abort: () => void;
+  /** 这一轮是不是被中断的（「返回白纸」/离开页面） */
+  isAborted: () => boolean;
 }
 
 /** 旧版的口径：点过提示 + 设置里「提示后算未通过」同时成立时，答对也算未通过 */
@@ -95,8 +103,17 @@ export function startExam(opts: ExamOptions): ExamHandle {
   const inner = h('div', { class: 'exam-inner' });
   const progressEl = h('div', { class: 'exam-progress', text: '' });
   const stageBox = h('div', { class: 'exam-stage-box' });
+  /**
+   * 退出考核。
+   *
+   * 旧版的考核遮罩挂在白纸上、白纸的按钮（保存并退出等）仍然能点，等于随时可以中断；
+   * 本版按用户要求改成**纯白整页**，所以必须自带一个显式的出口，
+   * 否则用户被一道题卡住时只能刷新页面（而刷新会丢掉整轮记录）。
+   */
+  const exitBtn = h('button', { class: 'exam-exit', type: 'button', text: '返回白纸', title: '中断本轮考核' });
   inner.appendChild(progressEl);
   inner.appendChild(stageBox);
+  root.appendChild(exitBtn);
   root.appendChild(inner);
   document.body.appendChild(root);
 
@@ -122,6 +139,15 @@ export function startExam(opts: ExamOptions): ExamHandle {
   const renderStage = (content: HTMLElement): void => {
     stageBox.replaceChildren(content);
   };
+
+  /** 真正的中断动作（按钮与外部 abort() 共用） */
+  const abortSelf = (): void => {
+    aborted = true;
+    release?.();
+    releaseCard?.();
+    root.remove();
+  };
+  exitBtn.addEventListener('click', abortSelf);
 
   /**
    * 弹答案卡：沿用旧版的「同一张可编辑单词卡 + 对错对照」，点卡片外部 / Enter / 空格继续。
@@ -216,6 +242,8 @@ export function startExam(opts: ExamOptions): ExamHandle {
     const status = h('div', { class: 'exam-status hidden' });
     box.appendChild(status);
     renderStage(box);
+    // 旧版行为：进入记忆环节自动朗读一遍（设置里 practice.autoSpeak 默认开）
+    if (opts.autoSpeak) opts.speak(word);
 
     // Enter：填完一格跳下一格，最后一格提交（旧版做法）
     inputs.forEach((input, i) => {
@@ -349,11 +377,7 @@ export function startExam(opts: ExamOptions): ExamHandle {
 
   return {
     done,
-    abort(): void {
-      aborted = true;
-      release?.();
-      releaseCard?.();
-      root.remove();
-    },
+    abort: abortSelf,
+    isAborted: () => aborted,
   };
 }
