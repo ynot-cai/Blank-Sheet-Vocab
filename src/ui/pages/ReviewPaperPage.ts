@@ -20,6 +20,7 @@
 import { PAPER_UI } from '../../core/config';
 import { computePriority } from '../../core/priority';
 import { buildReviewQueue, reviewCandidates, wordsOfPaper } from '../../core/reviewSelect';
+import { withSpellFlag } from '../../core/model';
 import type { Word } from '../../core/types';
 import * as dao from '../../dao';
 import { deviceKind } from '../device';
@@ -115,7 +116,7 @@ export function renderReviewPaperPage(): HTMLElement {
         },
         onSpell: (value) => {
           void (async () => {
-            await dao.words.put({ ...word, attrs: { ...word.attrs, needSpell: value } });
+            await dao.words.put(withSpellFlag(word, value));
           })();
         },
         onSpellOnly: (value) => {

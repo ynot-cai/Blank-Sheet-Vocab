@@ -1,5 +1,5 @@
 import { getSettings } from '../../core/config';
-import { adoptRawSource } from '../../core/model';
+import { adoptRawSource, withSpellFlag } from '../../core/model';
 import { computePriority } from '../../core/priority';
 import type { Attrs, Source, Word, WordQuery, WordStats, WordStatus } from '../../core/types';
 import * as dao from '../../dao';
@@ -471,7 +471,7 @@ export function renderListPage(): HTMLElement {
           // ★ 0.0.21：拼写 / 仅拼写 在这里也能标记（与白纸页同一套数据）
           onSpell: (value) => {
             void (async () => {
-              await dao.words.put({ ...word, attrs: { ...word.attrs, needSpell: value } });
+              await dao.words.put(withSpellFlag(word, value));
               toastOk(value ? `已标记「${word.en}」要拼写` : `已取消「${word.en}」的拼写标记`);
               await load();
             })();
@@ -509,7 +509,7 @@ export function renderListPage(): HTMLElement {
       })();
     },
     onNeedSpell: (word: Word, value: boolean): void => {
-      void dao.words.updateAttrs(word.id, { needSpell: value }).then(load);
+      void dao.words.setNeedSpell(word.id, value).then(load);
     },
     onStatus: (word: Word, status: WordStatus): void => {
       void dao.words.setStatus(word.id, status).then(load);

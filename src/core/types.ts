@@ -389,6 +389,55 @@ export interface ExamSettings {
   scoreRubric: string;
 }
 
+/**
+ * ★ 版本 0.0.25（用户「四、选词与复习调度」「六、数据要求」）：拼写强化。
+ *
+ * 用户要求「属性名与主背诵程序完全一致，复用现有数据模型；但计算公式是专属于本功能的加权公式，
+ * 与主程序的复习优先级公式不同。权重参数应做成可配置」。
+ * 所以这里只放**队列长度**与**权重**（权重全是数字，改设置页即可调参），
+ * 词本身的字段一个都不新增。
+ */
+export interface SpellWeights {
+  /** 未通过率（`attrs.failCount / attrs.failCountTotal`）的权重 */
+  failRate: number;
+  /** 距上次复习天数（`attrs.lastReviewAt`）的权重 */
+  days: number;
+  /** 本功能出现次数（`spellRecords.attempts`）的权重 */
+  attempts: number;
+  /** 上次得分越低越优先：(5 - lastScore) 的权重 */
+  lowScore: number;
+  /** 词级背诵优先级（`priority`）的权重 */
+  wordPriority: number;
+}
+
+/** 拼写强化的设置 */
+export interface SpellSettings {
+  /** 每次复习队列长度（词库不足时取实际数量） */
+  count: number;
+  /** 专属优先级公式的权重 */
+  weights: SpellWeights;
+}
+
+/**
+ * ★ 0.0.25：一个单词在「拼写强化」里的历史记录（存 `spellRecords` 表，**不动词表字段**）。
+ *
+ * 用户「六、数据要求」：需要持久化「每个单词在本功能中的历史得分、出现次数」。
+ */
+export interface SpellRecord {
+  /** 词 id */
+  id: string;
+  /** 在本功能里出现过几次（每提交一次 +1） */
+  attempts: number;
+  /** 最近一次得分（0~5） */
+  lastScore: number;
+  /** 历史最高分（0~5） */
+  bestScore: number;
+  /** 历史总分（用于算平均分） */
+  totalScore: number;
+  /** 最后一次出现的时间 */
+  lastAt: number;
+}
+
 /** 备份设置 */
 export interface BackupSettings {
   remindOnClose: boolean; // 关闭页面前提醒导出
@@ -485,6 +534,8 @@ export interface Settings {
   practice: PracticeSettings;
   /** ★ 0.0.19（提示词 10）：背诵设置 —— 考核频率 / 每次考核数 / 严格程度（当前只存不用） */
   exam: ExamSettings;
+  /** ★ 0.0.25：拼写强化 —— 每次复习词数 + 专属优先级的权重（用户：「权重参数应做成可配置」） */
+  spell: SpellSettings;
   /** ★ T4：朗读（TTS）—— 语音来源 / 语音挑选 / 语速 / 有道密钥 / 变体 */
   speech: SpeechSettings;
   backup: BackupSettings;

@@ -10,6 +10,7 @@
 import { PAPER_UI } from '../../core/config';
 import { selectExamWords } from '../../core/examSelect';
 import { nextWord, orderByPriority, type PriorityTable } from '../../core/learnSelect';
+import { withSpellFlag } from '../../core/model';
 import type { PaperArchive, Word } from '../../core/types';
 import * as dao from '../../dao';
 import { aiConfigFromSettings } from '../../services/ai';
@@ -100,7 +101,7 @@ export function renderLearnPaperPage(): HTMLElement {
         onChop: () => chopWord(word),
         onSpell: (value) => {
           void (async () => {
-            const next: Word = { ...word, attrs: { ...word.attrs, needSpell: value } };
+            const next: Word = withSpellFlag(word, value);
             await dao.words.put(next);
             const i = queue.findIndex((w) => w.id === next.id);
             if (i >= 0) queue[i] = next;
@@ -252,7 +253,7 @@ export function renderLearnPaperPage(): HTMLElement {
       onChop: (word) => chopWord(word),
       onSpell: (word, value) => {
         void (async () => {
-          const next: Word = { ...word, attrs: { ...word.attrs, needSpell: value } };
+          const next: Word = withSpellFlag(word, value);
           await dao.words.put(next);
           const i = queue.findIndex((w) => w.id === next.id);
           if (i >= 0) queue[i] = next;

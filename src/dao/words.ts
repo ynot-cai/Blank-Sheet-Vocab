@@ -87,7 +87,9 @@ export async function bulkUpsert(words: Word[]): Promise<{ inserted: number; upd
 export async function updateAttrs(id: string, patch: Partial<Attrs>): Promise<void> {
   const word = await getById(id);
   if (!word) return;
-  await put({ ...word, attrs: { ...word.attrs, ...patch } });
+  // ★ 0.0.25：标记「拼写易错」= 进入拼写强化流程，用户要求同时置为「已背」
+  const status = patch.needSpell === true && word.status !== 'chopped' ? 'learned' : word.status;
+  await put({ ...word, attrs: { ...word.attrs, ...patch }, status });
 }
 
 /**
@@ -160,6 +162,30 @@ export async function applySenseRewriteMany(
 }
 
 /**
+ * ★ 0.0.25（用户「拼写强化」「四、选词与复习调度」）：
+ * 标记 / 取消标记一个词进入「拼写强化」流程。
+ *
+ * 用户原文：「被用户标记为拼写易错的单词进入本流程，标记时自动将其状态置为『已背』，
+ * 重复标记不产生影响。」所以这里一次写完两件事：
+ * - `attrs.needSpell = value`（标记本身，就是本流程的「入场券」）；
+ * - 标记为 true 时把 `status` 置为 `learned`（已背），**不引入新的单词状态**；
+ *   取消标记只改 `needSpell`，不回退状态（用户没要求回退，回退反而会破坏主流程进度）。
+ * 重复标记：值没变化时直接返回，不写库（「重复标记不产生影响」）。
+ *
+ * @param id 单词 id
+ * @param value true = 标记进入流程，false = 取消标记
+ */
+export async function setNeedSpell(id: string, value: boolean): Promise<void> {
+  const word = await getById(id);
+  if (!word) return;
+  if (word.attrs.needSpell === value) return;
+  const attrs = { ...word.attrs, needSpell: value };
+  // 用户：标记时自动置为「已背」；已斩的词不改状态
+  const status = value && word.status !== 'chopped' ? 'learned' : word.status;
+  await put({ ...word, attrs, status });
+}
+
+/**
  * 斩掉某词（背诵/复习/记忆/推荐数字中均不再出现）。
  * @param id 单词 id
  */
@@ -225,7 +251,9 @@ export async function updateAttrsMany(ids: string[], patch: Partial<Attrs>): Pro
   await txRun(STORE.words, 'readwrite', (s) => {
     for (const w of all) {
       if (!target.has(w.id)) continue;
-      s.put({ ...w, deleted: 0, attrs: { ...w.attrs, ...patch }, updatedAt: now });
+      // ★ 0.0.25：批量标记「拼写易错」同样要置为「已背」（与单个标记同一口径）
+      const status = patch.needSpell === true && w.status !== 'chopped' ? 'learned' : w.status;
+      s.put({ ...w, deleted: 0, status, attrs: { ...w.attrs, ...patch }, updatedAt: now });
     }
   });
   emitDataChanged();

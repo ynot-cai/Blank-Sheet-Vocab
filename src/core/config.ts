@@ -1,4 +1,4 @@
-import type { DeepPartial, ExamSettings, LayoutColsOverride, LayoutSettings, LayoutTier, PriorityPreset, Settings, SpeechSettings } from './types';
+import type { DeepPartial, ExamSettings, LayoutColsOverride, LayoutSettings, LayoutTier, PriorityPreset, Settings, SpellSettings, SpellWeights, SpeechSettings } from './types';
 
 /**
  * 白纸（背诵）界面的固定尺寸参数（版本 0.0.9）。
@@ -528,9 +528,35 @@ const DEFAULT_EXAM: ExamSettings = {
   scoreRubric: DEFAULT_SCORE_RUBRIC,
 };
 
+/**
+ * ★ 版本 0.0.25（用户「四、选词与复习调度」「五、计分规则」）：拼写强化的默认设置。
+ *
+ * - `count`：每次复习队列长度（用户：「队列长度可配置，词库不足时取实际数量」）；
+ * - `weights`：专属优先级公式的权重（用户：「权重参数应做成可配置，便于后续调参」）。
+ *
+ * 权重含义（公式见 `core/spellSelect.ts`，用的全是主程序已有的属性名）：
+ * - `failRate`    未通过率   —— 老背不下来的词更该练拼写；
+ * - `days`        距上次复习天数（封顶 30 天）—— 放久了的词更该练；
+ * - `attempts`    本功能出现次数（`spellRecords.attempts`）—— 反复出错的词更该练；
+ * - `lowScore`    上次得分越低越优先（5 - lastScore）；
+ * - `wordPriority` 词级背诵优先级 —— 重要词更该练。
+ */
+export const DEFAULT_SPELL_WEIGHTS: SpellWeights = {
+  failRate: 6,
+  days: 1,
+  attempts: 2.5,
+  lowScore: 4,
+  wordPriority: 0.4,
+};
+
+/** 拼写强化的默认设置 */
+const DEFAULT_SPELL: SpellSettings = {
+  count: 10,
+  weights: DEFAULT_SPELL_WEIGHTS,
+};
+
 /** 默认设置（缺字段时用它补齐；AI 三项只是预填，用户可随意改） */
-export const DEFAULT_SETTINGS: Settings = {  ...DEFAULTS,
-  paper: { mode: 'auto', ratio: 'A4', width: 1200, height: 800 },
+export const DEFAULT_SETTINGS: Settings = {  ...DEFAULTS,  paper: { mode: 'auto', ratio: 'A4', width: 1200, height: 800 },
   display: {
     fontFamily: 'system-ui',
     fontSize: 24,
@@ -563,6 +589,7 @@ export const DEFAULT_SETTINGS: Settings = {  ...DEFAULTS,
   practice: { autoSpeak: true, speakRate: 1, speakLang: 'en-US', hintFails: false },
   // ★ 0.0.19：背诵设置（考核频率 / 每次考核数 / 严格程度）——当前只存不用
   exam: DEFAULT_EXAM,
+  spell: DEFAULT_SPELL,
   // ★ T4：朗读设置（语音来源 / 语音挑选 / 语速 / 有道密钥 / 变体）
   speech: DEFAULT_SPEECH,
   backup: { remindOnClose: true, lastManualExportAt: null },

@@ -6,6 +6,7 @@ import { renderAppearanceSection } from './settings/AppearanceSection';
 import { renderCloudSection } from './settings/CloudSection';
 import { renderDataSection } from './settings/DataSection';
 import { renderExamSection } from './settings/ExamSection';
+import { renderSpellSection } from './settings/SpellSection';
 import { renderSpeechSection } from './settings/SpeechSection';
 import { patchSettings } from './settings/ctx';
 
@@ -122,6 +123,17 @@ export function renderSettingsPage(): HTMLElement {
       render: renderExamSection,
       resetNote: '把考核频率、每次考核数、严格程度恢复成默认值，其他设置一个都不动',
       reset: () => patchSettings({ exam: { ...DEFAULT_SETTINGS.exam } }),
+    },
+    {
+      id: 'spell',
+      title: '拼写强化',
+      defaultOpen: false,
+      /**
+       * ★ 版本 0.0.25（用户「拼写强化」四）：每次复习词数可配置、专属优先级公式的权重可配置。
+       */
+      render: renderSpellSection,
+      resetNote: '把每次复习词数与五个权重恢复成默认值',
+      reset: () => patchSettings({ spell: { ...DEFAULT_SETTINGS.spell, weights: { ...DEFAULT_SETTINGS.spell.weights } } }),
     },
     {
       id: 'speech',

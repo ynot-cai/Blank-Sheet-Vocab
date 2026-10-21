@@ -100,6 +100,23 @@ export function normalizeWordPriority(value: unknown): number {
 }
 
 /**
+ * ★ 0.0.25（用户「拼写强化」）：标记 / 取消「拼写易错」时返回改好的词。
+ *
+ * 用户原文：「当一个单词被标记进入本流程时，系统自动将其状态改为『已背』，
+ * 避免影响主背诵流程的进度。」所以标记（`needSpell = true`）时**顺带**把状态改成 `learned`；
+ * 取消标记只清标记、不回退状态。已斩的词不改状态（斩的语义不能被覆盖）。
+ *
+ * 所有卡片/列表里的「拼写」入口都过这个函数，避免各处各写一遍导致状态不一致。
+ * @param word 词
+ * @param value true = 标记进入拼写强化，false = 取消
+ */
+export function withSpellFlag(word: Word, value: boolean): Word {
+  const attrs = { ...word.attrs, needSpell: value };
+  const status = value && word.status !== 'chopped' ? 'learned' : word.status;
+  return { ...word, attrs, status };
+}
+
+/**
  * 读一个词的词级优先级（老数据缺字段时按默认值 3）。
  * 所有业务代码都该走这里，不要直接读 `word.priority`。
  * @param word 单词

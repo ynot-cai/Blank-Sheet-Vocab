@@ -11,6 +11,7 @@ import { renderLearnPage } from './ui/pages/LearnPage';
 import { renderLearnPaperPage } from './ui/pages/LearnPaperPage';
 import { renderReviewPage } from './ui/pages/ReviewPage';
 import { renderReviewPaperPage } from './ui/pages/ReviewPaperPage';
+import { renderSpellPage } from './ui/pages/SpellPage';
 import { renderAboutPage } from './ui/pages/AboutPage';
 import { renderFooter } from './ui/components/Footer';
 import { PLACEHOLDER_SPECS, renderPlaceholderPage } from './ui/pages/PlaceholderPage';
@@ -85,6 +86,11 @@ function registerRoutes(): void {
    */
   registerRoute('/review', () => renderReviewPage());
   registerRoute('/review/paper', () => renderReviewPaperPage());
+  /**
+   * ★ 拼写强化（版本 0.0.25）：入口页与练习界面是同一页（内部状态机），/spell 是全屏练习页。
+   *   替换掉 PLACEHOLDER_SPECS 里原先的 /spell 占位（后来者覆盖前者）。
+   */
+  registerRoute('/spell', () => renderSpellPage());
   registerRoute('/about', () => renderAboutPage());
   setFallback(HOME_PATH);
 }

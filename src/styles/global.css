@@ -2961,6 +2961,229 @@ body {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   版本 0.0.25：拼写强化（首页 / 拼写界面 / 单词卡页 / 总结）
+   复习界面自上而下：中文意思（页面中部、大字号）→ 提示框 → 输入框 → 提示栏。
+   右下角常驻「退出」，整个功能内始终可见。
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.spell-page {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100dvh - 40px);
+  padding: 24px 16px 72px;
+}
+
+.spell-main {
+  width: min(680px, 100%);
+}
+
+.spell-home {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.spell-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--fg);
+}
+
+.spell-sub {
+  margin: 0;
+  font-size: 13px;
+  color: var(--fg-dim);
+}
+
+.spell-empty,
+.spell-note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--fg-dim);
+}
+
+.spell-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.spell-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line);
+  background: var(--paper-bg);
+}
+
+.spell-row:first-child {
+  border-top: none;
+}
+
+.spell-row-en {
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.spell-row-cn {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--fg-dim);
+  overflow-wrap: anywhere;
+}
+
+.spell-row-meta,
+.spell-row-prio {
+  font-size: 12px;
+  color: var(--fg-dim);
+  white-space: nowrap;
+}
+
+.spell-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.spell-primary {
+  padding: 8px 22px;
+  font: inherit;
+  color: #fff;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.spell-quiz {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+/* 中文意思：页面中部、大字号 */
+.spell-meaning {
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+
+/* 提示框：补信息（词性）；没有内容就留空，不显示占位文字 */
+.spell-info {
+  min-height: 18px;
+  font-size: 13px;
+  color: var(--fg-dim);
+}
+
+.spell-input {
+  width: min(420px, 100%);
+  padding: 9px 12px;
+  font: inherit;
+  font-size: 18px;
+  text-align: center;
+  color: var(--fg);
+  background: var(--paper-bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.spell-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* 提示字母 */
+.spell-letters {
+  min-height: 22px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 20px;
+  letter-spacing: 4px;
+  color: var(--accent);
+}
+
+/* 提示栏：提示 / 小喇叭 / 确认 */
+.spell-bar {
+  display: flex;
+  gap: 10px;
+}
+
+.spell-btn {
+  padding: 7px 18px;
+  font: inherit;
+  color: var(--fg);
+  background: var(--paper-bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.spell-btn:hover {
+  border-color: var(--accent);
+}
+
+.spell-btn-primary {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.spell-remain {
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+
+/* 单词卡页（卡本身沿用主程序的 .answer-card 样式，这里只处理居中） */
+.spell-card-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+/*
+ * 单词卡页：卡本身沿用主程序的 `.answer-card`（paper.css 里是 fixed 居中），
+ * 这里把它放回文档流、叠成"标题 + 得分 + 卡"的竖排（用户：卡样式完全沿用，不另做设计）。
+ * 选择器带 `.spell-page` 前缀，确保压过 paper.css 里单类名的 fixed 定位。
+ */
+.spell-page .answer-card.spell-answer-card {
+  position: static;
+  left: auto;
+  top: auto;
+  transform: none;
+  margin: 0 auto;
+  z-index: auto;
+  width: min(560px, 100%);
+  cursor: default;
+}
+
+/* 右下角常驻「退出」 */
+.spell-exit {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 70;
+  padding: 9px 20px;
+  font: inherit;
+  color: #fff;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.16);
+  cursor: pointer;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    版本 0.0.20（用户本轮要求）：单词列表「卡片 / 单词」双视图 + 收藏 + 单词卡新排版
    —— 全部沿用已有 token（--line / --paper-bg / --radius / --accent / --warn），不引入新配色。
    ═══════════════════════════════════════════════════════════════════════════ */

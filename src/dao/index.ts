@@ -9,3 +9,5 @@ export * as syncScheduler from './syncScheduler';
 export * as papers from './papers';
 /** ★ 0.0.22：卡片收藏（收藏对象从「单词」改为「卡片」） */
 export * as cardFavorites from './cardFavorites';
+/** ★ 0.0.25：拼写强化的历史得分 / 出现次数（不新增词表字段） */
+export * as spellRecords from './spellRecords';
