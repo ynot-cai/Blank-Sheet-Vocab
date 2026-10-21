@@ -24,7 +24,7 @@ import { navigate } from '../router';
 const ENTRIES: { path: string; label: string; desc: string }[] = [
   { path: '/import', label: '录入', desc: '粘贴或上传单词/短语/缩写，解析成词条' },
   { path: '/learn', label: '背诵', desc: '白纸空间记忆：靠位置 + 语音建立记忆' },
-  { path: '/review', label: '复习', desc: '按复习优先度分组抽取' },
+  { path: '/review', label: '复习', desc: '默认按复习优先度排序，或选一张卡片复习' },
   { path: '/spell', label: '拼写强化', desc: '只做拼写，不用白纸空间' },
   { path: '/list', label: '单词列表', desc: '筛选 / 编辑属性 / 斩词复活' },
   { path: '/settings', label: '设置', desc: '同步 / AI 接口 / 数据' },

@@ -77,6 +77,9 @@ export function paperButtonMetrics(): { width: number; height: number; font: num
 /** 白纸界面的按钮个数（下一个 / 再次记忆 / 背完了 / 保存并退出 / 删除这张纸） */
 export const PAPER_BUTTON_COUNT = 5;
 
+/** 复习白纸界面的按钮个数（下一个 / 复习完了 / 退出复习） */
+export const REVIEW_BUTTON_COUNT = 3;
+
 /** 一个矩形（视口坐标，像素） */
 export interface Box {
   x: number;
@@ -107,11 +110,13 @@ function expand(box: Box, n: number): Box {
  * 平板/桌面：右下角竖排 4 个，固定宽高 —— 组框就是那一列方块。
  *
  * @param viewport 视口尺寸（默认读真实窗口；布局探针可传模拟尺寸）
+ * @param count 按钮个数（默认 5：背诵页；复习页是 3）
  */
-export function paperButtonBox(viewport?: { width: number; height: number }): PaperButtonBox {
+export function paperButtonBox(viewport?: { width: number; height: number }, count = PAPER_BUTTON_COUNT): PaperButtonBox {
   const vw = viewport?.width ?? window.innerWidth;
   const vh = viewport?.height ?? window.innerHeight;
   const kind = deviceKind(vw);
+  const n = Math.max(1, Math.round(count));
 
   let group: Box;
   const m = paperButtonMetrics();
@@ -122,7 +127,7 @@ export function paperButtonBox(viewport?: { width: number; height: number }): Pa
     group = { x: 0, y: Math.max(0, vh - height), width: vw, height };
   } else {
     const { gapY, margin, pad } = PAPER_UI.wide;
-    const height = m.height * PAPER_BUTTON_COUNT + gapY * (PAPER_BUTTON_COUNT - 1) + pad * 2;
+    const height = m.height * n + gapY * (n - 1) + pad * 2;
     const width = m.width + pad * 2;
     group = {
       x: Math.max(0, vw - margin - width),

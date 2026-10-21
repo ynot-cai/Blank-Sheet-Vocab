@@ -9,6 +9,8 @@ import { renderMergePage } from './ui/pages/MergePage';
 import { renderListPage } from './ui/pages/ListPage';
 import { renderLearnPage } from './ui/pages/LearnPage';
 import { renderLearnPaperPage } from './ui/pages/LearnPaperPage';
+import { renderReviewPage } from './ui/pages/ReviewPage';
+import { renderReviewPaperPage } from './ui/pages/ReviewPaperPage';
 import { renderAboutPage } from './ui/pages/AboutPage';
 import { renderFooter } from './ui/components/Footer';
 import { PLACEHOLDER_SPECS, renderPlaceholderPage } from './ui/pages/PlaceholderPage';
@@ -41,7 +43,7 @@ const NAV: { path: string; label: string }[] = [
  * 判据不是「哪几个页面」，而是「**进去就是练**」——背诵、复习、拼写强化。
  * 以后新增的全屏练习界面，也要加进这里。
  */
-const FULLSCREEN_PATHS = ['/learn/paper', '/review', '/spell'];
+const FULLSCREEN_PATHS = ['/learn/paper', '/review/paper', '/spell'];
 
 /** 首页路径：白栏标题右侧留空 */
 const HOME_PATH = '/home';
@@ -77,6 +79,12 @@ function registerRoutes(): void {
    */
   registerRoute('/learn', () => renderLearnPage());
   registerRoute('/learn/paper', () => renderLearnPaperPage());
+  /**
+   * ★ 复习（版本 0.0.24）：复习选择界面 + 复习白纸界面。
+   * `/review` 是**入口页**（保留顶栏那排全局入口，与 `/learn` 同口径），只有 `/review/paper` 才全屏。
+   */
+  registerRoute('/review', () => renderReviewPage());
+  registerRoute('/review/paper', () => renderReviewPaperPage());
   registerRoute('/about', () => renderAboutPage());
   setFallback(HOME_PATH);
 }
