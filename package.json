@@ -1,7 +1,7 @@
 {
   "name": "blank-sheet-vocab",
   "private": true,
-  "version": "0.0.25",
+  "version": "0.0.26",
   "type": "module",
   "description": "白纸单词 —— 本地优先 + 可选云同步的背单词应用（版本 0.0.1：设置页 + 数据层）",
   "scripts": {
@@ -28,11 +28,12 @@
     "test:exam": "node --import ./api/_dev/loader-register.mjs api/_dev/test-exam.mjs",
     "test:review": "node --import ./api/_dev/loader-register.mjs api/_dev/test-review.mjs",
     "test:spell": "node --import ./api/_dev/loader-register.mjs api/_dev/test-spell.mjs",
+    "test:dbversion": "node --import ./api/_dev/loader-register.mjs api/_dev/test-dbversion.mjs",
     "presets": "node scripts/build-presets.mjs",
     "test:live": "node scripts/run-live.mjs",
     "test:e2e": "node scripts/run-e2e.mjs",
     "icons": "node scripts/make-icons.mjs",
-    "test": "npm run rules:check && npm run typecheck && npm run build && npm run verify:api && npm run test:build && npm run test:rename && npm run test:sense-rules && npm run test:exam && npm run test:review && npm run test:spell && npm run test:presets && npm run test:api && npm run test:sync && npm run test:r4 && npm run test:ai && npm run test:pwa"
+    "test": "npm run rules:check && npm run typecheck && npm run build && npm run verify:api && npm run test:build && npm run test:rename && npm run test:sense-rules && npm run test:exam && npm run test:review && npm run test:spell && npm run test:dbversion && npm run test:presets && npm run test:api && npm run test:sync && npm run test:r4 && npm run test:ai && npm run test:pwa"
   },
   "devDependencies": {
     "@types/node": "^22.20.2",
