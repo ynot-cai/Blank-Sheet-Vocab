@@ -3496,3 +3496,157 @@ body {
   margin-top: 4px;
   font-size: 13px;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   版本 0.0.28
+   ① 复习卡片：方块样式，选中时变暗
+   ② 正确 / 错误标识：圆形底色（绿 / 红）+ 白色勾叉
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* —— ① 复习卡片方块 —— */
+.review-card-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+  border: none;
+  overflow: visible;
+}
+
+.review-card-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8px;
+  /* 方块：1:1 比例 */
+  aspect-ratio: 1 / 1;
+  padding: 12px;
+  text-align: left;
+  background: var(--paper-bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background-color 0.12s ease, border-color 0.12s ease, transform 0.12s ease;
+}
+
+.review-card-tile:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+/* 选中：整块变暗（用户要求「选中时卡片变暗以表示选中状态」） */
+.review-card-tile.is-selected {
+  background: #cfd6e2;
+  border-color: #8a94a6;
+  color: #1d2330;
+}
+
+.review-card-tile.is-selected .review-tile-name {
+  color: #1d2330;
+}
+
+.review-card-tile.is-selected .review-tile-meta {
+  color: #3b4353;
+}
+
+.review-tile-name {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--fg);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.review-tile-meta {
+  font-size: 12px;
+  color: var(--fg-dim);
+  white-space: nowrap;
+}
+
+/* 选中角标：右上角一个小勾（选中变暗的同时给出明确信号） */
+.review-tile-check {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
+  opacity: 0;
+  transform: scale(0.8);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+
+.review-card-tile.is-selected .review-tile-check {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* —— ② 正确 / 错误：圆形底色 + 白色勾叉 —— */
+.answer-cmp-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+}
+
+.answer-cmp-line.ok .answer-cmp-mark {
+  background: #2e9e5b;
+}
+
+.answer-cmp-line.bad .answer-cmp-mark {
+  background: #d64545;
+}
+
+/* 拼写强化的「本题拼写对 / 错」徽标（同一套圆形语义，尺寸更大） */
+.spell-result {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.spell-result-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+}
+
+.spell-result.ok {
+  color: #2e9e5b;
+}
+
+.spell-result.ok .spell-result-icon {
+  background: #2e9e5b;
+}
+
+.spell-result.bad {
+  color: #d64545;
+}
+
+.spell-result.bad .spell-result-icon {
+  background: #d64545;
+}

@@ -242,6 +242,9 @@ export function renderSpellPage(): HTMLElement {
      */
     const submit = (): void => {
       const score = spellScore(hintClicks, speakClicks);
+      // ★ 0.0.28：拼写本身是否写对（用于单词卡页的「正确 / 错误」圆形标识）
+      const typed = input.value.trim();
+      const correct = typed.toLowerCase() === word.en.trim().toLowerCase();
       void (async () => {
         try {
           // 提交时就把成绩写掉：中途退出 / 异常都不会丢（用户「三」「五」）
@@ -253,7 +256,7 @@ export function renderSpellPage(): HTMLElement {
         roundQuestions += 1;
         roundTotalScore += score;
         if (score === SPELL_MAX_SCORE) roundFullScore += 1;
-        drawCard(word, score);
+        drawCard(word, score, typed, correct);
       })();
     };
     submitBtn.addEventListener('click', submit);
@@ -268,18 +271,25 @@ export function renderSpellPage(): HTMLElement {
   };
 
   // ══════════════════════ 单词卡（沿用主程序） ══════════
-  const drawCard = (word: Word, score: number): void => {
+  const drawCard = (word: Word, score: number, typed: string, correct: boolean): void => {
     stage = 'card';
     page.dataset['stage'] = stage;
     main.replaceChildren();
     const box = h('div', { class: 'spell-card-page' });
     box.appendChild(h('h2', { class: 'spell-title', text: '单词卡' }));
+    // ★ 0.0.28（用户）：「正确与错误的标识使用圆形底色（正确绿色、错误红色）加白色勾叉图标标出。」
+    const result = h('div', { class: `spell-result ${correct ? 'ok' : 'bad'}`, dataset: { role: 'spell-result' } });
+    result.appendChild(h('span', { class: 'spell-result-icon', text: correct ? '✓' : '✗' }));
+    result.appendChild(h('span', { text: correct ? '拼写正确' : '拼写错误' }));
+    box.appendChild(result);
     box.appendChild(h('p', { class: 'spell-sub', text: `本题得分 ${score} / ${SPELL_MAX_SCORE}` }));
     const shell = h('div', { class: 'answer-card spell-answer-card' });
     shell.appendChild(
       renderWordCard(word, {
         // 「完全沿用主背诵程序的单词卡样式」：可编辑、可斩、可标记拼写，行为与白纸页一致
         editable: true,
+        // 拼错的词在卡里同时给出逐格对照（勾叉是圆形底色那块样式）
+        answerFeedback: correct ? [] : [{ input: typed === '' ? '（未填）' : typed, ok: false }],
         onClose: () => undefined,
         onChange: (next) => {
           void dao.words.put(next).then(() => toastOk('已保存'));

@@ -221,22 +221,29 @@ export function renderReviewPage(): HTMLElement {
         return;
       }
       for (const p of rows) {
-        const row = h('div', {
-          class: `learn-archive-row review-card-row${pickedId === p.id ? ' is-selected' : ''}`,
+        /**
+         * ★ 0.0.28（用户）：「将复习卡片优化为精致的方块样式，选中时卡片变暗以表示选中状态。」
+         * 所以每张卡片是一个 1:1 的方块：名称在上（最多两行）、状态与词数在下，
+         * 右上角一颗选中角标；选中时整块背景变暗（CSS `.review-card-tile.is-selected`）。
+         */
+        const tile = h('button', {
+          class: `review-card-tile${pickedId === p.id ? ' is-selected' : ''}`,
+          type: 'button',
           dataset: { paperId: p.id },
+          'aria-pressed': pickedId === p.id ? 'true' : 'false',
+          title: pickedId === p.id ? '点击取消选中' : '点击选中这张卡片',
         });
-        row.appendChild(h('span', { class: 'field-label', text: p.name || '（未命名）' }));
-        row.appendChild(h('span', { class: 'field-hint', text: `${p.shownIds.length} 词` }));
-        row.appendChild(h('span', { class: 'field-hint', text: p.status === 'finished' ? '已背完' : '进行中' }));
-        row.appendChild(h('span', { class: 'field-hint', text: pickedId === p.id ? '已选中' : '' }));
-        row.addEventListener('click', () => {
+        tile.appendChild(h('span', { class: 'review-tile-check', text: '✓' }));
+        tile.appendChild(h('span', { class: 'review-tile-name', text: p.name || '（未命名）' }));
+        tile.appendChild(h('span', { class: 'review-tile-meta', text: `${p.status === 'finished' ? '已背完' : '进行中'} · ${p.shownIds.length} 词` }));
+        tile.addEventListener('click', () => {
           // 再点一次取消选中
           pickedId = pickedId === p.id ? '' : p.id;
           startBtn.textContent = '确认选择';
           startBtn.disabled = pickedId === '';
           redrawCards();
         });
-        listBox.appendChild(row);
+        listBox.appendChild(tile);
       }
     }
     redrawCards();
