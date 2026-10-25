@@ -100,8 +100,9 @@ export function buildSpellQueue(
   settings: SpellSettings,
   now: number = Date.now(),
 ): SpellEntry[] {
+  // ★ 0.0.27（用户：「『仅拼写』是进入拼写强化的属性标签」）：候选 = 被标记『仅拼写』且未斩的词
   const tagged = words
-    .filter((w) => w.attrs.needSpell === true && w.status !== 'chopped')
+    .filter((w) => w.spellOnly === true && w.status !== 'chopped')
     .map((word) => {
       const record = records.get(word.id) ?? null;
       return { word, record, priority: computeSpellPriority(word, record, settings, now) };

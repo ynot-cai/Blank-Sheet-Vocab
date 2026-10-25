@@ -92,7 +92,8 @@ export function renderSpellPage(): HTMLElement {
   /** 读数据 */
   const refreshData = async (): Promise<void> => {
     const [all, recs] = await Promise.all([dao.words.listAlive(), dao.spellRecords.map()]);
-    tagged = all.filter((w) => w.attrs.needSpell === true && w.status !== 'chopped');
+    // ★ 0.0.27（用户）：「仅拼写」是进入拼写强化的属性标签
+    tagged = all.filter((w) => w.spellOnly === true && w.status !== 'chopped');
     records = recs;
   };
 
@@ -257,6 +258,7 @@ export function renderSpellPage(): HTMLElement {
     };
     submitBtn.addEventListener('click', submit);
     input.addEventListener('keydown', (ev) => {
+      if (ev.repeat) return;
       if (ev.key === 'Enter') {
         ev.preventDefault();
         submit();
@@ -289,7 +291,7 @@ export function renderSpellPage(): HTMLElement {
           void dao.words.setNeedSpell(word.id, value);
         },
         onSpellOnly: (value) => {
-          void dao.words.put({ ...word, spellOnly: value });
+          void dao.words.setSpellOnly(word.id, value);
         },
       }),
     );
@@ -306,7 +308,11 @@ export function renderSpellPage(): HTMLElement {
       box.removeEventListener('click', onClick);
       advance(score);
     };
-    const onKey = (): void => next();
+    // ★ 0.0.27（用户）：长按任意键只算一次
+    const onKey = (ev: KeyboardEvent): void => {
+      if (ev.repeat) return;
+      next();
+    };
     const onClick = (): void => next();
     // 任意键 / 点击（在页面任意位置）都能进下一题。
     // 用 setTimeout(0) 推迟到本轮点击派发结束（等动画/事件收尾）再挂监听，避免同一次点击立刻触发下一题

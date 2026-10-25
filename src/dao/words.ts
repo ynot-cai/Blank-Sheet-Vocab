@@ -189,6 +189,21 @@ export async function setNeedSpell(id: string, value: boolean): Promise<void> {
  * 斩掉某词（背诵/复习/记忆/推荐数字中均不再出现）。
  * @param id 单词 id
  */
+/**
+ * ★ 0.0.27（用户）：「『仅拼写』是进入拼写强化的属性标签。」
+ *
+ * 标记 = 进入拼写强化候选池；标记时状态置「已背」；重复标记无副作用。
+ * @param id 单词 id
+ * @param value true = 标记仅拼写
+ */
+export async function setSpellOnly(id: string, value: boolean): Promise<void> {
+  const word = await getById(id);
+  if (!word) return;
+  if ((word.spellOnly === true) === value) return;
+  const next = { ...word, spellOnly: value };
+  const status = value && word.status !== 'chopped' ? 'learned' : word.status;
+  await put({ ...next, status });
+}
 export async function chop(id: string): Promise<void> {
   const word = await getById(id);
   if (!word) return;

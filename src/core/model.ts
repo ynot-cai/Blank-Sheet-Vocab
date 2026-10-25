@@ -121,6 +121,19 @@ export function withSpellFlag(word: Word, value: boolean): Word {
  * 所有业务代码都该走这里，不要直接读 `word.priority`。
  * @param word 单词
  */
+/**
+ * ★ 0.0.27（用户）：「『仅拼写』是进入拼写强化的属性标签。」
+ *
+ * 标记「仅拼写」时同时把状态置为「已背」（与拼写强化的定位一致：这类词已经认识、只是拼不对），
+ * 取消标记只清标签、不回退状态；已斩的词不改状态。
+ * @param word 词
+ * @param value true = 标记为仅拼写（进入拼写强化候选池）
+ */
+export function withSpellOnlyFlag(word: Word, value: boolean): Word {
+  const next: Word = { ...word, spellOnly: value };
+  if (value && word.status !== 'chopped') next.status = 'learned';
+  return next;
+}
 export function wordPriorityOf(word: { priority?: unknown }): number {
   return normalizeWordPriority(word.priority);
 }

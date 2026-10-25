@@ -2769,10 +2769,12 @@ body {
 
 .papers-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  /* 名称 → 状态 → 查看 → 重命名 → 词数（★ 0.0.27：词数挪到最后，与名称之间留 gap） */
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
   align-items: center;
   gap: 12px;
   padding: 8px 2px;
+  column-gap: 16px;
 }
 
 .papers-row + .papers-row {
@@ -2789,6 +2791,20 @@ body {
   font-size: 13px;
   color: var(--fg-dim);
   white-space: nowrap;
+}
+
+/* ★ 0.0.27：状态与词数分两格；词数在最右，左内边距再兜一层间隙 */
+.papers-status,
+.papers-count {
+  font-size: 13px;
+  color: var(--fg-dim);
+  white-space: nowrap;
+}
+
+.papers-count {
+  justify-self: end;
+  padding-left: 4px;
+  color: var(--fg);
 }
 
 .papers-detail-list {
@@ -2813,7 +2829,8 @@ body {
 
 @media (max-width: 767px) {
   .papers-row {
-    grid-template-columns: minmax(0, 1fr) auto;
+    /* 手机上换行：名称占第一行，其余四列排第二行（词数仍然最后） */
+    grid-template-columns: minmax(0, 1fr) auto auto;
     row-gap: 6px;
   }
 }

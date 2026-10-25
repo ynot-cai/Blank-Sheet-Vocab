@@ -478,7 +478,7 @@ export function renderListPage(): HTMLElement {
           },
           onSpellOnly: (value) => {
             void (async () => {
-              await dao.words.put({ ...word, spellOnly: value });
+              await dao.words.setSpellOnly(word.id, value);
               toastOk(value ? `已把「${word.en}」标记为仅拼写` : `已取消「${word.en}」的仅拼写标记`);
               await load();
             })();
@@ -727,11 +727,13 @@ export function renderListPage(): HTMLElement {
 
     const list = h('div', { class: 'papers-list' });
     for (const p of papers) {
+      /**
+       * ★ 0.0.27（用户）：「白纸存档的排版调整：单词数放到最后显示，
+       *   且与名称之间保留间隙。」行内顺序 = 名称 → 状态 → 查看 → 重命名 → 词数（最后一格）。
+       */
       const row = h('div', { class: 'papers-row' });
       row.appendChild(h('span', { class: 'papers-name', text: p.name === '' ? '（未命名）' : p.name }));
-      row.appendChild(
-        h('span', { class: 'papers-meta', text: `${p.shownIds.length} 词 · ${p.status === 'finished' ? '已背完' : '进行中'}` }),
-      );
+      row.appendChild(h('span', { class: 'papers-status', text: p.status === 'finished' ? '已背完' : '进行中' }));
       row.appendChild(
         button(
           '查看',
@@ -756,6 +758,8 @@ export function renderListPage(): HTMLElement {
           { variant: 'ghost' },
         ),
       );
+      // 单词数放最后（用户：单词数放到最后显示，且与名称之间保留间隙）
+      row.appendChild(h('span', { class: 'papers-count', text: `${p.shownIds.length} 词` }));
       list.appendChild(row);
     }
     card.appendChild(list);

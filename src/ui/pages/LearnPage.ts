@@ -340,12 +340,18 @@ export function renderLearnPage(): HTMLElement {
     }
     const cfg = aiConfigFromSettings(currentSettings());
     const current = words.filter((w) => aiSelected.has(w.id)).map((w) => w.en);
+    /**
+     * ★ 0.0.27（用户：「AI 选取功能缺少上下文记忆」）：**每一轮都把全部对话带上**。
+     * 之前靠 `first ? [] : aiMessages`，一旦界面回到初始面板（first=true）历史就被清空，
+     * 模型立刻"失忆"。现在历史只增不清（清空只发生在用户重开一轮时 aiMessages 本来就是空的）。
+     */
+    const history = aiMessages.slice();
     const result = await pickWords({
       cfg,
       candidates: words,
       condition: text,
-      history: first ? [] : aiMessages.slice(),
-      current: first ? [] : current,
+      history,
+      current,
     });
     if (result.failed) {
       toastError(result.error ?? 'AI 选词失败');
@@ -361,7 +367,7 @@ export function renderLearnPage(): HTMLElement {
     const reply = result.reply === '' ? `已选出 ${result.selected.length} 个词` : result.reply;
     aiTurns.push({ role: 'user', text });
     aiTurns.push({ role: 'assistant', text: reply });
-    if (first) aiMessages.length = 0;
+    // ★ 0.0.27：历史只追加、不在这里清空（「全部上下文」要求每一轮都能看到前面说过什么）
     // 给模型留一份「上一轮的完整结果」，多轮时它才能在此基础上增删
     aiMessages.push({ role: 'user', content: first ? `用户条件：${text}` : `补充条件：${text}` });
     aiMessages.push({ role: 'assistant', content: JSON.stringify({ selected: result.selected, reply }) });

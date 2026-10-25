@@ -214,6 +214,8 @@ export function startExam(opts: ExamOptions): ExamHandle {
         if (t instanceof Element && t.closest('.answer-card') === null && t.closest('.sense-ctx-menu') === null) finish();
       };
       const onKey = (ev: KeyboardEvent): void => {
+        // ★ 0.0.27（用户）：按住 Enter 时浏览器会连续发 repeat 事件——只认第一下
+        if (ev.repeat) return;
         if (ev.key !== 'Enter' && ev.key !== ' ') return;
         const t = ev.target;
         if (t instanceof Element && t.closest('input, textarea, select, [contenteditable]') !== null) return;
@@ -272,6 +274,8 @@ export function startExam(opts: ExamOptions): ExamHandle {
     // Enter：填完一格跳下一格，最后一格提交（旧版做法）
     inputs.forEach((input, i) => {
       input.addEventListener('keydown', (ev) => {
+        // ★ 0.0.27（用户）：按住 Enter 只认第一下（repeat 事件忽略），避免连跳好几格 / 连续提交
+        if (ev.repeat) return;
         if (ev.key !== 'Enter') return;
         ev.preventDefault();
         ev.stopPropagation();
@@ -337,6 +341,8 @@ export function startExam(opts: ExamOptions): ExamHandle {
       /* 绑定在 waitSubmit 里 */
     }, { variant: 'primary', class: 'exam-submit' });
     input.addEventListener('keydown', (ev) => {
+      // ★ 0.0.27（用户）：长按 Enter 只提交一次
+      if (ev.repeat) return;
       if (ev.key !== 'Enter') return;
       ev.preventDefault();
       ev.stopPropagation();

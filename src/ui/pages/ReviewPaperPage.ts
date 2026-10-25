@@ -121,7 +121,7 @@ export function renderReviewPaperPage(): HTMLElement {
         },
         onSpellOnly: (value) => {
           void (async () => {
-            await dao.words.put({ ...word, spellOnly: value });
+            await dao.words.setSpellOnly(word.id, value);
             // 与背诵一致：标记「仅拼写」的词立即从纸上消失
             if (value) removeWord(word.id);
           })();
@@ -251,6 +251,20 @@ export function renderReviewPaperPage(): HTMLElement {
     }
   })();
 
+  /**
+   * ★ 0.0.27（用户「增加 Enter 相关快捷键」）：与背诵白纸同一口径——
+   * 浏览模式按一次 Enter = 点一次「下一个」（长按只算一次，焦点在输入控件上不劫持）。
+   */
+  const onEnterNext = (ev: KeyboardEvent): void => {
+    if (ev.repeat || ev.key !== 'Enter') return;
+    const t = ev.target;
+    if (t instanceof HTMLElement && t.closest('input, textarea, select, button, [contenteditable]') !== null) return;
+    if (document.querySelector('.answer-card, .modal-mask') !== null) return;
+    ev.preventDefault();
+    btnNext.click();
+  };
+  document.addEventListener('keydown', onEnterNext);
+  registerCleanup(page, () => document.removeEventListener('keydown', onEnterNext));
   registerCleanup(page, () => {
     destroyed = true;
     // 复习页没有常驻的全局监听，这里只留一个标记，方便以后加「离开时保存」之类的逻辑

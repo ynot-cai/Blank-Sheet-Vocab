@@ -10,7 +10,7 @@
 import { PAPER_UI } from '../../core/config';
 import { selectExamWords } from '../../core/examSelect';
 import { nextWord, orderByPriority, type PriorityTable } from '../../core/learnSelect';
-import { withSpellFlag } from '../../core/model';
+import { withSpellFlag, withSpellOnlyFlag } from '../../core/model';
 import type { PaperArchive, Word } from '../../core/types';
 import * as dao from '../../dao';
 import { aiConfigFromSettings } from '../../services/ai';
@@ -109,8 +109,9 @@ export function renderLearnPaperPage(): HTMLElement {
         },
         onSpellOnly: (value) => {
           void (async () => {
-            const next: Word = { ...word, spellOnly: value };
-            await dao.words.put(next);
+            // ★ 0.0.27：「仅拼写」是进入拼写强化的标签，标记时顺带把状态置「已背」
+            await dao.words.setSpellOnly(word.id, value);
+            const next: Word = withSpellOnlyFlag(word, value);
             const i = queue.findIndex((w) => w.id === next.id);
             if (i >= 0) queue[i] = next;
             // 用户：标记「仅拼写」的单词立即从纸上消失
@@ -261,8 +262,9 @@ export function renderLearnPaperPage(): HTMLElement {
       },
       onSpellOnly: (word, value) => {
         void (async () => {
-          const next: Word = { ...word, spellOnly: value };
-          await dao.words.put(next);
+          // ★ 0.0.27：标记「仅拼写」时顺带把状态置「已背」（进入拼写强化候选池）
+          await dao.words.setSpellOnly(word.id, value);
+          const next: Word = withSpellOnlyFlag(word, value);
           const i = queue.findIndex((w) => w.id === next.id);
           if (i >= 0) queue[i] = next;
           if (value) await removeFromPaper(next.id);
@@ -454,6 +456,24 @@ export function renderLearnPaperPage(): HTMLElement {
     }
   })();
 
+  /**
+   * ★ 0.0.27（用户「增加 Enter 相关快捷键，具体逻辑参考旧版」）：
+   * 旧版（已归档/02 的 flow.ts 全局 keydown）在**浏览模式**下按 Enter = 点「下一个」。
+   * 新版照此实现，并遵守旧版的三条边界：
+   * 1. 焦点在输入框/按钮等控件上时让给浏览器（不劫持）；
+   * 2. 答案卡 / 弹窗 / 考核页打开时不处理（它们各自有 Enter 逻辑）；
+   * 3. 按住不放只算一次（`ev.repeat`）。
+   */
+  const onEnterNext = (ev: KeyboardEvent): void => {
+    if (ev.repeat || ev.key !== 'Enter') return;
+    const t = ev.target;
+    if (t instanceof HTMLElement && t.closest('input, textarea, select, button, [contenteditable]') !== null) return;
+    if (document.querySelector('.answer-card, .modal-mask, .exam-page') !== null) return;
+    ev.preventDefault();
+    btnNext.click();
+  };
+  document.addEventListener('keydown', onEnterNext);
+  registerCleanup(page, () => document.removeEventListener('keydown', onEnterNext));
   registerCleanup(page, () => {
     destroyed = true;
     // ★ 0.0.21：页面被换掉时，如果正卡在考核里，先把考核界面拆掉（否则它会一直盖在屏幕上）

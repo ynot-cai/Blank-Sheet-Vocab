@@ -181,7 +181,14 @@ export async function pickWords(opts: PickOptions): Promise<PickResult> {
     const batch = opts.candidates.slice(i, i + BATCH_SIZE);
     /** 这一批里「当前已选」的词，作为多轮修改的起点 */
     const pickedInBatch = batch.filter((w) => chosen.has(w.en)).map((w) => w.en);
-    const messages = buildMessages(batch, condition, opts.history ?? [], pickedInBatch, i === 0);
+    /**
+     * ★ 0.0.27 修的真 bug：这里原来传的是 `i === 0`（**是不是第一批**），
+     * 而 buildMessages 用它判断「是不是第一轮」——单批词库时它恒为 true，
+     * 于是每一轮都走「第一轮」分支、历史被整个跳过：这就是「AI 选取缺少上下文记忆」的根因。
+     * 现在按**有没有历史**判断是不是第一轮。
+     */
+    const firstTurn = (opts.history ?? []).length === 0;
+    const messages = buildMessages(batch, condition, opts.history ?? [], pickedInBatch, firstTurn, Array.from(chosen));
     try {
       const content = await chatComplete(opts.cfg, messages, { jsonMode: true });
       const parsed = parsePickResponse(content, batch);
@@ -219,6 +226,7 @@ export async function pickWords(opts: PickOptions): Promise<PickResult> {
  * @param history 之前的多轮对话（user = 条件原文，assistant = 上一轮的 JSON 结果）
  * @param pickedInBatch 这一批里当前已选的词
  * @param first 是不是第一轮
+ * @param currentAll 当前已选中的**全部**词（跨批次的完整状态，多轮时给模型看）
  */
 function buildMessages(
   batch: Word[],
@@ -226,6 +234,7 @@ function buildMessages(
   history: PickMessage[],
   pickedInBatch: string[],
   first: boolean,
+  currentAll: string[],
 ): { role: 'system' | 'user' | 'assistant'; content: string }[] {
   const out: { role: 'system' | 'user' | 'assistant'; content: string }[] = [
     { role: 'system', content: PICK_SYSTEM_PROMPT },
@@ -235,14 +244,46 @@ function buildMessages(
     out.push({ role: 'user', content: `用户条件：${condition}` });
     return out;
   }
-  // 多轮：把之前的条件与 AI 的结果带上，再把「这批当前已选」交给模型修改
-  for (const turn of history) out.push(turn);
+  /**
+   * ★ 0.0.27（用户：「AI 选取功能缺少上下文记忆……可改为『每次提示词即包含全部上下文』」）：
+   * 之前是靠 role=user / role=assistant 的历史消息，模型经常「忘记」前面说过什么。
+   * 现在把**全部上下文写成一段人话**塞进同一条 user 消息里：
+   *   ①历次条件与它当时选出的词（从 assistant 的 JSON 里解析回来，读起来更直观）；
+   *   ②当前已选的完整名单（不只这一批）；
+   *   ③这一批的当前选择（这一批的候选表就在同一请求里，模型据此做增量修改）。
+   * 这样即使模型忽略 role 历史，也能从这段文字里看到全部对话。
+   */
+  const transcript: string[] = [];
+  let turn = 0;
+  for (const msg of history) {
+    if (msg.role === 'user') {
+      turn += 1;
+      transcript.push(`${turn}. 用户：${msg.content}`);
+      continue;
+    }
+    let picked: string[] = [];
+    try {
+      const parsed = JSON.parse(msg.content) as { selected?: unknown };
+      if (Array.isArray(parsed.selected)) picked = parsed.selected.filter((x): x is string => typeof x === 'string');
+    } catch {
+      picked = [];
+    }
+    transcript.push(
+      picked.length === 0
+        ? `${turn}. 你当时的回答：一个词都没选。`
+        : `${turn}. 你当时的回答：选出 ${picked.length} 个词 —— ${picked.join('、')}`,
+    );
+  }
   out.push({
     role: 'user',
     content:
-      `补充条件：${condition}\n` +
-      `这一批当前已选：${pickedInBatch.length === 0 ? '（无）' : pickedInBatch.join('、')}\n` +
-      '请按上面的补充条件重新给出这一批的完整选择（之前选中但不符合新条件的要去掉）。',
+      '【完整上下文】\n' +
+      `① 之前已经进行过的对话（共 ${turn} 轮）：\n` +
+      `${transcript.length === 0 ? '（无）' : transcript.join('\n')}\n\n` +
+      `② 当前已选中的全部单词（${currentAll.length} 个）：${currentAll.length === 0 ? '（无）' : currentAll.join('、')}\n` +
+      `③ 这一批里当前已选：${pickedInBatch.length === 0 ? '（无）' : pickedInBatch.join('、')}\n\n` +
+      `④ 本轮的新条件：${condition}\n` +
+      '请结合①②③④和上面的候选单词表，重新给出这一批的完整选择（之前选中但不符合新条件的要去掉），只输出 JSON。',
   });
   return out;
 }

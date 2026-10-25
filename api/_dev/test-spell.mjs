@@ -54,6 +54,8 @@ function word(id, en, opts = {}) {
       examScore: null,
     },
     status: opts.status ?? 'learned',
+    // ★ 0.0.27：拼写强化的入场标签改成「仅拼写」（spellOnly）
+    spellOnly: opts.spellOnly !== false,
     priority: opts.priority ?? 3,
     learnOrder: null,
     createdAt: 0,
@@ -119,7 +121,7 @@ console.log('\n[4] 选词：只取标记过的词，队列长度可配置');
     word('w1', 'alpha', { failCount: 9, failCountTotal: 9, examCount: 10 }),
     word('w2', 'bravo', { failCount: 1, failCountTotal: 1, examCount: 10 }),
     word('w3', 'charlie', { failCount: 5, failCountTotal: 5, examCount: 10 }),
-    word('w4', 'delta', { needSpell: false, failCount: 9, failCountTotal: 10 }),
+    word('w4', 'delta', { spellOnly: false, failCount: 9, failCountTotal: 10 }),
     word('w5', 'echo', { failCount: 9, failCountTotal: 10, status: 'chopped' }),
   ];
   const all = buildSpellQueue(words, new Map(), { ...settings, count: 10 }, now);
