@@ -125,6 +125,15 @@ export function renderListFilters(opts: ListFiltersOptions): HTMLElement {
     ),
   );
 
+  // ★ 1.0.0：只看收藏（单词视图的收藏；白纸视图的存档收藏在它自己的工具栏里）
+  wrap.appendChild(
+    h(
+      'div',
+      { class: 'filter-item' },
+      checkbox(state.favoriteOnly, '只看收藏', (v) => opts.onChange({ favoriteOnly: v })),
+    ),
+  );
+
   // 含已斩（默认不含：被斩的词从默认视图消失）
   wrap.appendChild(
     h(

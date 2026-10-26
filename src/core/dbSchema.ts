@@ -44,8 +44,10 @@ export const DB_NAME = 'blank-sheet-vocab';
  *   「收藏对象从单词改为卡片，并删除原有的单词收藏功能」，所以收藏不再是词的一个属性。
  * - v11（0.0.25）：新增 `spellRecords` 表 —— 拼写强化的「历史得分 / 出现次数」。
  *   用户「六、数据要求」明确「不新建数据字段」，所以这些记录**不进词表**，单开一张表。
+ * - v12（1.0.0）：新增 `paperFavorites` 表 —— 列表页「白纸」视图里收藏的**白纸存档**。
+ *   纯加法。用户 1.0.0：「收藏等功能同样针对白纸存档生效。」
  */
-export const DB_VERSION = 11;
+export const DB_VERSION = 12;
 
 /** 表名常量，避免各处写错字符串 */
 export const STORE = {
@@ -81,6 +83,12 @@ export const STORE = {
    * 主键是词 id，值是 `SpellRecord`。词被删掉后的孤儿记录不影响任何计算。
    */
   spellRecords: 'spellRecords',
+  /**
+   * ★ v12（1.0.0）：收藏的**白纸存档**。
+   *
+   * 主键是存档 id；与 cardFavorites（单词收藏）分开，互不影响。
+   */
+  paperFavorites: 'paperFavorites',
 } as const;
 
 /**
@@ -312,6 +320,10 @@ export function createSchema(db: IDBDatabase, oldVersion: number, transaction: I
    */
   if (!db.objectStoreNames.contains(STORE.spellRecords)) {
     db.createObjectStore(STORE.spellRecords, { keyPath: 'id' });
+  }
+  /** ★ v12（1.0.0）：白纸存档收藏。纯加法，只建表（主键 = 存档 id）。 */
+  if (!db.objectStoreNames.contains(STORE.paperFavorites)) {
+    db.createObjectStore(STORE.paperFavorites, { keyPath: 'id' });
   }
   // v1 → v2：给来源补 updatedAt（只动 sources，与词表迁移互不干扰）
   if (oldVersion > 0 && oldVersion < 2) migrateToV2(transaction);

@@ -92,7 +92,7 @@ export function renderListTable(
   selected: Set<string>,
   handlers: ListTableHandlers,
   failCap: number,
-  selectState: { selectedCount: number; matchedCount: number },
+  selectState: { selectedCount: number; matchedCount: number; favorites: Set<string> },
 ): HTMLElement {
   const sourceName = (id: string): string => sources.find((s) => s.id === id)?.name ?? '（未知来源）';
 
@@ -145,6 +145,15 @@ export function renderListTable(
 
     // 单词（点击 → 单词卡）。★ 0.0.22：单词视图不再有收藏星标（收藏的对象改为「卡片」）
     const enCell = h('td', {});
+    // ★ 1.0.0：单词收藏星标（用户：「不要删除『单词』界面中的对应功能」）
+    const favorited = selectState.favorites.has(word.id);
+    const star = button(favorited ? '★' : '☆', () => handlers.onCardFavorite(word, !favorited), {
+      variant: 'ghost',
+      class: `fav-btn${favorited ? ' is-on' : ''}`,
+      title: favorited ? '取消收藏这个词' : '收藏这个词',
+    });
+    star.setAttribute('aria-pressed', favorited ? 'true' : 'false');
+    enCell.appendChild(star);
     const enBtn = h('button', { class: 'link-btn', type: 'button', text: word.en, title: '点击查看/编辑详情' });
     enBtn.addEventListener('click', () => handlers.onOpenDetail(word));
     enCell.appendChild(enBtn);

@@ -11,3 +11,5 @@ export * as papers from './papers';
 export * as cardFavorites from './cardFavorites';
 /** ★ 0.0.25：拼写强化的历史得分 / 出现次数（不新增词表字段） */
 export * as spellRecords from './spellRecords';
+/** ★ 1.0.0：白纸存档收藏（列表页「白纸」视图） */
+export * as paperFavorites from './paperFavorites';

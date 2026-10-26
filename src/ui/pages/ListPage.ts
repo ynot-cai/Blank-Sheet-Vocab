@@ -1,7 +1,7 @@
 import { getSettings } from '../../core/config';
 import { adoptRawSource, withSpellFlag } from '../../core/model';
 import { computePriority } from '../../core/priority';
-import type { Attrs, Source, Word, WordQuery, WordStats, WordStatus } from '../../core/types';
+import type { Attrs, PaperArchive, Source, Word, WordQuery, WordStats, WordStatus } from '../../core/types';
 import * as dao from '../../dao';
 import { exportBackup, importBackup } from '../../services/backup';
 import { button, debounce, h } from '../dom';
@@ -11,9 +11,8 @@ import { showUndoToast, toastError, toastOk, toastWarn } from '../components/Toa
 import { renderWordCard } from '../components/WordCard';
 import { currentSettings } from './settings/ctx';
 import { renderBatchBar } from './list/BatchBar';
-import { renderCardToolbar } from './list/CardToolbar';
 import { reorganizeWordSenses } from '../wordAiActions';
-import { renderListCards } from './list/ListCards';
+import { defaultPaperFilter, renderPaperPanel, type PaperFilterState } from './list/PaperPanel';
 import type { ListFilterState } from './list/ListFilters';
 import { defaultFilterState, effectiveStatuses, renderListFilters } from './list/ListFilters';
 import { renderListTable } from './list/ListTable';
@@ -38,8 +37,12 @@ const STAT_ITEMS: { key: keyof WordStats; label: string; status: WordStatus | nu
  *   3. 新增「收藏」：词上加 `favorite` 字段、筛选区加「只看收藏」、批量条加收藏/取消收藏。
  */
 
-/** 视图类型 */
-type ListView = 'card' | 'word';
+/**
+ * 视图类型（★ 1.0.0：card 更名为 paper）。
+ *
+ * ★ 1.0.0（用户）：「『卡片』界面移除单词卡浏览功能，并改名为『白纸』，仅用于浏览白纸存档。」
+ */
+type ListView = 'paper' | 'word';
 
 /** 视图选择存本机（下次进来还是上次那个视图） */
 const VIEW_KEY = 'blank-sheet-vocab.listView';
@@ -49,9 +52,10 @@ const VIEW_KEY = 'blank-sheet-vocab.listView';
  */
 function readView(): ListView {
   try {
-    return localStorage.getItem(VIEW_KEY) === 'word' ? 'word' : 'card';
+    // 老值 'card' 一律当成新的 'paper'（视图含义变了，但用户习惯不变）
+    return localStorage.getItem(VIEW_KEY) === 'word' ? 'word' : 'paper';
   } catch {
-    return 'card';
+    return 'paper';
   }
 }
 
@@ -87,8 +91,13 @@ export function renderListPage(): HTMLElement {
   let matchedIds: string[] = [];
   let stats: WordStats = { total: 0, unlearned: 0, learning: 0, learned: 0, chopped: 0 };
   let sources: Source[] = [];
-  /** ★ 0.0.22：被收藏的**卡片** id 集合（来自 cardFavorites 表） */
-  let cardFavoriteIds = new Set<string>();
+  /** ★ 1.0.0：单词收藏（复用 cardFavorites 表，主键就是词 id） */
+  let wordFavoriteIds = new Set<string>();
+  /** ★ 1.0.0：白纸存档收藏 */
+  let paperFavoriteIds = new Set<string>();
+  /** ★ 1.0.0：白纸视图的存档与筛选状态 */
+  let papers: PaperArchive[] = [];
+  let paperFilter: PaperFilterState = defaultPaperFilter();
   const selected = new Set<string>();
 
   const failCap = getSettings().failCountCap;
@@ -143,7 +152,7 @@ export function renderListPage(): HTMLElement {
    * 两个按钮是一组分段控件，当前视图亮起。
    */
   const viewBar = h('div', { class: 'list-viewbar' });
-  const cardViewBtn = button('卡片', () => setView('card'), { variant: 'ghost', class: 'list-view-btn' });
+  const cardViewBtn = button('白纸', () => setView('paper'), { variant: 'ghost', class: 'list-view-btn' });
   const wordViewBtn = button('单词', () => setView('word'), { variant: 'ghost', class: 'list-view-btn' });
   viewBar.appendChild(cardViewBtn);
   viewBar.appendChild(wordViewBtn);
@@ -151,7 +160,7 @@ export function renderListPage(): HTMLElement {
   /** 按当前视图给两个按钮上「亮起」状态 */
   const paintViewSwitch = (): void => {
     for (const [btn, key] of [
-      [cardViewBtn, 'card'],
+      [cardViewBtn, 'paper'],
       [wordViewBtn, 'word'],
     ] as [HTMLButtonElement, ListView][]) {
       const on = view === key;
@@ -170,10 +179,6 @@ export function renderListPage(): HTMLElement {
   const setView = (next: ListView): void => {
     if (view === next) return;
     view = next;
-    if (next === 'word' && state.favoriteOnly) {
-      state = { ...state, favoriteOnly: false, page: 1 };
-      void load();
-    }
     writeView(next);
     paintViewSwitch();
     renderAll();
@@ -211,7 +216,7 @@ export function renderListPage(): HTMLElement {
      * 所以这里传「被收藏的卡片 id 白名单」，分页/全选仍然按筛选后的口径算。
      * 收藏筛选只属于卡片视图：单词视图里没有收藏概念（切过去时会把这一项清掉）。
      */
-    ids: state.favoriteOnly && view === 'card' ? Array.from(cardFavoriteIds) : undefined,
+    ids: state.favoriteOnly ? Array.from(wordFavoriteIds) : undefined,
     minFailCount: state.minFailCount ?? undefined,
     minPriority: state.minPriority ?? undefined,
     // ★ R3：词级优先级精确筛选
@@ -226,7 +231,11 @@ export function renderListPage(): HTMLElement {
   const load = async (): Promise<void> => {
     sources = await dao.sources.list();
     // ★ 0.0.22：卡片收藏（读一次整表，收藏量很小）
-    cardFavoriteIds = await dao.cardFavorites.ids();
+    // ★ 1.0.0：单词收藏（cardFavorites 表）+ 白纸存档与其收藏
+    wordFavoriteIds = await dao.cardFavorites.ids();
+    const [paperList, favIds] = await Promise.all([dao.papers.list(), dao.paperFavorites.ids()]);
+    papers = paperList.slice().sort((a, b) => b.updatedAt - a.updatedAt);
+    paperFavoriteIds = favIds;
     const query = buildQuery();
     const [res, st, matched, alive] = await Promise.all([
       dao.words.query(query),
@@ -285,77 +294,84 @@ export function renderListPage(): HTMLElement {
     renderStats();
 
     /**
-     * ★ 0.0.22：两个视图各有**自己的**筛选区——
-     * 卡片视图用新工具栏（搜索 / 筛选 / 排序 / 批量编辑 / 只看收藏），
-     * 单词视图仍用原来那一排筛选项（没有收藏，因为收藏对象是卡片）。
+     * ★ 1.0.0：只保留单词视图这一排筛选项（白纸视图有它自己的工具栏，见 PaperPanel）。
      */
-    if (view === 'card') {
-      filtersBox.replaceChildren(
-        renderCardToolbar({
-          state,
-          sources,
-          selectedCount: selected.size,
-          matchedCount: total,
-          onKeyword: debounce((v: string) => {
-            state.keyword = v.trim();
-            state.page = 1;
-            void load();
-          }, 300),
+    filtersBox.replaceChildren(
+      renderListFilters({
+        state,
+        sources,
+        onKeyword: debounce((v: string) => {
+          state.keyword = v.trim();
+          state.page = 1;
+          void load();
+        }, 300),
+        onChange: (patch) => {
+          state = { ...state, ...patch, page: 1 };
+          void load();
+        },
+        onReset: () => {
+          state = { ...defaultFilterState(), pageSize: state.pageSize };
+          selected.clear();
+          void load();
+        },
+      }),
+    );
+    if (view === 'paper') {
+      // ★ 1.0.0：白纸视图只浏览白纸存档（没有单词表、没有分页/批量条）
+      filtersBox.replaceChildren();
+      tableBox.replaceChildren();
+      pagerBox.replaceChildren();
+      batchBox.replaceChildren();
+      statsBox.classList.add('hidden');
+      papersBox.classList.remove('hidden');
+      papersBox.replaceChildren(
+        renderPaperPanel({
+          papers,
+          // 白纸视图的搜索要能按「存档里的单词」匹配，所以把当页词表一并给它（拿不到就退回已加载的 items）
+          words: items,
+          favorites: paperFavoriteIds,
+          state: paperFilter,
           onChange: (patch) => {
-            state = { ...state, ...patch, page: 1 };
-            void load();
+            paperFilter = { ...paperFilter, ...patch };
+            renderAll();
           },
           onReset: () => {
-            state = { ...defaultFilterState(), pageSize: state.pageSize };
-            selected.clear();
-            void load();
+            paperFilter = defaultPaperFilter();
+            renderAll();
           },
-          onSelectPage: () => {
-            for (const item of items) selected.add(item.id);
-            updateSelectionUi();
+          onFavorite: (paper, value) => {
+            void (async () => {
+              await dao.paperFavorites.set(paper.id, value);
+              paperFavoriteIds = await dao.paperFavorites.ids();
+              toastOk(value ? `已收藏存档「${paper.name === '' ? '未命名' : paper.name}」` : '已取消收藏');
+              renderAll();
+            })();
           },
-          onClearSelect: () => {
-            selected.clear();
-            updateSelectionUi();
-          },
-        }),
-      );
-    } else {
-      filtersBox.replaceChildren(
-        renderListFilters({
-          state,
-          sources,
-          onKeyword: debounce((v: string) => {
-            state.keyword = v.trim();
-            state.page = 1;
-            void load();
-          }, 300),
-          onChange: (patch) => {
-            state = { ...state, ...patch, page: 1 };
-            void load();
-          },
-          onReset: () => {
-            state = { ...defaultFilterState(), pageSize: state.pageSize };
-            selected.clear();
-            void load();
+          onOpen: (paper) => void openPaperDetail(paper),
+          onRename: (paper) => {
+            void (async () => {
+              const next = await promptModal('重命名白纸存档', '输入新的名字；留空则记为「（未命名）」。', paper.name);
+              if (next === null) return;
+              await dao.papers.rename(paper.id, next.trim());
+              toastOk('已重命名');
+              await load();
+            })();
           },
         }),
       );
+      return;
     }
-
-    // ★ 0.0.20：按当前视图二选一渲染（不再靠 CSS 媒体查询按屏宽切换）。
-    //   「单词」视图 = 原来的表格；「卡片」视图 = 卡片网格。
-    //   表格那一路第 6 个参数传「整个筛选结果」的全选态，让表头勾选框能显示部分选中（indeterminate）。
-    if (view === 'card') {
-      tableBox.replaceChildren(renderListCards({ items, sources, selected, favorites: cardFavoriteIds, handlers }));
-    } else {
-      tableBox.replaceChildren(
-        renderListTable(items, sources, selected, handlers, failCap, {
-          selectedCount: selected.size,
-          matchedCount: matchedIds.length,
-        }),
-      );
-    }
+    statsBox.classList.remove('hidden');
+    papersBox.classList.add('hidden');
+    papersBox.replaceChildren();
+    tableBox.replaceChildren(
+      renderListTable(items, sources, selected, handlers, failCap, {
+        selectedCount: selected.size,
+        matchedCount: matchedIds.length,
+        // ★ 1.0.0：单词视图恢复收藏星标（与白纸视图的存档收藏互不影响）
+        favorites: wordFavoriteIds,
+      }),
+    );
 
     pagerBox.replaceChildren(
       renderPagination({
@@ -400,7 +416,7 @@ export function renderListPage(): HTMLElement {
         // ★ R3：批量设优先级
         onSetPriority: (priority) => void batchSetPriority(priority),
         // ★ 0.0.22：批量收藏**卡片**（只有卡片视图给这条回调，单词视图不显示收藏按钮）
-        onFavorite: view === 'card' ? (value) => void batchCardFavorite(value) : undefined,
+        onFavorite: (value) => void batchCardFavorite(value),
         onSelectAllMatched: () => selectAllMatched(),
         onClear: () => {
           selected.clear();
@@ -576,7 +592,11 @@ export function renderListPage(): HTMLElement {
     onCardFavorite: (word: Word, value: boolean): void => {
       void (async () => {
         await dao.cardFavorites.set(word.id, value);
-        cardFavoriteIds = await dao.cardFavorites.ids();
+        // ★ 1.0.0：单词收藏（cardFavorites 表）+ 白纸存档与其收藏
+    wordFavoriteIds = await dao.cardFavorites.ids();
+    const [paperList, favIds] = await Promise.all([dao.papers.list(), dao.paperFavorites.ids()]);
+    papers = paperList.slice().sort((a, b) => b.updatedAt - a.updatedAt);
+    paperFavoriteIds = favIds;
         toastOk(value ? `已收藏「${word.en}」这张卡片` : `已取消收藏「${word.en}」这张卡片`);
         renderAll();
       })();
@@ -712,66 +732,6 @@ export function renderListPage(): HTMLElement {
    * 「查看」＝ 弹窗列出这张纸上的单词（按存档里的已出现顺序），
    * 「重命名」＝ 输入框改名后落库（`papers.rename`）。
    */
-  const renderPapers = async (): Promise<void> => {
-    papersBox.replaceChildren();
-    let papers: Awaited<ReturnType<typeof dao.papers.list>> = [];
-    try {
-      papers = await dao.papers.list();
-    } catch (err) {
-      console.error('[list] 读取白纸存档失败', err);
-    }
-    const card = h('div', { class: 'card list-papers-card' });
-    const cardHead = h('div', { class: 'list-papers-head' });
-    cardHead.appendChild(h('h3', { class: 'card-title', text: '白纸存档' }));
-    cardHead.appendChild(h('span', { class: 'field-hint', text: `共 ${papers.length} 张` }));
-    card.appendChild(cardHead);
-
-    if (papers.length === 0) {
-      card.appendChild(h('p', { class: 'note', text: '还没有白纸存档。背诵时点「保存并退出」或「背完了」就会在这里留一张。' }));
-      papersBox.appendChild(card);
-      return;
-    }
-
-    const list = h('div', { class: 'papers-list' });
-    for (const p of papers) {
-      /**
-       * ★ 0.0.27（用户）：「白纸存档的排版调整：单词数放到最后显示，
-       *   且与名称之间保留间隙。」行内顺序 = 名称 → 状态 → 查看 → 重命名 → 词数（最后一格）。
-       */
-      const row = h('div', { class: 'papers-row' });
-      row.appendChild(h('span', { class: 'papers-name', text: p.name === '' ? '（未命名）' : p.name }));
-      row.appendChild(h('span', { class: 'papers-status', text: p.status === 'finished' ? '已背完' : '进行中' }));
-      row.appendChild(
-        button(
-          '查看',
-          () => {
-            void openPaperDetail(p);
-          },
-          { variant: 'ghost' },
-        ),
-      );
-      row.appendChild(
-        button(
-          '重命名',
-          () => {
-            void (async () => {
-              const next = await promptModal('重命名白纸存档', '输入新的名字；留空则记为「（未命名）」。', p.name);
-              if (next === null) return;
-              await dao.papers.rename(p.id, next.trim());
-              toastOk('已重命名');
-              await renderPapers();
-            })();
-          },
-          { variant: 'ghost' },
-        ),
-      );
-      // 单词数放最后（用户：单词数放到最后显示，且与名称之间保留间隙）
-      row.appendChild(h('span', { class: 'papers-count', text: `${p.shownIds.length} 词` }));
-      list.appendChild(row);
-    }
-    card.appendChild(list);
-    papersBox.appendChild(card);
-  };
 
   /**
    * 「查看」一张白纸存档：把存档里的「已出现单词」按顺序列出来。
@@ -811,7 +771,7 @@ export function renderListPage(): HTMLElement {
     });
   };
 
+  // ★ 1.0.0：白纸存档改由「白纸」视图统一渲染（renderAll 里），这里只加载数据
   void load();
-  void renderPapers();
   return page;
 }

@@ -3660,3 +3660,81 @@ body {
 .review-card-filters {
   align-items: center;
 }
+/* ═══════════════════════════════════════════════════════════════════════════
+   版本 1.0.0：列表页「白纸」视图（只看白纸存档）
+   ═══════════════════════════════════════════════════════════════════════════ */
+.paper-view {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 0;
+}
+
+.paper-view-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  background: var(--paper-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.paper-view-bar .ct-search {
+  flex: 1 1 240px;
+  min-width: 180px;
+}
+
+.paper-view-bar .ct-search .input {
+  width: 100%;
+}
+
+.paper-view-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.paper-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--paper-bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.paper-tile.is-favorite {
+  border-color: var(--warn);
+}
+
+.paper-tile-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.paper-tile-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.paper-tile-meta {
+  font-size: 12px;
+  color: var(--fg-dim);
+  white-space: nowrap;
+}
+
+.paper-tile-foot {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
