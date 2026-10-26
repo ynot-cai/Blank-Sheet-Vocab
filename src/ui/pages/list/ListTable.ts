@@ -16,6 +16,8 @@ export interface ListTableHandlers {
   onRevive: (word: Word) => void;
   onDelete: (word: Word) => void;
   onRawSources: (word: Word) => void;
+  /** ★ 0.1.1：AI 重新整理义项（列表 / 卡片的「更多」菜单里） */
+  onReorganizeSenses: (word: Word) => void;
   onAdoptRaw: (word: Word) => void;
   /** ★ R3：行内直接改词级优先级 */
   onPriority: (word: Word, priority: number) => void;
@@ -244,6 +246,7 @@ export function renderListTable(
     more.appendChild(h('option', { value: '', text: '更多…' }));
     more.appendChild(h('option', { value: 'copy', text: '复制' }));
     more.appendChild(h('option', { value: 'delete', text: '删除' }));
+    more.appendChild(h('option', { value: 'ai-senses', text: 'AI 重新整理义项' }));
     more.appendChild(h('option', { value: 'raw', text: '查看其他来源义项' }));
     more.addEventListener('change', () => {
       const value = more.value;
@@ -251,6 +254,7 @@ export function renderListTable(
       if (value === 'copy') {
         void navigator.clipboard?.writeText(`${word.en}\t${word.senses.map((s) => s.text).join('；')}`).catch(() => undefined);
       } else if (value === 'delete') handlers.onDelete(word);
+      else if (value === 'ai-senses') handlers.onReorganizeSenses(word);
       else if (value === 'raw') handlers.onRawSources(word);
     });
     opCell.appendChild(more);

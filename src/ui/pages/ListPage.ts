@@ -12,6 +12,7 @@ import { renderWordCard } from '../components/WordCard';
 import { currentSettings } from './settings/ctx';
 import { renderBatchBar } from './list/BatchBar';
 import { renderCardToolbar } from './list/CardToolbar';
+import { reorganizeWordSenses } from '../wordAiActions';
 import { renderListCards } from './list/ListCards';
 import type { ListFilterState } from './list/ListFilters';
 import { defaultFilterState, effectiveStatuses, renderListFilters } from './list/ListFilters';
@@ -483,6 +484,8 @@ export function renderListPage(): HTMLElement {
               await load();
             })();
           },
+          // ★ 0.1.1（用户）：「单词模块」里也要有 AI 重新整理义项
+          onReorganizeSenses: () => void reorganizeWordSenses(word, async () => { toastOk('义项已更新'); await load(); }),
           // 卡上的「斩」与表格行内「斩」同一套行为（无确认 + 8 秒撤销）
           onChop: () => handlers.onChop(word),
         }),
@@ -540,6 +543,10 @@ export function renderListPage(): HTMLElement {
         toastOk('已删除');
         await load();
       })();
+    },
+    /** ★ 0.1.1：AI 重新整理义项（列表两处菜单都走这里） */
+    onReorganizeSenses: (word: Word): void => {
+      void reorganizeWordSenses(word, () => void load());
     },
     onRawSources: (word: Word): void => {
       openRawSourcesModal(word, sources, (sourceId) => {

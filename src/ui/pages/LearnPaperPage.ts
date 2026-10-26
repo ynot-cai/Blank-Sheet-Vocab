@@ -25,6 +25,7 @@ import { createPaperStage, type PaperStageHandle } from './paper/PaperStage';
 import { applyPaperButtonVars, paperButtonBox } from './paper/geometry';
 import { startExam, type ExamHandle, type ExamWordOutcome } from './paper/exam';
 import { renderWordCard } from '../components/WordCard';
+import { reorganizeWordSenses } from '../wordAiActions';
 import { mountSpeechGate } from '../components/SpeechGate';
 
 /** 朗读一个词（考核里的小喇叭；读设置页「音频设置」的语速/口音） */
@@ -87,6 +88,12 @@ export function renderLearnPaperPage(): HTMLElement {
     card.appendChild(
       renderWordCard(word, {
         editable: true,
+        // ★ 0.1.1：单词卡上的「AI 整理义项」
+        onReorganizeSenses: () => void reorganizeWordSenses(word, (next) => {
+          const i = queue.findIndex((w) => w.id === next.id);
+          if (i >= 0) queue[i] = next;
+          stage.refreshWord(next);
+        }),
         onClose: () => card.remove(),
         onChange: (next) => {
           void (async () => {

@@ -59,6 +59,11 @@ export interface WordCardOptions {
    * 标记后它立即从白纸上消失（消失动作由调用方做）。
    */
   onSpellOnly?: (spellOnly: boolean) => void;
+  /**
+   * ★ 0.1.1（用户）：「单词模块新增 AI 重新整理义项按钮」。
+   * 传了才显示这颗按钮；点击由调用方去调 AI 并写库。
+   */
+  onReorganizeSenses?: () => void;
 }
 
 /**
@@ -465,6 +470,18 @@ export function renderWordCard(word: Word, opts: WordCardOptions = {}): HTMLElem
           },
           { variant: editing ? 'primary' : 'ghost', class: 'word-btn-edit' },
         ),
+      );
+    }
+    /**
+     * ★ 0.1.1：AI 重新整理义项（只在调用方传了回调时显示，避免卡片上多一颗无效按钮）。
+     */
+    if (opts.onReorganizeSenses) {
+      foot.appendChild(
+        button('AI 整理义项', () => opts.onReorganizeSenses?.(), {
+          variant: 'ghost',
+          class: 'word-btn-ai-senses',
+          title: '让 AI 把当前义项合并、补词性、精简近义词',
+        }),
       );
     }
     /**

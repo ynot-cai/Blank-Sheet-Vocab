@@ -160,6 +160,8 @@ export function renderListCards(opts: ListCardsOptions): HTMLElement {
     actions.appendChild(
       word.status === 'chopped' ? button('复活', () => handlers.onRevive(word)) : button('斩掉', () => handlers.onChop(word)),
     );
+    // ★ 0.1.1（用户）：AI 重新整理义项
+    actions.appendChild(button('AI 重新整理义项', () => handlers.onReorganizeSenses(word)));
     actions.appendChild(button('其他来源义项', () => handlers.onRawSources(word)));
     actions.appendChild(button('删除', () => handlers.onDelete(word), { variant: 'danger' }));
     body.appendChild(actions);

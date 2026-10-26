@@ -23,6 +23,7 @@ import { speak } from '../../services/tts';
 import { h } from '../dom';
 import { toastOk, toastWarn } from '../components/Toast';
 import { renderWordCard } from '../components/WordCard';
+import { reorganizeWordSenses } from '../wordAiActions';
 import { navigate } from '../router';
 import { currentSettings } from './settings/ctx';
 
@@ -288,6 +289,8 @@ export function renderSpellPage(): HTMLElement {
       renderWordCard(word, {
         // 「完全沿用主背诵程序的单词卡样式」：可编辑、可斩、可标记拼写，行为与白纸页一致
         editable: true,
+        // ★ 0.1.1：单词卡上的「AI 整理义项」（拼写强化没有画布，只需落库）
+        onReorganizeSenses: () => void reorganizeWordSenses(word),
         // 拼错的词在卡里同时给出逐格对照（勾叉是圆形底色那块样式）
         answerFeedback: correct ? [] : [{ input: typed === '' ? '（未填）' : typed, ok: false }],
         onClose: () => undefined,

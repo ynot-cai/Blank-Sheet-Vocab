@@ -29,19 +29,28 @@ import { currentSettings } from './settings/ctx';
 /** 复习方式 */
 type ReviewMode = 'default' | 'card';
 
-/** 卡片列表的筛选/排序状态 */
+/**
+ * 卡片列表的筛选/排序状态（★ 0.1.1：用户「进一步完善卡片模式的筛选与排序功能」）。
+ *
+ * 相比上一版补了三件事：
+ * 1. 搜索同时匹配**卡片名称**与**卡片里的单词**（名称想不起来时也能按词找）；
+ * 2. 新增「词数下限」筛选（空卡 / 至少 3 词 / 至少 10 词），便于跳过刚建的空纸；
+ * 3. 排序多了「卡里的词数」与「名称」两个键，并保留升/降序；另加「重置筛选」。
+ */
 interface CardListState {
   keyword: string;
   /** 全部 / 进行中 / 已背完 */
   status: 'all' | 'draft' | 'finished';
-  /** 最近改动 / 名称 / 词数 */
-  sort: 'updatedAt' | 'name' | 'words';
+  /** 词数下限：0 = 不限 */
+  minWords: number;
+  /** 最近改动 / 创建时间 / 名称 / 词数 */
+  sort: 'updatedAt' | 'createdAt' | 'name' | 'words';
   order: 'asc' | 'desc';
 }
 
 /** 默认状态 */
 function defaultCardState(): CardListState {
-  return { keyword: '', status: 'all', sort: 'updatedAt', order: 'desc' };
+  return { keyword: '', status: 'all', minWords: 0, sort: 'updatedAt', order: 'desc' };
 }
 
 /**
@@ -149,7 +158,7 @@ export function renderReviewPage(): HTMLElement {
         textInput(cardState.keyword, debounce((v: string) => {
           cardState.keyword = v.trim();
           redrawCards();
-        }, 300), { placeholder: '搜索卡片名称' }),
+        }, 300), { placeholder: '搜索卡片名称或卡片里的单词' }),
       ),
     );
     bar.appendChild(
@@ -166,10 +175,27 @@ export function renderReviewPage(): HTMLElement {
         },
       ),
     );
+    // ★ 0.1.1：词数下限（跳过刚建的空纸）
+    bar.appendChild(
+      select(
+        [
+          { value: '0', label: '不限词数' },
+          { value: '1', label: '至少 1 词' },
+          { value: '3', label: '至少 3 词' },
+          { value: '10', label: '至少 10 词' },
+        ],
+        String(cardState.minWords),
+        (v) => {
+          cardState.minWords = Number(v);
+          redrawCards();
+        },
+      ),
+    );
     bar.appendChild(
       select(
         [
           { value: 'updatedAt', label: '最近改动' },
+          { value: 'createdAt', label: '创建时间' },
           { value: 'name', label: '名称' },
           { value: 'words', label: '词数' },
         ],
@@ -193,6 +219,15 @@ export function renderReviewPage(): HTMLElement {
         },
       ),
     );
+    // 重置筛选 + 结果计数（★ 0.1.1）
+    const countEl = h('span', { class: 'review-card-count', text: '' });
+    countEl.dataset['role'] = 'review-card-count';
+    const resetBtn = button('重置筛选', () => {
+      cardState = defaultCardState();
+      void drawRight();
+    }, { variant: 'ghost', class: 'mini' });
+    bar.appendChild(countEl);
+    bar.appendChild(resetBtn);
     box.appendChild(bar);
 
     const listBox = h('div', { class: 'learn-archive-list review-card-list' });
@@ -203,18 +238,27 @@ export function renderReviewPage(): HTMLElement {
     /** 重画卡片列表（只重画列表，不动工具栏） */
     function redrawCards(): void {
       const keyword = cardState.keyword.toLowerCase();
+      /** 词 id → 英文（搜索时连卡片里的单词一起匹配） */
+      const enById = new Map(words.map((w) => [w.id, w.en.toLowerCase()]));
       let rows = papers.filter((p) => {
         if (cardState.status !== 'all' && p.status !== cardState.status) return false;
-        if (keyword !== '' && !(p.name || '').toLowerCase().includes(keyword)) return false;
+        if (cardState.minWords > 0 && p.shownIds.length < cardState.minWords) return false;
+        if (keyword !== '') {
+          const inName = (p.name || '').toLowerCase().includes(keyword);
+          const inWords = p.shownIds.some((id) => (enById.get(id) ?? '').includes(keyword));
+          if (!inName && !inWords) return false;
+        }
         return true;
       });
       const dir = cardState.order === 'asc' ? 1 : -1;
       rows = rows.slice().sort((a, b) => {
         if (cardState.sort === 'name') return (a.name || '').localeCompare(b.name || '') * dir;
         if (cardState.sort === 'words') return (a.shownIds.length - b.shownIds.length) * dir;
+        if (cardState.sort === 'createdAt') return (a.createdAt - b.createdAt) * dir;
         return (a.updatedAt - b.updatedAt) * dir;
       });
 
+      countEl.textContent = `${rows.length} 张`;
       listBox.replaceChildren();
       if (rows.length === 0) {
         listBox.appendChild(h('p', { class: 'note', text: '没有符合条件的卡片。' }));

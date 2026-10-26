@@ -31,6 +31,7 @@ import { h } from '../dom';
 import { toastOk, toastWarn } from '../components/Toast';
 import { navigate, registerCleanup } from '../router';
 import { renderWordCard } from '../components/WordCard';
+import { reorganizeWordSenses } from '../wordAiActions';
 import { mountSpeechGate } from '../components/SpeechGate';
 import { currentSettings } from './settings/ctx';
 import { createPaperStage, type PaperStageHandle } from './paper/PaperStage';
@@ -101,6 +102,12 @@ export function renderReviewPaperPage(): HTMLElement {
     card.appendChild(
       renderWordCard(word, {
         editable: true,
+        // ★ 0.1.1：单词卡上的「AI 整理义项」
+        onReorganizeSenses: () => void reorganizeWordSenses(word, (next) => {
+          const i = queue.findIndex((w) => w.id === next.id);
+          if (i >= 0) queue[i] = next;
+          stage.refreshWord(next);
+        }),
         onClose: () => card.remove(),
         onChange: (next) => {
           void (async () => {
@@ -203,7 +210,22 @@ export function renderReviewPaperPage(): HTMLElement {
     stage.addWord(next, p, true);
     refreshStats();
   };
-  btnNext.addEventListener('click', () => revealNext());
+  /**
+   * ★ 0.1.1（用户）：「复习时未能实现『每点击几次下一个后自动触发一次记忆或考核』，请修复。」
+   * 与背诵页完全同一口径：点 `exam.everyWords` 次「下一个」自动开始一轮考核。
+   */
+  let sinceExam = 0;
+  btnNext.addEventListener('click', () => {
+    void (async () => {
+      revealNext();
+      sinceExam += 1;
+      const every = Math.max(1, currentSettings().exam.everyWords);
+      if (sinceExam >= every) {
+        sinceExam = 0;
+        await startExamRound();
+      }
+    })();
+  });
 
   /** 复习完了：把复习结果写回词库（复习次数 / 上次复习时间 / 复习优先度） */
   btnDone.addEventListener('click', () => {
