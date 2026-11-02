@@ -11,7 +11,7 @@
  * 用法：node --import ./api/_dev/loader-register.mjs api/_dev/test-exam.mjs
  */
 import { selectExamWords, examScoreOf, memorizeCountOf } from '../../src/core/examSelect.ts';
-import { buildScorePrompt, buildScoreSystemPrompt, localScore, parseScoreResponse, EXAM_MAX_SCORE } from '../../src/services/aiScore.ts';
+import { buildScorePrompt, buildScoreSystemPrompt, localScore, machineMatchSenses, normalizeAnswerText, parseScoreResponse, EXAM_MAX_SCORE } from '../../src/services/aiScore.ts';
 import { DEFAULT_SCORE_RUBRIC } from '../../src/core/config.ts';
 
 let passed = 0;
@@ -184,5 +184,38 @@ console.log('\n[5] 评分：AI 不可用时的本地兜底（与旧版判分口�
   check('兜底点评写明了是本地判分', full.comment.includes('本地判分'), full.comment);
 }
 
+// ─────────────────────────── [6] 1.0.1：两阶段判分（机器匹配优先）
+console.log('\n[6] 第一阶段机器匹配：完全匹配 / 近义词 / 顺序无关 / 空白');
+{
+  const w = word('a', 'bank');
+  w.senses = [
+    { id: 's0', text: 'n. 银行', aliases: ['储蓄所'], example: '暂无', enabled: true },
+    { id: 's1', text: 'n. 河岸', aliases: ['岸边'], example: '暂无', enabled: true },
+  ];
+  check('归一化：去词性、空白、标点，忽略大小写', normalizeAnswerText(' n. 银行 ') === '银行' && normalizeAnswerText('BANK') === 'bank', normalizeAnswerText(' n. 银行 '));
+
+  const exact = machineMatchSenses(w, ['银行', '河岸']);
+  check('★ 义项代表词完全匹配 → 全部命中', exact.allMatched === true && exact.inputs.join(',') === 'true,true', JSON.stringify(exact));
+
+  const alias = machineMatchSenses(w, ['储蓄所', '岸边']);
+  check('★ 近义词匹配同样算命中', alias.allMatched === true, JSON.stringify(alias));
+
+  const swapped = machineMatchSenses(w, ['河岸', '银行']);
+  check('★ 顺序颠倒不影响「全部匹配」', swapped.allMatched === true, JSON.stringify(swapped));
+
+  const half = machineMatchSenses(w, ['银行', '大海']);
+  check('★ 只对一个义项 → 不算全匹配（交给 AI）', half.allMatched === false && half.inputs.join(',') === 'true,false', JSON.stringify(half));
+
+  const blank = machineMatchSenses(w, ['', '   ']);
+  check('★ 全空白 → allBlank（直接 0 分）', blank.allBlank === true && blank.allMatched === false, JSON.stringify(blank));
+
+  const oneBlank = machineMatchSenses(w, ['银行', '']);
+  check('部分空白不算 allBlank', oneBlank.allBlank === false && oneBlank.allMatched === false, JSON.stringify(oneBlank));
+
+  const localSwapped = localScore(w, ['河岸', '银行']);
+  check('★ 本地兜底判分顺序无关（颠倒也给 5 分）', localSwapped.score === 5, String(localSwapped.score));
+}
+
 console.log(`\n考核逻辑自检：${passed} 项通过，${failed} 项失败`);
+if (failed > 0) process.exit(1);
 if (failed > 0) process.exit(1);

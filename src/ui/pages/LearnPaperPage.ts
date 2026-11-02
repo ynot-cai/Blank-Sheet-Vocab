@@ -89,6 +89,8 @@ export function renderLearnPaperPage(): HTMLElement {
       renderWordCard(word, {
         editable: true,
         // ★ 0.1.1：单词卡上的「AI 整理义项」
+        // ★ 1.0.1（用户「问题 4」）：从卡片中删除（不改「是否已背」）
+        onRemoveFromCard: () => removeFromCard(word),
         onReorganizeSenses: () => void reorganizeWordSenses(word, (next) => {
           const i = queue.findIndex((w) => w.id === next.id);
           if (i >= 0) queue[i] = next;
@@ -155,6 +157,8 @@ export function renderLearnPaperPage(): HTMLElement {
   let table: PriorityTable = {};
   const shownOrder: string[] = [];
   const shown = new Set<string>();
+  /** ★ 1.0.1：被用户从这张卡片删掉的词（持久化在存档的 removedIds 里） */
+  const removedFromCard = new Set<string>();
   let destroyed = false;
 
   // ── 统计行 ──
@@ -341,12 +345,35 @@ export function renderLearnPaperPage(): HTMLElement {
     shown.delete(id);
     const idx = shownOrder.indexOf(id);
     if (idx >= 0) shownOrder.splice(idx, 1);
+    /**
+     * ★ 1.0.1（用户「问题 1」）：原来只从"已出现名单"里摘掉，**词还留在本轮队列里**，
+     * 于是下一次「下一个」又把它取出来 —— 这就是「斩完立刻又出现」的根因。
+     * 现在同时把它从队列与临时优先级表里摘掉（表里置 0，保证 nextWord 永远取不到它）。
+     */
+    queue = queue.filter((w) => w.id !== id);
+    table[id] = 0;
     if (paper) {
       delete paper.placements[id];
       paper.shownIds = [...shownOrder];
       await dao.papers.put(paper);
     }
     refreshStats();
+  };
+
+  /**
+   * ★ 1.0.1（用户「问题 4」）：「从卡片中删除」——只把词从这张卡片上移除，
+   * **不改变这个词「是否已背」**；删掉的 id 记进存档的 `removedIds`，
+   * 所以点「下一个」不会回来，重新进入这张纸也不会出现（复习卡片模式同样跳过）。
+   * @param word 词
+   */
+  const removeFromCard = (word: Word): void => {
+    void (async () => {
+      if (!paper) return;
+      removedFromCard.add(word.id);
+      paper.removedIds = Array.from(removedFromCard);
+      await removeFromPaper(word.id);
+      toastTop(`已从卡片删除「${word.en}」`);
+    })();
   };
 
   /** 斩：写库 + 右上角提示 + 立即从纸上消失 */
@@ -376,6 +403,16 @@ export function renderLearnPaperPage(): HTMLElement {
       const name = await promptModal('命名白纸', '给这张纸起个名字；不填就用今天的日期。', paper.name);
       if (name === null) return; // 关掉弹窗 = 取消
       const finalName = name.trim() === '' ? today() : name.trim();
+      /**
+       * ★ 1.0.1（用户「问题 5」）：点「背完了」要把纸上的词状态切成「已背」。
+       * 之前只把存档标成 finished，词本身还是「未背 / 学习中」，所以看起来"没有切换"。
+       * 已斩的词不动（斩的语义不能被覆盖）。
+       */
+      const onPaper = queue.filter((w) => shown.has(w.id));
+      for (const w of onPaper) {
+        if (w.status === 'chopped' || w.status === 'learned') continue;
+        await dao.words.put({ ...w, status: 'learned' });
+      }
       // 用户要求：永久存档时**清空临时优先级表**
       await dao.papers.put({ ...paper, name: finalName, priorityTable: {}, status: 'finished' });
       toastOk(`已存档「${finalName}」`);
@@ -436,7 +473,12 @@ export function renderLearnPaperPage(): HTMLElement {
 
       const all = await dao.words.listAlive();
       const usable = all.filter((w) => w.status !== 'chopped');
-      queue = orderByPriority(usable, table);
+      // ★ 1.0.1：存档里记着「从卡片删除」的词 —— 重建队列时直接排除
+      for (const id of found.removedIds ?? []) removedFromCard.add(id);
+      queue = orderByPriority(
+        usable.filter((w) => !removedFromCard.has(w.id)),
+        table,
+      );
       if (queue.length === 0) {
         toastWarn('这张纸没有可选单词了');
         navigate('/learn');

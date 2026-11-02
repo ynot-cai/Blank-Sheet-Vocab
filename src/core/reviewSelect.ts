@@ -68,8 +68,11 @@ export function buildReviewQueue(words: Word[], settings: Settings, now: number 
  */
 export function wordsOfPaper(paper: PaperArchive, words: Word[]): Word[] {
   const byId = new Map(words.map((w) => [w.id, w]));
+  /** ★ 1.0.1（用户「问题 4」）：被用户「从卡片中删除」的词，重新进入复习也不再出现 */
+  const removed = new Set(paper.removedIds ?? []);
   const out: Word[] = [];
   for (const id of paper.shownIds) {
+    if (removed.has(id)) continue;
     const hit = byId.get(id);
     if (hit) out.push(hit);
   }

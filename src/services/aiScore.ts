@@ -41,14 +41,15 @@ export const EXAM_MAX_SCORE = 5;
  *   所以这里只保留「必须遵守」的骨架（角色、输出 JSON 格式、逐格判定的个数要求），
  *   具体怎么给分/怎么扣分全部来自用户的 `scoreRubric`（见 `buildScoreSystemPrompt`）。
  */
-const SCORE_PROMPT_HEAD = `你是「白纸单词」的英译中阅卷助手。用户在看英文单词、按义项顺序填写中文意思，你要按下面的评分标准打分。
+const SCORE_PROMPT_HEAD = `你是「白纸单词」的英译中阅卷助手。用户在看英文单词、填写中文意思（输入框顺序可能与义项顺序不同，**顺序不影响判分**），你要按下面的评分标准打分。
 
 输出严格 JSON（只输出 JSON，不要 markdown 代码块、不要解释）：
 {"score":4,"inputs":[true,false],"comment":"一句话点评"}
 
 硬性要求（优先于评分标准）：
 1. score 必须是 0~5 的整数。
-2. inputs 与用户提交的答案**一一对应**（个数必须相同），每一项 true / false 表示该格是否算对。
+2. inputs 与用户提交的**输入框**一一对应（个数必须相同），每一项 true / false 表示该格是否算对；
+   某个输入框对上任意一个义项就算对，不要求和输入框编号一致（顺序不影响）。
 3. comment 用中文一句话，指出漏了或错了哪些义项。`;
 
 /**
@@ -97,7 +98,7 @@ export function buildScorePrompt(word: Word, answers: string[]): string {
     '用户按义项顺序填的答案：',
     answerLines,
     '',
-    `请按上面的规则评分，并给出 ${senses.length} 个 true/false。`,
+    `请按上面的规则评分（输入框顺序不影响判分），并给出 ${senses.length} 个 true/false。`,
   ].join('\n');
 }
 
@@ -142,24 +143,83 @@ export function parseScoreResponse(raw: string, total: number): { score: number;
 }
 
 /**
- * 本地兜底判分（AI 不可用时）：逐义项用旧版的 `senseMatch` 判断，
- * 分数 = 5 × 命中比例（四舍五入）。**与旧版判分口径一致**，不会凭空判错。
+ * 把答案归一化后再比较（用于「完全匹配」）：去掉词性前缀与多余空白、统一大小写与标点。
+ * @param text 原始文本
+ */
+export function normalizeAnswerText(text: string): string {
+  return text
+    .trim()
+    .toLowerCase()
+    .replace(/^\s*(?:n|v|vt|vi|adj|adv|prep|conj|pron|num|art|aux|phr|phrase)\s*\.\s*/i, '')
+    .replace(/[\s\u3000]+/g, '')
+    .replace(/[，,。.；;：:、!！?？'"“”‘’()（）\[\]【】]/g, '');
+}
+
+/** 第一阶段（机器匹配）的结果 */
+export interface MachineMatchResult {
+  /** 每个输入框是否命中某个义项（按输入框顺序） */
+  inputs: boolean[];
+  /** 是否所有义项都被（任意输入框）匹配到 —— 多义词要每一个都匹配才算 */
+  allMatched: boolean;
+  /** 是否所有输入框都空 */
+  allBlank: boolean;
+}
+
+/**
+ * ★ 1.0.1（用户「问题 2」）：英译中的**第一阶段机器匹配**。
+ *
+ * 规则（按用户原话）：
+ * - 输入与义项代表词完全匹配，或与同一义项里的任意近义词匹配 → 视为该义项已答对；
+ * - **多义词必须每一个义项都被某个输入框匹配到**，顺序不做要求；
+ * - 全部输入框都是空白 → 直接 0 分；
+ * - 其余情况交给第二阶段（AI）。
+ *
+ * 比较用的是「归一化后完全相等」：去词性前缀、空白、标点，忽略大小写。
  * @param word 词
- * @param answers 用户按义项顺序填的答案
+ * @param answers 用户填的答案（按输入框顺序）
+ */
+export function machineMatchSenses(word: Word, answers: string[]): MachineMatchResult {
+  const senses = activeSenses(word);
+  const normalized = answers.map((a) => normalizeAnswerText(a));
+  const allBlank = normalized.every((a) => a === '');
+  const senseHit = senses.map((sense) => {
+    const keys = [normalizeAnswerText(sense.text), ...sense.aliases.map((a) => normalizeAnswerText(a))].filter((k) => k !== '');
+    return normalized.some((a) => a !== '' && keys.includes(a));
+  });
+  /** 这个输入是否命中了该词任意一个义项（判断每个输入框的对错） */
+  const hits = (a: string): boolean =>
+    a !== '' &&
+    senses.some((sense) =>
+      [normalizeAnswerText(sense.text), ...sense.aliases.map((x) => normalizeAnswerText(x))]
+        .filter((k) => k !== '')
+        .includes(a),
+    );
+  const inputs = normalized.map(hits);
+  const allMatched = senses.length > 0 && senseHit.every(Boolean);
+  return { inputs, allMatched, allBlank };
+}
+
+/**
+ * 本地兜底判分（AI 不可用时）：**顺序无关**地按义项命中比例给分，
+ * 分数 = 5 × 命中比例（四舍五入）。与旧版判分口径一致，不会凭空判错。
+ * @param word 词
+ * @param answers 用户填的答案（顺序不影响）
  */
 export function localScore(word: Word, answers: string[]): ChineseScore {
   const senses = activeSenses(word);
-  const inputs = senses.map((sense, i) => {
-    const value = (answers[i] ?? '').trim();
-    if (value === '') return false;
-    return senseMatch(value, sense);
+  const nonEmpty = answers.map((a) => a.trim()).filter((a) => a !== '');
+  const senseHit = senses.map((sense) => nonEmpty.some((value) => senseMatch(value, sense)));
+  const inputs = answers.map((value) => {
+    const v = value.trim();
+    if (v === '') return false;
+    return senses.some((sense) => senseMatch(v, sense));
   });
-  const hit = inputs.filter(Boolean).length;
+  const hit = senseHit.filter(Boolean).length;
   const score = senses.length === 0 ? 0 : Math.round((hit / senses.length) * EXAM_MAX_SCORE);
   return {
     score,
     inputs,
-    comment: `本地判分（AI 不可用）：答对 ${hit}/${senses.length} 个义项`,
+    comment: `本地判分（AI 不可用）：答对 ${hit}/${senses.length} 个义项（顺序不影响）`,
   };
 }
 
@@ -179,6 +239,18 @@ export async function scoreChineseAnswers(
   rubric: string,
 ): Promise<ChineseScore> {
   const total = activeSenses(word).length;
+  /**
+   * ★ 1.0.1（用户「问题 2」）：**第一阶段（机器匹配）先行**——
+   * 完全匹配/近义词匹配（多义词每个义项都匹配、顺序不限）→ 立即满分，不调 AI；
+   * 全部空白 → 立即 0 分；其余情况才进第二阶段让 AI 判分。
+   */
+  const machine = machineMatchSenses(word, answers);
+  if (machine.allBlank) {
+    return { score: 0, inputs: machine.inputs, comment: '没有作答，0 分' };
+  }
+  if (machine.allMatched) {
+    return { score: EXAM_MAX_SCORE, inputs: machine.inputs, comment: '全部义项都匹配（顺序不影响）' };
+  }
   try {
     const content = await chatComplete(
       cfg,

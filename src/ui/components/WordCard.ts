@@ -64,6 +64,11 @@ export interface WordCardOptions {
    * 传了才显示这颗按钮；点击由调用方去调 AI 并写库。
    */
   onReorganizeSenses?: () => void;
+  /**
+   * ★ 1.0.1（用户「问题 4」）：「从卡片中删除」——只把词从当前卡片移除，**不改变是否已背**。
+   * 传了才显示按钮。
+   */
+  onRemoveFromCard?: () => void;
 }
 
 /**
@@ -475,6 +480,16 @@ export function renderWordCard(word: Word, opts: WordCardOptions = {}): HTMLElem
     /**
      * ★ 0.1.1：AI 重新整理义项（只在调用方传了回调时显示，避免卡片上多一颗无效按钮）。
      */
+    // ★ 1.0.1：从卡片中删除（不改变「是否已背」，只是让它不再出现在这张卡上）
+    if (opts.onRemoveFromCard) {
+      foot.appendChild(
+        button('从卡片中删除', () => opts.onRemoveFromCard?.(), {
+          variant: 'ghost',
+          class: 'word-btn-remove-card',
+          title: '只从这张卡片移除，不改变这个词「是否已背」',
+        }),
+      );
+    }
     if (opts.onReorganizeSenses) {
       foot.appendChild(
         button('AI 整理义项', () => opts.onReorganizeSenses?.(), {
