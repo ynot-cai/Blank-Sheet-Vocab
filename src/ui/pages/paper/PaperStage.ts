@@ -175,10 +175,17 @@ export function createPaperStage(opts: PaperStageOptions): PaperStageHandle {
     const text = formatSensesBrief(word.senses);
     const m = { w: estimateTextWidth(text, font.meaning) };
     const inner = meaningMaxW - MEANING_PAD_X;
-    const lines = Math.max(1, Math.ceil(m.w / Math.max(1, inner)));
+    /**
+     * ★ 1.0.2（用户「单词卡片上下重叠」）：
+     * 原来按 `ceil(估算宽 / 可用宽)` 估行数，估算略偏小（中英混排、标点、换行规则）
+     * 就会少留一行；中文一显示、盒子比预留的高，就会压到上下的词上（手机上实测出现 0.x px 重叠）。
+     * 现在：① 估算宽留 15% 余量；② 多义项至少按 2 行预留；③ 高度再加半行缓冲。
+     */
+    const safeWidth = m.w * 1.15;
+    const lines = Math.max(word.senses.length > 1 ? 2 : 1, Math.ceil(safeWidth / Math.max(1, inner)));
     return {
       w: Math.min(meaningMaxW, Math.max(Math.ceil(m.w), font.meaning * 2) + MEANING_PAD_X + 4),
-      h: Math.ceil(font.meaning * 1.5 * lines) + MEANING_PAD_Y + 2,
+      h: Math.ceil(font.meaning * 1.5 * (lines + 0.5)) + MEANING_PAD_Y + 2,
     };
   };
   const doLayout = (words: Word[], seedText?: string): Record<string, Placement> => {
@@ -283,7 +290,8 @@ export function createPaperStage(opts: PaperStageOptions): PaperStageHandle {
       text: formatSensesBrief(word.senses),
       title: '点击打开单词卡',
       // ★ 用户第 3 条：宽度直接约束到布点预算的盒子里，中文永远不会伸出画面
-      style: { maxWidth: `${meaningBox(word).w}px` },
+      // ★ 1.0.2：高度也钉在预留框内（宁可省略，也不许压到上下的词）
+      style: { maxWidth: `${meaningBox(word).w}px`, maxHeight: `${meaningBox(word).h}px` },
     });
     meaning.addEventListener('click', (ev) => {
       ev.stopPropagation();

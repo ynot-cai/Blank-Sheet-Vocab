@@ -9,16 +9,13 @@ export interface BatchBarOptions {
   onChop: () => void;
   onRevive: () => void;
   onSpell: (value: boolean) => void;
+  /** ★ 1.0.2（用户）：批量标记 / 取消「仅拼写」 */
+  onSpellOnly: (value: boolean) => void;
   onUnlearned: () => void;
   onDelete: () => void;
   /** ★ R3：批量设为某个词级优先级 */
   onSetPriority: (priority: number) => void;
-  /**
-   * ★ 0.0.22：批量收藏 / 取消收藏**卡片**。
-   *
-   * 收藏对象从「单词」改成「卡片」后，只有**卡片视图**才传这个回调
-   * （单词视图不显示这两个按钮，也不存在单词级收藏）。
-   */
+  /** 批量收藏 / 取消收藏单词 */
   onFavorite?: (value: boolean) => void;
   /** 把当前筛选结果的**全部**词都选上（跨页，不设数量上限） */
   onSelectAllMatched: () => void;
@@ -28,12 +25,10 @@ export interface BatchBarOptions {
 /**
  * 批量操作条（选中 ≥1 时从底部滑出）。
  *
- * ★ 「全选筛选结果」按钮是后加的：原来的全选只选**当前页**（≤200 条），
- *   而且翻页会把选中清空，所以批量操作实际能作用的上限就是 200 条——
- *   「把 3000 个词一次性设为未背」这类需求根本做不到。
- *   现在多一个按钮可以一次选上整个筛选结果，不再有数量上限。
- *
- * @param opts 选中数量与各操作回调
+ * ★ 1.0.2（用户「整理单词列表的批量编辑」）：
+ * - 文案统一去掉「批量」二字（斩 / 复活 / 收藏 / 删除 …）；
+ * - 除「删除」保持红色危险样式外，其余全部用**统一样式**（默认按钮）；
+ * - 「删除」仍走确认框（确认逻辑在 ListPage 的 batchDelete 里）。
  */
 export function renderBatchBar(opts: BatchBarOptions): HTMLElement {
   const wrap = h(
@@ -52,13 +47,14 @@ export function renderBatchBar(opts: BatchBarOptions): HTMLElement {
     );
   }
 
-  wrap.appendChild(button('批量斩', () => opts.onChop(), { variant: 'danger' }));
-  wrap.appendChild(button('批量复活', () => opts.onRevive()));
-  // ★ R3：批量设优先级。用下拉（选中即执行）而不是 5 个按钮，免得把批量条撑爆。
+  // 统一样式：除「删除」外都用默认按钮
+  wrap.appendChild(button('斩', () => opts.onChop()));
+  wrap.appendChild(button('复活', () => opts.onRevive()));
+  // ★ R3：设优先级。用下拉（选中即执行）而不是 5 个按钮，免得把批量条撑爆。
   const prioSel = h('select', { class: 'input mini-select', title: '把选中的词设为一个词级优先级' });
   prioSel.appendChild(h('option', { value: '', text: '设为优先级…' }));
   for (const opt of WORD_PRIORITY_OPTIONS) {
-    prioSel.appendChild(h('option', { value: String(opt.value), text: `设为 P${opt.value}` }));
+    prioSel.appendChild(h('option', { value: String(opt.value), text: `P${opt.value}` }));
   }
   prioSel.addEventListener('change', () => {
     const value = prioSel.value;
@@ -66,16 +62,19 @@ export function renderBatchBar(opts: BatchBarOptions): HTMLElement {
     if (value !== '') opts.onSetPriority(Number(value));
   });
   wrap.appendChild(prioSel);
-  wrap.appendChild(button('批量标记需拼写', () => opts.onSpell(true)));
-  wrap.appendChild(button('批量取消需拼写', () => opts.onSpell(false)));
-  // ★ 0.0.22：批量收藏**卡片**（只有卡片视图传了回调才显示）
+  wrap.appendChild(button('标记需拼写', () => opts.onSpell(true)));
+  wrap.appendChild(button('取消需拼写', () => opts.onSpell(false)));
+  // ★ 1.0.2：仅拼写（拼写强化的入场标签）
+  wrap.appendChild(button('标记仅拼写', () => opts.onSpellOnly(true)));
+  wrap.appendChild(button('取消仅拼写', () => opts.onSpellOnly(false)));
   if (opts.onFavorite) {
     const onFavorite = opts.onFavorite;
-    wrap.appendChild(button('批量收藏卡片', () => onFavorite(true)));
-    wrap.appendChild(button('批量取消收藏', () => onFavorite(false)));
+    wrap.appendChild(button('收藏', () => onFavorite(true)));
+    wrap.appendChild(button('取消收藏', () => onFavorite(false)));
   }
-  wrap.appendChild(button('批量设为未背', () => opts.onUnlearned()));
-  wrap.appendChild(button('批量删除', () => opts.onDelete(), { variant: 'danger' }));
+  wrap.appendChild(button('设为未背', () => opts.onUnlearned()));
+  // 唯一的危险按钮：删除（红色 + 确认框）
+  wrap.appendChild(button('删除', () => opts.onDelete(), { variant: 'danger' }));
   wrap.appendChild(button('取消选择', () => opts.onClear(), { variant: 'ghost' }));
   return wrap;
 }

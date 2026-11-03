@@ -40,6 +40,8 @@ export interface PaperPanelOptions {
   onFavorite: (paper: PaperArchive, value: boolean) => void;
   onOpen: (paper: PaperArchive) => void;
   onRename: (paper: PaperArchive) => void;
+  /** ★ 1.0.2（用户「卡片模式添加删除卡片」）：删除这张白纸存档 */
+  onDelete: (paper: PaperArchive) => void;
 }
 
 /**
@@ -166,6 +168,8 @@ export function renderPaperPanel(opts: PaperPanelOptions): HTMLElement {
     const foot = h('div', { class: 'paper-tile-foot' });
     foot.appendChild(button('查看', () => opts.onOpen(p), { variant: 'ghost', class: 'mini' }));
     foot.appendChild(button('重命名', () => opts.onRename(p), { variant: 'ghost', class: 'mini' }));
+    // ★ 1.0.2：删除卡片（危险样式，点它走确认框）
+    foot.appendChild(button('删除', () => opts.onDelete(p), { variant: 'danger', class: 'mini' }));
     tile.appendChild(foot);
     grid.appendChild(tile);
   }

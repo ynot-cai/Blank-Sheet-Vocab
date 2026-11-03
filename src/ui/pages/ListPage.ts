@@ -11,10 +11,11 @@ import { showUndoToast, toastError, toastOk, toastWarn } from '../components/Toa
 import { renderWordCard } from '../components/WordCard';
 import { currentSettings } from './settings/ctx';
 import { renderBatchBar } from './list/BatchBar';
+import { renderListToolbar } from './list/ListToolbar';
 import { reorganizeWordSenses } from '../wordAiActions';
 import { defaultPaperFilter, renderPaperPanel, type PaperFilterState } from './list/PaperPanel';
 import type { ListFilterState } from './list/ListFilters';
-import { defaultFilterState, effectiveStatuses, renderListFilters } from './list/ListFilters';
+import { defaultFilterState, effectiveStatuses } from './list/ListFilters';
 import { renderListTable } from './list/ListTable';
 import { openRawSourcesModal } from './list/RawSourcesModal';
 
@@ -294,12 +295,15 @@ export function renderListPage(): HTMLElement {
     renderStats();
 
     /**
-     * ★ 1.0.0：只保留单词视图这一排筛选项（白纸视图有它自己的工具栏，见 PaperPanel）。
+     * ★ 1.0.2（用户）：顶部只留「搜索 / 筛选 / 排序」三个按钮，点开各自面板；
+     * 全选入口在筛选面板底部（全选后底部批量条出现）。
      */
     filtersBox.replaceChildren(
-      renderListFilters({
+      renderListToolbar({
         state,
         sources,
+        selectedCount: selected.size,
+        matchedCount: total,
         onKeyword: debounce((v: string) => {
           state.keyword = v.trim();
           state.page = 1;
@@ -313,6 +317,11 @@ export function renderListPage(): HTMLElement {
           state = { ...defaultFilterState(), pageSize: state.pageSize };
           selected.clear();
           void load();
+        },
+        onSelectAllMatched: () => selectAllMatched(),
+        onClearSelection: () => {
+          selected.clear();
+          updateSelectionUi();
         },
       }),
     );
@@ -348,6 +357,21 @@ export function renderListPage(): HTMLElement {
             })();
           },
           onOpen: (paper) => void openPaperDetail(paper),
+          // ★ 1.0.2（用户「卡片模式添加删除卡片」）：删除白纸存档，先确认
+          onDelete: (paper) => {
+            void (async () => {
+              const ok = await confirmModal(
+                '删除卡片',
+                `确定删除存档「${paper.name === '' ? '（未命名）' : paper.name}」吗？词库本身不受影响。`,
+                '删除',
+                true,
+              );
+              if (!ok) return;
+              await dao.papers.remove(paper.id);
+              toastOk('已删除该卡片');
+              await load();
+            })();
+          },
           onRename: (paper) => {
             void (async () => {
               const next = await promptModal('重命名白纸存档', '输入新的名字；留空则记为「（未命名）」。', paper.name);
@@ -411,6 +435,8 @@ export function renderListPage(): HTMLElement {
         onChop: () => void batchStatus('chopped'),
         onRevive: () => void batchStatus(null),
         onSpell: (value) => void batchAttrs({ needSpell: value }),
+        // ★ 1.0.2：批量标记 / 取消「仅拼写」
+        onSpellOnly: (value) => void batchSpellOnly(value),
         onUnlearned: () => void batchStatus('unlearned'),
         onDelete: () => void batchDelete(),
         // ★ R3：批量设优先级
@@ -645,6 +671,18 @@ export function renderListPage(): HTMLElement {
    * 放错层级的话列表页改了、背诵抽词读的还是老值。
    * @param priority 目标优先级
    */
+  /**
+   * ★ 1.0.2（用户「单词列表界面添加批量设置仅拼写」）：批量标记 / 取消「仅拼写」。
+   * 标记时这些词会直接进入「已背」并出现在拼写强化候选池里。
+   * @param value true = 标记仅拼写
+   */
+  const batchSpellOnly = async (value: boolean): Promise<void> => {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+    const changed = await dao.words.setSpellOnlyMany(ids, value);
+    toastOk(value ? `已标记 ${changed} 个词为「仅拼写」` : `已取消 ${changed} 个词的「仅拼写」`);
+    await load();
+  };
   const batchSetPriority = async (priority: number): Promise<void> => {
     const ids = Array.from(selected);
     if (ids.length === 0) return;

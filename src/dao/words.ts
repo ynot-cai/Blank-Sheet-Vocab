@@ -204,6 +204,32 @@ export async function setSpellOnly(id: string, value: boolean): Promise<void> {
   const status = value && word.status !== 'chopped' ? 'learned' : word.status;
   await put({ ...next, status });
 }
+/**
+ * ★ 1.0.2（用户「批量设置仅拼写」）：批量标记 / 取消「仅拼写」。
+ *
+ * 与单选标记同一口径：标记 → `spellOnly = true` 且状态置 `learned`；取消 → 只清标记、不回退状态；
+ * 已斩的词只改标记、不改状态。
+ * @param ids 单词 id 数组
+ * @param value true = 标记仅拼写
+ */
+export async function setSpellOnlyMany(ids: string[], value: boolean): Promise<number> {
+  if (ids.length === 0) return 0;
+  const all = await listAlive();
+  const target = new Set(ids);
+  const now = Date.now();
+  let changed = 0;
+  await txRun(STORE.words, 'readwrite', (s) => {
+    for (const w of all) {
+      if (!target.has(w.id)) continue;
+      if ((w.spellOnly === true) === value) continue;
+      const status = value && w.status !== 'chopped' ? 'learned' : w.status;
+      s.put({ ...w, deleted: 0, spellOnly: value, status, updatedAt: now });
+      changed += 1;
+    }
+  });
+  if (changed > 0) emitDataChanged();
+  return changed;
+}
 export async function chop(id: string): Promise<void> {
   const word = await getById(id);
   if (!word) return;

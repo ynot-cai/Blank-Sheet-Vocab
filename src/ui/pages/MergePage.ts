@@ -161,6 +161,20 @@ export function renderMergePage(): HTMLElement {
     });
   };
 
+  /**
+   * ★ 1.0.2（用户「录入界面同样支持批量设置仅拼写」）：
+   * 一键把这一批草稿全部标记 / 取消「仅拼写」；入库时状态直接是「已背」。
+   */
+  const markAllSpellOnly = (value: boolean): void => {
+    for (const d of drafts) d.spellOnly = value;
+    persist();
+    renderList();
+    toastOk(value ? `已把 ${drafts.length} 个词标记为仅拼写` : '已取消全部仅拼写标记');
+  };
+  const spellOnlyBtn = button('全部标记仅拼写', () => markAllSpellOnly(true), {
+    title: '这一批词入库时直接标记「仅拼写」（状态会是「已背」），用于拼写强化',
+  });
+  const spellOnlyClearBtn = button('取消仅拼写标记', () => markAllSpellOnly(false));
   const suggestBtn = button('智能再合并', () => void runSuggest(), { variant: 'primary' });
   const reanalyzeBtn = button('AI 重新分析义项', () => void runReanalyze(), {
     title: '让 AI 按整理规范把这个词的义项分类、挑代表词、分隔近义词',
@@ -172,6 +186,8 @@ export function renderMergePage(): HTMLElement {
     multiToggle,
     button('全部展开', () => expandAll(true)),
     button('全部折叠', () => expandAll(false)),
+    spellOnlyBtn,
+    spellOnlyClearBtn,
     reanalyzeBtn,
     suggestBtn,
   );
@@ -200,6 +216,8 @@ export function renderMergePage(): HTMLElement {
           aliases: s.aliases,
           example: normalizeSenseExample(s.example),
         })),
+        // ★ 1.0.2：「仅拼写」标记也要存档，否则刷新/续跑后会丢
+        ...(d.spellOnly === true ? { spellOnly: true } : {}),
       }));
     saveJob(job);
   }, 500);

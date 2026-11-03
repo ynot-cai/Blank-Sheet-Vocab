@@ -19,6 +19,11 @@ export interface DraftWord {
    *   真的不想入库的词，现在只有一条路：**在录入页就不要把它放进去**。
    */
   hints: MergeSuggestion[];
+  /**
+   * ★ 1.0.2（用户「录入界面同样支持批量设置仅拼写」）：这一版草稿是否标记「仅拼写」。
+   * 入库时一并写进词条，并把状态直接置为「已背」（与列表页手动标记同一口径）。
+   */
+  spellOnly?: boolean;
 }
 
 /** 草稿统计 */
@@ -44,6 +49,8 @@ export function draftsFromEntries(entries: ParsedWord[]): DraftWord[] {
         ? entry.senses.map((s) => createSense(s.text, s.aliases, s.example))
         : [createSense('')],
     hints: [],
+    // ★ 1.0.2：续跑时把存档里的「仅拼写」标记带回来
+    ...((entry as { spellOnly?: boolean }).spellOnly === true ? { spellOnly: true } : {}),
   }));
 }
 
@@ -80,7 +87,9 @@ export function draftToWord(draft: DraftWord, sourceId: string, priority: number
       // T2：新词从 0 起算（已记录、确实考过 0 次）
       examCount: 0,
     },
-    status: 'unlearned',
+    // ★ 1.0.2：标记「仅拼写」的词直接进「已背」（它就是为拼写强化准备的）
+    status: draft.spellOnly === true ? 'learned' : 'unlearned',
+    ...(draft.spellOnly === true ? { spellOnly: true } : {}),
     priority: normalizeWordPriority(priority),
     learnOrder: null,
     createdAt: now,
