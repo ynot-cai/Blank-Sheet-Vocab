@@ -15,7 +15,7 @@
  * RULES-R1: 全程**没有时间限制 / 倒计时 / 超时判错**——本页唯一的 setTimeout 是
  * 「等这一轮点击派发完、再挂单词卡的『任意键继续』监听」，不参与任何判分。
  */
-import { SPELL_MAX_SCORE, buildSpellQueue, hintLetters, reinsertEntry, repeatInsertIndex, spellScore, type SpellEntry } from '../../core/spellSelect';
+import { SPELL_MAX_SCORE, hintLetters, reinsertEntry, sortSpellCandidates, spellScore, takeCycleBatch, type SpellEntry } from '../../core/spellSelect';
 import { activeSenses } from '../../core/model';
 import type { Word } from '../../core/types';
 import * as dao from '../../dao';
@@ -51,11 +51,6 @@ function meaningOf(word: Word): string {
   return parts.join('；');
 }
 
-/** 今天（YYYY-MM-DD），总结里用 */
-function today(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
 
 /**
  * 渲染拼写强化页。
@@ -65,8 +60,12 @@ export function renderSpellPage(): HTMLElement {
 
   /** 状态 */
   let stage: SpellStage = 'home';
-  /** 本轮队列 */
+  /** 队列（会不断追加：这是「炒饭式」循环的载体） */
   let queue: SpellEntry[] = [];
+  /** 在「排好序的候选」里的循环游标（取完一轮从头部绕回） */
+  let cycleOffset = 0;
+  /** 已经循环了几轮（只为提示用） */
+  let cycles = 0;
   /** 当前题下标 */
   let index = 0;
   /** 本题已点「提示」次数 / 小喇叭次数 */
@@ -123,7 +122,7 @@ export function renderSpellPage(): HTMLElement {
     } else {
       const list = h('div', { class: 'spell-list' });
       // 首页按专属优先级排序展示，用户能看到「接下来先练谁」
-      const entries = buildSpellQueue(tagged, records, settings.spell).slice(0, 30);
+      const entries = sortSpellCandidates(tagged, records, settings.spell).slice(0, 30);
       for (const entry of entries) {
         const rec = entry.record;
         const row = h('div', { class: 'spell-row' });
@@ -154,7 +153,15 @@ export function renderSpellPage(): HTMLElement {
   const startRound = async (): Promise<void> => {
     await refreshData();
     const settings = currentSettings();
-    queue = buildSpellQueue(tagged, records, settings.spell);
+    /**
+     * ★ 1.0.3（用户「炒饭式循环复习」）：先按优先级把**全部**候选排好序，
+     * 再按游标取第一批；队列走完后用同一个排序结果接着取下一批，永远循环。
+     */
+    const sorted = sortSpellCandidates(tagged, records, settings.spell);
+    const first = takeCycleBatch(sorted, 0, settings.spell.count);
+    queue = first.batch;
+    cycleOffset = first.nextOffset;
+    cycles = 1;
     if (queue.length === 0) {
       toastWarn('还没有标记要强化的单词');
       return;
@@ -172,8 +179,9 @@ export function renderSpellPage(): HTMLElement {
     stage = 'quiz';
     page.dataset['stage'] = stage;
     const entry = queue[index];
-    if (!entry) {
-      drawSummary();
+    if (entry === undefined) {
+      // 理论上 advance 会先补货；这里兜底再补一次，仍然空才结束
+      void refillThenDraw();
       return;
     }
     const word = entry.word;
@@ -335,47 +343,67 @@ export function renderSpellPage(): HTMLElement {
     }, 0);
   };
 
-  // ══════════════════════ 调度下一个 ══════════════════════
-  const advance = (score: number): void => {
-    const entry = queue[index];
-    if (entry && score < SPELL_MAX_SCORE) {
-      // 用户：未拿满分的词间隔 5 个单词后再出现；剩余不足 5 个则追加到末尾
-      const at = repeatInsertIndex(queue.length, index);
-      queue = reinsertEntry(queue, index, { ...entry, record: records.get(entry.word.id) ?? null });
-      roundRepeat += 1;
-      // eslint-disable-next-line no-console
-      console.debug(`[spell] 未满分，插回队列第 ${at + 1} 位`);
+  // ══════════════════════ 炒饭式循环调度（1.0.3） ══════════════════════
+  /**
+   * 队列用完时补货：重新读一遍记录（通过次数刚变过）→ 重新按优先级排序 →
+   * 从游标处再取一批追加到队列尾部。取完一轮自动绕回开头，于是「下一个」可以一直点下去。
+   */
+  const refillQueue = async (): Promise<boolean> => {
+    await refreshData();
+    if (tagged.length === 0) return false;
+    const settings = currentSettings();
+    const sorted = sortSpellCandidates(tagged, records, settings.spell);
+    const next = takeCycleBatch(sorted, cycleOffset, settings.spell.count);
+    cycleOffset = next.nextOffset;
+    // 已消化的前缀丢掉，避免队列无限变长
+    if (queue.length > settings.spell.count * 3) {
+      queue = queue.slice(index);
+      index = 0;
     }
-    index += 1;
+    queue = queue.concat(next.batch);
+    cycles += 1;
+    return next.batch.length > 0;
+  };
+
+  /** 兜底：队列真的空了才补货并重画 */
+  const refillThenDraw = async (): Promise<void> => {
+    const ok = await refillQueue();
+    if (!ok) {
+      toastWarn('还没有标记要强化的单词');
+      void refreshData().then(drawHome);
+      return;
+    }
     drawQuiz();
   };
 
-  // ══════════════════════ 总结 ══════════════════════
-  const drawSummary = (): void => {
-    stage = 'summary';
-    page.dataset['stage'] = stage;
-    main.replaceChildren();
-    const box = h('div', { class: 'spell-home' });
-    box.appendChild(h('h2', { class: 'spell-title', text: '本轮复习完成' }));
-    box.appendChild(
-      h('p', {
-        class: 'spell-sub',
-        text: `共 ${roundQuestions} 题 · 满分 ${roundFullScore} 题 · 未满分重复 ${roundRepeat} 次 · 平均 ${roundQuestions === 0 ? 0 : Math.round((roundTotalScore / roundQuestions) * 10) / 10} 分（${today()}）`,
-      }),
-    );
-    const actions = h('div', { class: 'spell-actions' });
-    const again = h('button', { class: 'spell-primary', type: 'button', text: '再来一轮' });
-    again.addEventListener('click', () => void startRound());
-    const back = h('button', { class: 'spell-btn', type: 'button', text: '回到功能首页' });
-    back.addEventListener('click', () => {
-      void refreshData().then(drawHome);
-    });
-    actions.appendChild(again);
-    actions.appendChild(back);
-    box.appendChild(actions);
-    main.appendChild(box);
+  /**
+   * 答完一题后的调度（用户规则 e）：未满分 → 插到后面隔 5 个词的位置再来一次，直到通过为止；
+   * 队列走到头 → 自动循环到下一批（「炒饭式」），不再出现「本轮结束」的终点。
+   * @param score 本题得分
+   */
+  const advance = (score: number): void => {
+    const entry = queue[index];
+    if (entry !== undefined && score < SPELL_MAX_SCORE) {
+      // 规则 e：未通过 → 间隔 5 个单词后再次出现；剩余不足 5 个则追加到末尾
+      queue = reinsertEntry(queue, index, { ...entry, record: records.get(entry.word.id) ?? null });
+      roundRepeat += 1;
+    }
+    index += 1;
+    if (index >= queue.length) {
+      void (async () => {
+        const ok = await refillQueue();
+        if (!ok) {
+          drawQuiz();
+          return;
+        }
+        // 每循环一轮给一次轻提示（不打断答题）
+        toastOk(`已循环第 ${cycles} 轮，继续练习`);
+        drawQuiz();
+      })();
+      return;
+    }
+    drawQuiz();
   };
-
   // ── 初始化 ──
   void (async () => {
     try {

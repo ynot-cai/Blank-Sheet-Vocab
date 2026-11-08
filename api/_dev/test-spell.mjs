@@ -12,7 +12,10 @@
  */
 import {
   SPELL_MAX_SCORE,
+  SPELL_NEVER_PASSED_BONUS,
   buildSpellQueue,
+  sortSpellCandidates,
+  takeCycleBatch,
   computeSpellPriority,
   hintLetters,
   reinsertEntry,
@@ -92,7 +95,8 @@ console.log('\n[3] 专属优先级：加权公式，权重可配置');
   const rec = { id: 'w1', attempts: 3, lastScore: 2, bestScore: 4, totalScore: 8, lastAt: now - 86_400_000 };
   const p = computeSpellPriority(w, rec, settings, now);
   // 手算：失败率 0.5 → 6×0.5=3；天数 10 → 1×10=10；次数 3 → 2.5×3=7.5；低分 (5-2)=3 → 4×3=12；词级 P4 → 0.4×4=1.6
-  check('★ 按公式加权求和（可与手算对上）', Math.abs(p - 34.1) < 1e-9, String(p));
+  // ★ 1.0.3：从未通过过（passes 缺省 0）额外加 SPELL_NEVER_PASSED_BONUS
+  // 手算：失败率 0.5→3；天数按 record.lastAt（1 天）→1；次数 3→7.5；低分 3→12；P4→1.6 = 25.1\n  check('★ 按公式加权求和（含「从未通过」加分）', Math.abs(p - (SPELL_NEVER_PASSED_BONUS + 25.1)) < 1e-6, String(p));
 
   const rec0 = null;
   const pNoRec = computeSpellPriority(word('w2', 'bravo'), rec0, settings, now);
@@ -157,6 +161,39 @@ console.log('\n[5] 未满分重排：间隔 5 个单词后出现');
   check('原队列不被修改（纯函数）', q.length === 7);
   const tail = reinsertEntry(q, 4, q[4]);
   check('剩余只有 2 个 → 追加到末尾', tail.map((e) => e.word.en).join('') === 'abcdefge'.slice(0, 8), tail.map((e) => e.word.en).join(''));
+}
+
+// ─────────────────────────── [6] 1.0.3：炒饭式循环与通过次数衰减
+console.log('\n[6] 1.0.3：通过次数衰减 / 优先级排序 / 循环取词');
+{
+  const now = 1_800_000_000_000;
+  const settingsNew = { ...settings, weights: { ...settings.weights, passDecay: 1 } };
+  const w = word('w1', 'alpha', { failCount: 0, failCountTotal: 0, examCount: 10, lastReviewAt: now - 86_400_000 });
+  const rec0 = { id: 'w1', attempts: 3, lastScore: 2, bestScore: 4, totalScore: 8, lastAt: now - 86_400_000 };
+  const rec3 = { ...rec0, passes: 3 };
+  const p0 = computeSpellPriority(w, rec0, settingsNew, now);
+  const p3 = computeSpellPriority(w, rec3, settingsNew, now);
+  check('★ 通过次数越多，优先级越低（权重衰减）', p3 < p0, `${p0} vs ${p3}`);
+  check('从未通过过（passes=0）的词带固定加分', p0 >= SPELL_NEVER_PASSED_BONUS, String(p0));
+  const decayOff = computeSpellPriority(w, { ...rec3, passes: 0 }, { ...settingsNew, weights: { ...settingsNew.weights, passDecay: 0 } }, now);
+  // failRate 0、天数 1、次数 7.5、低分 12、P3 1.2 = 21.7\n  check('passDecay=0 时不衰减', Math.abs(decayOff - (SPELL_NEVER_PASSED_BONUS + 21.7)) < 1e-6, String(decayOff));
+
+  const words3 = [word('a', 'aaa'), word('b', 'bbb'), word('c', 'ccc')];
+  const records = new Map([
+    ['a', { id: 'a', attempts: 2, lastScore: 5, bestScore: 5, totalScore: 10, lastAt: now, passes: 5 }],
+    ['c', { id: 'c', attempts: 1, lastScore: 3, bestScore: 5, totalScore: 3, lastAt: now, passes: 1 }],
+  ]);
+  const sorted = sortSpellCandidates(words3, records, settingsNew, now);
+  check('★ 从未通过过的词排最前（b）', sorted[0].word.id === 'b', sorted.map((x) => x.word.id).join(','));
+  check('通过多次的词排最后（a）', sorted[sorted.length - 1].word.id === 'a', sorted.map((x) => x.word.id).join(','));
+
+  const b1 = takeCycleBatch(sorted, 0, 2);
+  check('第一批取前 2 个、游标 = 2', b1.batch.length === 2 && b1.nextOffset === 2, JSON.stringify({ n: b1.batch.length, off: b1.nextOffset }));
+  const b2 = takeCycleBatch(sorted, 2, 2);
+  check('★ 取到末尾后绕回开头（循环）', b2.batch.length === 2 && b2.batch[0].word.id === sorted[2].word.id && b2.batch[1].word.id === sorted[0].word.id, b2.batch.map((x) => x.word.id).join(','));
+  check('游标越界自动取模', takeCycleBatch(sorted, 5, 2).nextOffset >= 0);
+  check('空候选返回空批', takeCycleBatch([], 0, 3).batch.length === 0);
+  check('buildSpellQueue 仍只取第一轮的量', buildSpellQueue(words3, records, settingsNew, now).length === Math.min(settingsNew.count, 3));
 }
 
 console.log(`\n拼写强化自检：${passed} 项通过，${failed} 项失败`);

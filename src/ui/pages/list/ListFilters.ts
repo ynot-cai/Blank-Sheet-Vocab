@@ -8,6 +8,8 @@ export interface ListFilterState {
   statuses: WordStatus[];
   sourceId: string;
   needSpellOnly: boolean;
+  /** ★ 1.0.3（用户「单词列表添加仅拼写筛选」）：只看标记了「仅拼写」的词 */
+  onlySpellOnly: boolean;
   /**
    * ★ 0.0.22：只看收藏的**卡片**。
    *
@@ -35,6 +37,7 @@ export function defaultFilterState(): ListFilterState {
     statuses: [],
     sourceId: '',
     needSpellOnly: false,
+    onlySpellOnly: false,
     favoriteOnly: false,
     includeChopped: false,
     minFailCount: null,

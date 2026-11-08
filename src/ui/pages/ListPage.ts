@@ -212,6 +212,8 @@ export function renderListPage(): HTMLElement {
     status: effectiveStatuses(state),
     sourceId: state.sourceId || undefined,
     needSpell: state.needSpellOnly ? true : undefined,
+    // ★ 1.0.3：只看「仅拼写」
+    spellOnly: state.onlySpellOnly ? true : undefined,
     /**
      * ★ 0.0.22：只看收藏 —— 收藏对象是**卡片**（`cardFavorites` 表），不是词的字段，
      * 所以这里传「被收藏的卡片 id 白名单」，分页/全选仍然按筛选后的口径算。

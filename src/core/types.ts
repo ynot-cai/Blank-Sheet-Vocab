@@ -408,6 +408,12 @@ export interface SpellWeights {
   lowScore: number;
   /** 词级背诵优先级（`priority`）的权重 */
   wordPriority: number;
+  /**
+   * ★ 1.0.3（用户「权重随考核通过次数增加而降低」）：通过次数衰减强度。
+   *
+   * 实际乘的系数是 `1 / (1 + passDecay × 通过次数)`；0 = 不衰减。
+   */
+  passDecay: number;
 }
 
 /** 拼写强化的设置 */
@@ -436,6 +442,14 @@ export interface SpellRecord {
   totalScore: number;
   /** 最后一次出现的时间 */
   lastAt: number;
+  /**
+   * ★ 1.0.3：**考核通过次数**（满分 5 才 +1）。
+   *
+   * 用户规则 d：「当次未通过的复习不算成功复习一次」——所以只有满分才加；
+   * 「从未背过或从未答对过」= passes === 0，这类词优先级最高（规则 a）。
+   * 老数据没有这个字段，按 0 处理（= 从没通过过）。
+   */
+  passes?: number;
 }
 
 /** 备份设置 */
@@ -555,6 +569,8 @@ export interface WordQuery {
   sourceId?: string;
   minFailCount?: number;
   needSpell?: boolean;
+  /** ★ 1.0.3（用户「单词列表添加仅拼写筛选」）：只看标记了「仅拼写」的词 */
+  spellOnly?: boolean;
   minPriority?: number;
   /**
    * ★ 版本 0.0.22：只在给定的 id 集合里查。

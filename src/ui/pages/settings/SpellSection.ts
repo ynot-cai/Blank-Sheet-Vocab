@@ -22,6 +22,7 @@ const WEIGHT_FIELDS: { key: keyof SpellWeights; label: string; hint: string }[] 
   { key: 'attempts', label: '本功能出现次数', hint: '在拼写强化里被练过的次数' },
   { key: 'lowScore', label: '上次得分', hint: '上次得分越低越优先（按 5 − 上次得分 计）' },
   { key: 'wordPriority', label: '词级优先级', hint: '词的背诵优先级（P1~P5）' },
+  { key: 'passDecay', label: '通过次数衰减', hint: '每通过一次，上面的权重乘 1/(1+该值)；0 = 不衰减' },
 ];
 
 /**
@@ -81,7 +82,7 @@ export function renderSpellSection(): HTMLElement {
   wrap.appendChild(
     h('p', {
       class: 'field-hint',
-      text: '公式：失败率×权重 + 距上次复习天数×权重 + 出现次数×权重 + (5 − 上次得分)×权重 + 词级优先级×权重，从高到低排。',
+      text: '公式：失败率×权重 + 距上次复习天数×权重 + 出现次数×权重 + (5 − 上次得分)×权重 + 词级优先级×权重，再乘通过次数衰减；从未通过过的词始终排最前。',
     }),
   );
   return wrap;

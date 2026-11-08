@@ -34,6 +34,11 @@ export async function map(): Promise<Map<string, SpellRecord>> {
 export async function recordScore(id: string, score: number, now: number = Date.now()): Promise<SpellRecord> {
   const rows = await tx<SpellRecord[]>(STORE.spellRecords, 'readonly', (s) => s.getAll() as IDBRequest<SpellRecord[]>);
   const old = (rows ?? []).find((r) => r.id === id);
+  /**
+   * ★ 1.0.3（用户规则 d）：**满分才算一次「成功复习」**——
+   * 未通过的复习只记 attempts / lastScore，不加 passes；passes 用于优先级衰减（规则 c）。
+   */
+  const passed = score === 5;
   const next: SpellRecord = {
     id,
     attempts: (old?.attempts ?? 0) + 1,
@@ -41,6 +46,7 @@ export async function recordScore(id: string, score: number, now: number = Date.
     bestScore: Math.max(old?.bestScore ?? 0, score),
     totalScore: (old?.totalScore ?? 0) + score,
     lastAt: now,
+    passes: (old?.passes ?? 0) + (passed ? 1 : 0),
   };
   await txRun(STORE.spellRecords, 'readwrite', (s) => s.put(next));
   return next;

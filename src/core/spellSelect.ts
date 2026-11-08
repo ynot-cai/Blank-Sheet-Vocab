@@ -19,6 +19,11 @@ import type { SpellRecord, SpellSettings, Word } from './types';
 export const SPELL_MAX_SCORE = 5;
 /** 未拿满分的词间隔几个单词后再出现（用户：间隔 5 个单词） */
 export const SPELL_REPEAT_GAP = 5;
+/**
+ * ★ 1.0.3：从未通过过的词额外加的优先级（用户规则 a：「从未背过或从未答对过的单词优先级最高」）。
+ * 取一个大到足以压过常规公式的量级（常规分数一般几十），保证它们永远排在最前。
+ */
+export const SPELL_NEVER_PASSED_BONUS = 1000;
 
 /** 一个待强化条目：词 + 现算的优先级 + 记录 */
 export interface SpellEntry {
@@ -67,13 +72,22 @@ export function computeSpellPriority(
   const failRate = getFailRate(word.attrs);
   const attempts = record?.attempts ?? 0;
   const lastScore = record?.lastScore ?? 0;
-  return (
+  const passes = record?.passes ?? 0;
+  const base =
     w.failRate * failRate +
-    w.days * daysSince(word.attrs.lastReviewAt, now) +
+    w.days * daysSince(record?.lastAt ?? word.attrs.lastReviewAt, now) +
     w.attempts * attempts +
     w.lowScore * (SPELL_MAX_SCORE - lastScore) +
-    w.wordPriority * wordPriorityOf(word)
-  );
+    w.wordPriority * wordPriorityOf(word);
+  /**
+   * ★ 1.0.3（用户规则 a / c）：
+   * - a「从未背过或从未答对过」的词优先级最高：加一个足够大的常量把它顶到最前面；
+   * - c 通过次数越多，上面的权重衰减越多：乘 `1 / (1 + passDecay × passes)`。
+   * 未通过的复习不加 passes（见 dao.spellRecords.recordScore），所以「没通过」不会让它降权。
+   */
+  const neverPassed = passes === 0 ? SPELL_NEVER_PASSED_BONUS : 0;
+  const decay = 1 / (1 + Math.max(0, w.passDecay) * passes);
+  return neverPassed + base * decay;
 }
 
 /** 排序：优先级高的在前；相同则按单词首字母升序（保证结果稳定、可复现） */
@@ -100,16 +114,66 @@ export function buildSpellQueue(
   settings: SpellSettings,
   now: number = Date.now(),
 ): SpellEntry[] {
-  // ★ 0.0.27（用户：「『仅拼写』是进入拼写强化的属性标签」）：候选 = 被标记『仅拼写』且未斩的词
+  return takeCycleBatch(sortSpellCandidates(words, records, settings, now), 0, settings.count).batch;
+}
+
+/**
+ * ★ 1.0.3（用户「炒饭式循环复习」）：把**全部**候选词按优先级排好（不再截断）。
+ *
+ * 排序规则（用户 a~e）：
+ * - a 从未背过 / 从未答对过（`passes === 0`）的词排最前（`computeSpellPriority` 里的固定加分）；
+ * - b 距上次出现越久 → 天数项越大；c 通过次数越多 → 整体权重乘 `1/(1+passDecay×passes)` 衰减；
+ * - 同分时按「更久没出现的先」（`lastAt` 小的先），再按首字母，保证顺序稳定。
+ * @param words 词库全量
+ * @param records 本功能记录
+ * @param settings 设置
+ * @param now 当前时间
+ */
+export function sortSpellCandidates(
+  words: Word[],
+  records: Map<string, SpellRecord>,
+  settings: SpellSettings,
+  now: number = Date.now(),
+): SpellEntry[] {
   const tagged = words
     .filter((w) => w.spellOnly === true && w.status !== 'chopped')
     .map((word) => {
       const record = records.get(word.id) ?? null;
       return { word, record, priority: computeSpellPriority(word, record, settings, now) };
     });
-  tagged.sort(compareSpellEntries);
-  const count = Math.max(1, Math.round(settings.count));
-  return tagged.slice(0, count);
+  tagged.sort((a, b) => {
+    const base = compareSpellEntries(a, b);
+    if (base !== 0) return base;
+    const ta = a.record?.lastAt ?? 0;
+    const tb = b.record?.lastAt ?? 0;
+    if (ta !== tb) return ta - tb;
+    return compareSpellEntries(a, b);
+  });
+  return tagged;
+}
+
+/**
+ * ★ 1.0.3：从排好序的候选里**循环取一批**（走到末尾就绕回开头）。
+ *
+ * 这是「炒饭式」的核心：每轮的队列都用同一个排序结果按游标顺次取，
+ * 取完一轮就从头部再来，于是不断点「下一个」会一直循环下去，而不是走完就结束。
+ * @param sorted 排好序的候选（`sortSpellCandidates` 的结果）
+ * @param offset 游标（从哪开始取）
+ * @param count 本轮取几个
+ */
+export function takeCycleBatch(
+  sorted: SpellEntry[],
+  offset: number,
+  count: number,
+): { batch: SpellEntry[]; nextOffset: number } {
+  const size = Math.max(1, Math.round(count));
+  const total = sorted.length;
+  if (total === 0) return { batch: [], nextOffset: 0 };
+  const start = ((Math.round(offset) % total) + total) % total;
+  const take = Math.min(size, total);
+  const batch: SpellEntry[] = [];
+  for (let i = 0; i < take; i += 1) batch.push(sorted[(start + i) % total] as SpellEntry);
+  return { batch, nextOffset: (start + take) % total };
 }
 
 /**

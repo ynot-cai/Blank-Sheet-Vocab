@@ -67,6 +67,7 @@ export function renderListToolbar(opts: ListToolbarOptions): HTMLElement {
         state.sourceId !== '' ||
         state.wordPriority !== null ||
         state.needSpellOnly ||
+        state.onlySpellOnly ||
         state.favoriteOnly ||
         state.includeChopped ||
         state.minFailCount !== null ||
@@ -165,6 +166,8 @@ export function renderListToolbar(opts: ListToolbarOptions): HTMLElement {
     // 开关
     const row3 = h('div', { class: 'list-toolbar-row' });
     row3.appendChild(checkbox(state.needSpellOnly, '只看需拼写', (v) => opts.onChange({ needSpellOnly: v })));
+    // ★ 1.0.3（用户「单词列表添加仅拼写筛选」）
+    row3.appendChild(checkbox(state.onlySpellOnly, '只看仅拼写', (v) => opts.onChange({ onlySpellOnly: v })));
     row3.appendChild(checkbox(state.favoriteOnly, '只看收藏', (v) => opts.onChange({ favoriteOnly: v })));
     row3.appendChild(checkbox(state.includeChopped, '含已斩', (v) => opts.onChange({ includeChopped: v })));
     box.appendChild(row3);

@@ -548,6 +548,8 @@ export const DEFAULT_SPELL_WEIGHTS: SpellWeights = {
   attempts: 2.5,
   lowScore: 4,
   wordPriority: 0.4,
+  // ★ 1.0.3（用户规则 c）：每通过一次，权重乘 1/(1+1×通过次数)
+  passDecay: 1,
 };
 
 /** 拼写强化的默认设置 */

@@ -359,6 +359,9 @@ export async function restoreStatuses(entries: { id: string; status: WordStatus 
 function matchesQuery(w: Word, q: WordQuery): boolean {
   if (q.status && q.status.length > 0 && !q.status.includes(w.status)) return false;
   if (q.sourceId && w.sourceId !== q.sourceId) return false;
+  // ★ 1.0.3：只看「仅拼写」
+  if (q.spellOnly === true && w.spellOnly !== true) return false;
+  if (q.spellOnly === false && w.spellOnly === true) return false;
   if (q.needSpell === true && !w.attrs.needSpell) return false;
   if (q.needSpell === false && w.attrs.needSpell) return false;
   if (typeof q.minFailCount === 'number' && w.attrs.failCount < q.minFailCount) return false;
