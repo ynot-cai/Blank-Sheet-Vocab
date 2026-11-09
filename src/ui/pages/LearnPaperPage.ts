@@ -493,6 +493,7 @@ export function renderLearnPaperPage(): HTMLElement {
           shown.add(wid);
           shownOrder.push(wid);
           stage.addWord(w, p, false);
+        paper.placements[w.id] = stage.placementOf(w.id) ?? p;
         }
       }
       if (shownOrder.length > 0) stage.showMeaning(shownOrder[shownOrder.length - 1]);

@@ -112,7 +112,17 @@ export function renderLearnPage(): HTMLElement {
     const table = buildTable();
     const queue = orderByPriority(words, table);
     if (queue.length === 0) {
-      toastWarn('这一轮没有选中任何单词');
+      /**
+       * ★ 1.0.4：区分「没选」和「选中的来源里全是已背/已斩的词」，
+       * 否则用户会以为是按钮坏了（这正是「已背标签无效」的体感来源之一）。
+       */
+      if (method === 2 && pickedSourceIds.size > 0) {
+        toastWarn('选中的来源里没有可背的词（已背 / 已斩的词不进入背诵）');
+      } else if (words.length === 0) {
+        toastWarn('词库里没有可背的词（已背 / 已斩的词不进入背诵）');
+      } else {
+        toastWarn('这一轮没有选中任何单词');
+      }
       return;
     }
     const now = Date.now();
@@ -172,7 +182,14 @@ export function renderLearnPage(): HTMLElement {
             else pickedSourceIds.delete(s.id);
           });
           line.appendChild(cb);
+          const count = words.filter((w) => w.sourceId === s.id).length;
           line.appendChild(h('span', { class: 'field-label', text: s.name }));
+          line.appendChild(
+            h('span', {
+              class: 'field-hint',
+              text: count === 0 ? '没有可背的词（已背 / 已斩不计）' : `${count} 个可背`,
+            }),
+          );
           srcBox.appendChild(line);
         }
       }
@@ -530,7 +547,15 @@ export function renderLearnPage(): HTMLElement {
   void (async () => {
     try {
       const [all, srcs] = await Promise.all([dao.words.listAlive(), dao.sources.list()]);
-      words = all.filter((w) => w.status !== 'chopped');
+      /**
+       * ★ 1.0.4（用户「已背标签无效」）：**已背的词不进入背诵抽词**。
+       *
+       * 之前四种方式（默认/按来源/勾选/AI）都只排除「已斩」，已背的词照样被抽；
+       * 用户要求「按来源挑选时不应选中带『已背』标签的单词」，并且提示这个问题可能不止一处，
+       * 所以统一在词表这一层过滤：`status === 'learned'` 与 `'chopped'` 都不参与背诵。
+       * 想复习已背的词请走「复习」模块。
+       */
+      words = all.filter((w) => w.status !== 'chopped' && w.status !== 'learned');
       sources = srcs;
     } catch (err) {
       console.error('[learn] 读取词库/来源失败', err);

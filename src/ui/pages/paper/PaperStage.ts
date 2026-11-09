@@ -49,6 +49,11 @@ export interface PaperStageHandle {
    * 与 `refreshWord` 不同，这里连落点容器一起删掉。
    */
   removeWord(wordId: string): void;
+  /**
+   * ★ 1.0.4：某个词**实际**落在哪（归一化中心坐标）。
+   * 防重叠逻辑可能会把词从估算落点挪开，调用方要拿这个值回写存档，续跑才不会回到重叠位置。
+   */
+  placementOf(wordId: string): Placement | null;
   /** 纸面上已放几个词 */
   count(): number;
   destroy(): void;
@@ -188,6 +193,128 @@ export function createPaperStage(opts: PaperStageOptions): PaperStageHandle {
       h: Math.ceil(font.meaning * 1.5 * (lines + 0.5)) + MEANING_PAD_Y + 2,
     };
   };
+  // ── ★ 1.0.4：按**真实 DOM 尺寸**防重叠（不再只信估算的占位矩形） ──────────────
+  /** 已放置词的预留矩形（纸面像素，含中文盒子） */
+  const reservedRects: { id: string; x: number; y: number; w: number; h: number }[] = [];
+  /** 词 id → 当前真实落点（归一化中心坐标；供调用方回写存档） */
+  const placedCenters = new Map<string, Placement>();
+
+  /**
+   * 算一次「可用区 + 按钮避让区」（与 doLayout 内部完全同源）。
+   */
+  const computeArea = (): {
+    area: { x: number; y: number; width: number; height: number };
+    avoid: { x: number; y: number; width: number; height: number };
+  } => {
+    const margin = tier.edgeMarginPx;
+    const box = paperButtonBox(viewport);
+    const offsetX = (viewport.width - paperSize.width * fitScale) / 2;
+    const offsetY = (viewport.height - paperSize.height * fitScale) / 2;
+    const avoid = {
+      x: (box.avoid.x - offsetX) / fitScale,
+      y: (box.avoid.y - offsetY) / fitScale,
+      width: box.avoid.width / fitScale,
+      height: box.avoid.height / fitScale,
+    };
+    const areaBottom = isPhone
+      ? Math.min(paperSize.height - margin, Math.max(margin + 1, avoid.y))
+      : paperSize.height - margin;
+    return {
+      area: {
+        x: margin,
+        y: margin,
+        width: Math.max(1, paperSize.width - margin * 2),
+        height: Math.max(1, areaBottom - margin),
+      },
+      avoid,
+    };
+  };
+
+  /**
+   * 量一个词**真实**占多大：把中文盒子临时显示出来（同一帧内恢复，不会闪），
+   * 取「英文行 ∪ 中文盒子」的外接矩形。这是防重叠的唯一可靠尺寸来源。
+   */
+  const measureReserved = (zone: HTMLElement, meaning: HTMLElement): { w: number; h: number } => {
+    const row = zone.querySelector<HTMLElement>('.paper-word-row');
+    if (!row) return { w: 0, h: 0 };
+    const wasHidden = meaning.classList.contains('hidden');
+    if (wasHidden) meaning.classList.remove('hidden');
+    const w = Math.max(row.offsetWidth, meaning.offsetWidth) + 8;
+    const h = row.offsetHeight + meaning.offsetHeight + 8;
+    if (wasHidden) meaning.classList.add('hidden');
+    return { w, h };
+  };
+
+  /** 矩形相交（留 0 gap：贴边也算冲突，保证视觉上至少 1px 缝） */
+  const rectHit = (
+    a: { x: number; y: number; w: number; h: number },
+    b: { x: number; y: number; w: number; h: number },
+    gap = 0,
+  ): boolean => a.x < b.x + b.w + gap && b.x < a.x + a.w + gap && a.y < b.y + b.h + gap && b.y < a.y + a.h + gap;
+
+  /**
+   * 在纸面可用区里找一个**不与任何已放置词（及按钮区）相交**的中心点。
+   *
+   * 不依赖估算：尺寸来自 {@link measureReserved} 的真实 DOM 大小，
+   * 冲突检测拿的是已放置词的真实矩形，所以横向、纵向、斜向都不会重叠。
+   * 找法：先试原落点；不行就从近到远扫网格（12px 步长），取离原落点最近的合法点。
+   * @param size 真实宽高
+   * @param intended 想要的中心点（纸面像素）
+   * @param skipId 重新安放时跳过自己的旧矩形
+   */
+  const findFreeCenter = (
+    size: { w: number; h: number },
+    intended: { x: number; y: number },
+    skipId?: string,
+  ): { x: number; y: number } => {
+    const { area, avoid } = computeArea();
+    const fits = (cx: number, cy: number): boolean => {
+      const r = { x: cx - size.w / 2, y: cy - size.h / 2, w: size.w, h: size.h };
+      if (r.x < area.x || r.y < area.y || r.x + r.w > area.x + area.width || r.y + r.h > area.y + area.height) return false;
+      if (rectHit(r, { ...avoid, w: avoid.width, h: avoid.height }, 0)) return false;
+      return !reservedRects.some((old) => old.id !== skipId && rectHit(r, old, 0));
+    };
+    if (fits(intended.x, intended.y)) return intended;
+    let best: { x: number; y: number } | null = null;
+    let bestDist = Number.POSITIVE_INFINITY;
+    const step = 12;
+    for (let cy = area.y + size.h / 2; cy <= area.y + area.height - size.h / 2; cy += step) {
+      for (let cx = area.x + size.w / 2; cx <= area.x + area.width - size.w / 2; cx += step) {
+        if (!fits(cx, cy)) continue;
+        const dist = (cx - intended.x) ** 2 + (cy - intended.y) ** 2;
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = { x: cx, y: cy };
+        }
+      }
+    }
+    return best ?? intended;
+  };
+
+  /** 把某个词的落点应用到 DOM、并更新预留矩形与落点表 */
+  const applyCenter = (wordId: string, zone: HTMLElement, center: { x: number; y: number }): void => {
+    zone.style.left = `${(center.x / Math.max(1, paperSize.width)) * 100}%`;
+    zone.style.top = `${(center.y / Math.max(1, paperSize.height)) * 100}%`;
+    placedCenters.set(wordId, { x: center.x / Math.max(1, paperSize.width), y: center.y / Math.max(1, paperSize.height) });
+  };
+
+  /**
+   * 重新安放一个词（中文改长、义项变了以后盒子会变大）：
+   * 先量新尺寸，若原来的预留框还装得下就不动，否则就近另找空位。
+   */
+  const resettle = (wordId: string): void => {
+    const zone = zones.get(wordId);
+    const meaning = meaningEls.get(wordId);
+    const old = reservedRects.find((r) => r.id === wordId);
+    if (!zone || !meaning || !old) return;
+    const size = measureReserved(zone, meaning);
+    if (size.w <= old.w && size.h <= old.h) return;
+    reservedRects.splice(reservedRects.indexOf(old), 1);
+    const center = { x: old.x + old.w / 2, y: old.y + old.h / 2 };
+    const next = findFreeCenter(size, center, wordId);
+    applyCenter(wordId, zone, next);
+    reservedRects.push({ id: wordId, x: next.x - size.w / 2, y: next.y - size.h / 2, w: size.w, h: size.h });
+  };
   const doLayout = (words: Word[], seedText?: string): Record<string, Placement> => {
     const margin = tier.edgeMarginPx;
     const box = paperButtonBox(viewport);
@@ -315,6 +442,19 @@ export function createPaperStage(opts: PaperStageOptions): PaperStageHandle {
       root.appendChild(zone);
       zones.set(word.id, zone);
       wordMap.set(word.id, word);
+      /**
+       * ★ 1.0.4（用户「单词重叠」）：落点不再直接用估算结果，
+       * 而是先量这个词**真实**多大，再在纸面里找一个不与任何已放置词/按钮区相交的位置。
+       * 这样横向、纵向、斜向都不会重叠（原来只按估算矩形排，估算误差就会压在一起）。
+       */
+      const meaning = meaningEls.get(word.id);
+      if (meaning !== undefined) {
+        const size = measureReserved(zone, meaning);
+        const intended = { x: placement.x * paperSize.width, y: placement.y * paperSize.height };
+        const center = findFreeCenter(size, intended);
+        applyCenter(word.id, zone, center);
+        reservedRects.push({ id: word.id, x: center.x - size.w / 2, y: center.y - size.h / 2, w: size.w, h: size.h });
+      }
       if (showMeaning) this.showMeaning(word.id);
     },
 
@@ -355,6 +495,12 @@ export function createPaperStage(opts: PaperStageOptions): PaperStageHandle {
         );
       }
       wordMap.set(word.id, word);
+      // ★ 1.0.4：中文改长后如果装不进原预留框，就近重新安放，避免压到别的词
+      resettle(word.id);
+    },
+
+    placementOf(wordId) {
+      return placedCenters.get(wordId) ?? null;
     },
 
     count() {
@@ -373,6 +519,10 @@ export function createPaperStage(opts: PaperStageOptions): PaperStageHandle {
       if (lastAutoMeaning !== null && meaning !== undefined && lastAutoMeaning === meaning) lastAutoMeaning = null;
       meaningEls.delete(wordId);
       wordMap.delete(wordId);
+      // ★ 1.0.4：一并清掉预留矩形与落点记录，后面的词才能补上这个空位
+      const idx = reservedRects.findIndex((r) => r.id === wordId);
+      if (idx >= 0) reservedRects.splice(idx, 1);
+      placedCenters.delete(wordId);
     },
 
     destroy() {

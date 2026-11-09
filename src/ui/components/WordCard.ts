@@ -26,7 +26,7 @@ import { getFailRate } from '../../core/priority';
 import type { AnswerComparison, Sense, Word } from '../../core/types';
 import { speak } from '../../services/tts';
 import { button, h, textInput } from '../dom';
-import { toastWarn } from './Toast';
+import { toastOk, toastWarn } from './Toast';
 
 /** 单词卡参数 */
 export interface WordCardOptions {
@@ -318,6 +318,40 @@ export function renderWordCard(word: Word, opts: WordCardOptions = {}): HTMLElem
       });
 
       row.addEventListener('contextmenu', (ev) => openSenseMenu(ev, index));
+
+      /**
+       * ★ 1.0.4（用户「编辑义项时增加『合并到上一项』」）：
+       * 除第一行外，每行末尾给一个按钮，把**当前义项并进上一项**：
+       * - 文字用「，」连接（去重）；
+       * - 近义词取并集（去掉与本行/上一行代表词重复的）；
+       * - 合并先改编辑态草稿，点「保存」才落库（与其余编辑行为一致）。
+       */
+      if (index > 0) {
+        const mergeBtn = button(
+          '合并到上一项',
+          () => {
+            const prev = draft.senses[index - 1];
+            const cur = draft.senses[index];
+            if (!prev || !cur) return;
+            const clean = (t: string): string => t.replace(/^\s*[a-zA-Z]+\.\s*/, '').trim();
+            const parts = [prev.text.trim(), cur.text.trim()].filter((t) => t !== '');
+            const mergedText = Array.from(new Set(parts)).join('，');
+            const drop = new Set([clean(prev.text), clean(cur.text), clean(mergedText)]);
+            const aliases = Array.from(
+              new Set([...prev.aliases, ...cur.aliases].map((a) => a.trim()).filter((a) => a !== '' && !drop.has(a))),
+            );
+            const merged = { ...prev, text: mergedText, aliases };
+            draft = {
+              ...draft,
+              senses: draft.senses.map((s, i) => (i === index - 1 ? merged : s)).filter((_, i) => i !== index),
+            };
+            draw();
+            toastOk('已合并到上一项（点「保存」生效）');
+          },
+          { variant: 'ghost', class: 'sense-merge-btn mini', title: '把这个义项并进上一项（文字与近义词合并）' },
+        );
+        row.appendChild(mergeBtn);
+      }
 
       /**
        * 指针拖动：按在手柄或行的空白处开始；按在可编辑文字上不接管（那是编辑/选字）。
